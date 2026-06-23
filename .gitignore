@@ -6,3 +6,8 @@
 secrets/
 peers/**/values.yaml
 group/group-config.yaml
+
+# IDE
+.idea/
+*.iml
+.vscode/
