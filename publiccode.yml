@@ -1,0 +1,87 @@
+publiccodeYmlVersion: "0.5"
+name: moza-fsc-testnet
+url: https://github.com/MinBZK/moza-fsc-testnet
+landingURL: https://mijnoverheidzakelijk.nl
+platforms:
+  - web
+categories:
+  - digital-citizenship
+organisation:
+  uri: https://www.rijksoverheid.nl/ministeries/ministerie-van-binnenlandse-zaken-en-koninkrijksrelaties
+  name: Ministerie van Binnenlandse Zaken en Koninkrijksrelaties
+fundedBy:
+  - name: Ministerie van Binnenlandse Zaken en Koninkrijksrelaties
+    uri: https://www.rijksoverheid.nl/ministeries/ministerie-van-binnenlandse-zaken-en-koninkrijksrelaties
+developmentStatus: development
+softwareType: configurationFiles
+intendedAudience:
+  countries:
+    - NL
+  scope:
+    - government
+description:
+  nl:
+    localisedName: MOZa FSC-testomgeving
+    shortDescription: >-
+      Gedeelde FSC-testomgeving voor MijnOverheid Zakelijk (MOZa).
+    longDescription: >
+      moza-fsc-testnet is een deploy- en configuratie-repository voor een
+      gedeelde, generieke FSC-testomgeving (Federated Service Connectivity)
+      binnen MijnOverheid Zakelijk. De omgeving stelt MOZa-teams in staat om
+      federatieve, beveiligde dienstverlening te beproeven; elk team sluit aan
+      als eigen peer.
+
+
+      De repository bevat geen fork van FSC-software, maar consumeert de OpenFSC
+      reference implementation (manager, inway, outway, directory) via haar
+      container-images en Helm-charts. Wel bevat ze de eigen test-CA
+      (trust-anchor), de group- en peer-configuratie, de ZAD-deploy-workflows en
+      de contract-bootstrap.
+
+
+      Het MOZa-project bestaat uit meerdere repositories binnen de MinBZK
+      organisatie, te herkennen aan de moza- prefix of het topic
+      mijnoverheidzakelijk.
+    features:
+      - Topologie: één group, één directory, meerdere peers
+      - Eigen test-CA als trust-anchor (geen PKIoverheid)
+      - Group- en peer-configuratie (Helm-values)
+      - ZAD-deploy-workflows en contract-bootstrap
+  en:
+    shortDescription: >-
+      Shared FSC test environment for "MijnOverheid Zakelijk" (MOZa).
+    longDescription: >
+      moza-fsc-testnet is a deployment and configuration repository for a shared,
+      generic FSC (Federated Service Connectivity) test environment within
+      "MijnOverheid Zakelijk". It lets MOZa teams trial federated, secure service
+      delivery; each team joins as its own peer.
+
+
+      The repository is not a fork of FSC software but consumes the OpenFSC
+      reference implementation (manager, inway, outway, directory) through its
+      container images and Helm charts. It does contain the project's own test CA
+      (trust anchor), the group and peer configuration, the ZAD deployment
+      workflows and the contract bootstrap.
+
+
+      The MOZa project consists of multiple repositories within the MinBZK
+      organisation, identifiable by the moza- prefix or the mijnoverheidzakelijk
+      topic.
+    features:
+      - Topology: one group, one directory, multiple peers
+      - Own test CA as trust anchor (no PKIoverheid)
+      - Group and peer configuration (Helm values)
+      - ZAD deployment workflows and contract bootstrap
+legal:
+  license: EUPL-1.2
+  mainCopyrightOwner: Ministerie van Binnenlandse Zaken en Koninkrijksrelaties
+maintenance:
+  type: internal
+  contacts:
+    - name: MijnOverheid Zakelijk Team
+      email: moza@minbzk.nl
+      affiliation: Ministerie van Binnenlandse Zaken en Koninkrijksrelaties
+localisation:
+  localisationReady: false
+  availableLanguages:
+    - nl

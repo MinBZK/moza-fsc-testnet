@@ -1,6 +1,6 @@
 # Topologie
 
-```
+```text
                          ┌─────────────────────────┐
                          │   directory (+ manager)  │   group: moza-fbs-test
                          │   trust-anchor: test-CA  │

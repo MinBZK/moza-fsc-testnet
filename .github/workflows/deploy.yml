@@ -8,4 +8,4 @@ jobs:
   placeholder:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "TODO(#729): zad-actions deploy directory + peers"
+      - run: echo "TODO(#729) zad-actions deploy directory en peers"

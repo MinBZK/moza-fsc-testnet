@@ -22,11 +22,12 @@ Eén **group** + één **directory** + N **peers** (organisaties). Voor de PoC:
 | uitvraag-org | consumer | manager + outway → `berichtenuitvraag` | `<OIN>` |
 | profiel-org | (later) | manager + inway → `moza-profiel-service` | `<OIN>` |
 
-Zie [`docs/topologie.md`](docs/topologie.md) en [`docs/ontwerpkeuzes.md`](docs/ontwerpkeuzes.md).
+Zie [`docs/topologie.md`](docs/topologie.md), [`docs/ontwerpkeuzes.md`](docs/ontwerpkeuzes.md)
+en [`docs/zad-projecten.md`](docs/zad-projecten.md) (projectverdeling + deploymodel).
 
 ## Mappenstructuur
 
-```
+```text
 docs/        ontwerp: topologie + keuzes
 pki/         test-CA als trust-anchor + cert-generatie
 group/       group-id, trust-anchor, group rules (TLS)
@@ -35,7 +36,19 @@ contracts/   grant → sign → accept bootstrap
 .github/     ZAD deploy/cleanup workflows
 ```
 
+## Bijdragen & verantwoording
+
+- **Bijdragen:** nooit direct naar `main`; werk via een `feature/`-, `fix/`- of
+  `chore/`-branch en een pull request. De hoofdbranch is beschermd (review + CI verplicht).
+- **Disclaimer:** dit is een experimentele PoC, grotendeels met AI opgesteld — zie
+  [`DISCLAIMER.md`](DISCLAIMER.md) en de volledige
+  [AI-verantwoording](docs/ai-verantwoording.md).
+- **Governance / support / security:** [`GOVERNANCE.md`](GOVERNANCE.md) ·
+  [`SUPPORT.md`](SUPPORT.md) · [`SECURITY.md`](SECURITY.md) (delegeren naar de MOZa-hoofdrepo).
+- **Metadata:** [`publiccode.yml`](publiccode.yml). **Licentie:** [EUPL-1.2](LICENSE).
+- **CI:** lint (markdown/YAML/workflows), CodeQL en OpenSSF Scorecard draaien op elke PR.
+
 ## Status
 
-Skelet (#721). Volgende stappen: #722 PKI · #723 directory+group · #724/#725 peers ·
-#726 FBS-integratie · #727 contracten · #728 e2e · #729 CI · #730 profiel-peer.
+Skelet (#721). Volgende stappen: #722 PKI · #723 directory+group · #724/#725 peers
+· #726 FBS-integratie · #727 contracten · #728 e2e · #729 CI · #730 profiel-peer.

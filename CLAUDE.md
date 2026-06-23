@@ -45,6 +45,10 @@ OpenFSC-keuzes die wij overnemen (en die FBS-integratie versimpelen):
 - **Topologie:** één group + één directory + N peers. Elke peer = eigen ZAD-project
   (project-isolatie). FBS-peers (magazijn-org = provider/inway, uitvraag-org = consumer/outway)
   eerst; profiel-org later (#730).
+- **Deploymodel (zie `docs/zad-projecten.md`):** peer-templates leven hier (source-of-truth),
+  maar **deployen gebeurt bij de app** (inway/outway co-located met de app voor intra-project
+  DNS). Directory/group draait centraal vanuit deze repo. Spiegelt OpenFSC's layout
+  `helm/deploy/<org>/` (per peer) plus `helm/deploy/shared/` (gedeelde kern).
 - **FBS-integratie = config-only:** `berichtenuitvraag` routeert magazijn-calls naar de lokale
   outway i.p.v. direct, door de `Magazijnregister`-URL (`magazijnen."<OIN>".url`) erheen te wijzen.
 
@@ -57,6 +61,11 @@ mTLS-passthrough is bewezen op het ODCN-prod-cluster (beide poorten, eigen cert,
 - **Poort 8443** (management, Manager-mesh): MetalLB `LoadBalancer`, eigen publiek IP per endpoint.
   Publieke IP's zijn **schaars** → minimaliseer managers (~1 per project/peer), deel IP's.
 - `edge`/`reencrypt`-terminatie of client-cert-in-header **breken** de certificate-binding — verboden.
+- **ZAD deployt images, geen Helm.** `zad-actions/deploy` neemt een `components:`-lijst van
+  `{name, image}`. OpenFSC-charts = bron voor image- + env-namen, niet het deploy-artefact.
+  Config = env-vars + gemounte certs (Operations Manager, éénmalig; previews erven via
+  `clone-from: test`). **Blocker #723:** DB-migratie draait in OpenFSC via init-container-args
+  (`manager migrate up`) — ZAD staat geen args/init-containers toe; alternatief nodig.
 - ZAD-pods configureren via **env-vars / gemounte files**, niet via CLI-args (ZAD staat geen
   component-args toe).
 
@@ -67,7 +76,7 @@ read-only mount in de pod). Nodig vóór per-peer certs gemount kunnen worden. B
 
 ## Repo-structuur
 
-```
+```text
 docs/        ontwerp: topologie.md + ontwerpkeuzes.md
 pki/         test-CA als trust-anchor + cert-generatie
 group/       group-id, trust-anchor, group rules (TLS)
@@ -82,14 +91,20 @@ contracts/   grant → sign → accept bootstrap
   Alleen scripts en `.example`-templates in de repo.
 - Toekomstig werk markeren met `TODO(#nnn)` verwijzend naar het GitHub-issue.
 - **Git:** nooit direct naar `main` pushen — feature branch + PR. Branch-prefix `feature/`,
-  `fix/`, `chore/`. Geen reviewer toevoegen bij aanmaken PR.
+  `fix/`, `chore/`. Geen reviewer toevoegen bij aanmaken PR. `main` is **branch-protected**
+  (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
+  `Analyze (actions)`.
+- **CI:** `lint.yml` (markdownlint + yamllint + actionlint), `codeql.yml` (Actions-analyse),
+  `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind; Dependabot houdt ze maandelijks bij.
+- **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
+  en `docs/ai-verantwoording.md`. Governance/support/security delegeren naar de MOZa-hoofdrepo.
 - `gh` CLI voor GitHub-operaties.
 
 ## Issues / stappenplan
 
-Onder #661: #720 (mTLS-spike, **done/GO**) · #721 (repo-skelet, **done**) · #722 PKI ·
-#723 directory+group · #724 peer magazijn · #725 peer uitvraag · #726 FBS-integratie ·
-#727 contracten · #728 e2e+logging · #729 CI+cleanup · #730 profiel-peer.
+Onder #661: #720 (mTLS-spike, **done/GO**) · #721 (repo-skelet + governance/CI, **in afronding**)
+· #722 PKI · #723 directory+group · #724 peer magazijn · #725 peer uitvraag
+· #726 FBS-integratie · #727 contracten · #728 e2e+logging · #729 CI+cleanup · #730 profiel-peer.
 
 **Huidige stap: #722 (test-PKI).** Het CA/cert-genereer-werk kan vooruit (OpenFSC `ca`/`ca-certportal`);
 alleen het *mounten* van certs wacht op de ZAD `attachments`-feature.
