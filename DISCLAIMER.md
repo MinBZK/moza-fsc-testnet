@@ -16,9 +16,10 @@ Aan de inhoud of werking kunnen geen rechten worden ontleend.
 ## Met AI gegenereerde bijdragen zijn herkenbaar
 
 Bijdragen die met behulp van generatieve AI tot stand zijn gekomen, zijn
-gemarkeerd via de commit-trailer `Co-Authored-By`. Niet-triviale wijzigingen zijn
-door ontwikkelaars beoordeeld via de pull-request-workflow voordat die zijn
-gemerged.
+gemarkeerd via de commit-trailer `Co-Authored-By`. Deze repo bevat geen
+applicatiecode (alleen configuratie/scripts/docs voor een OpenFSC-instantie); alles
+wat hier staat is volledig door ontwikkelaars beoordeeld via de
+pull-request-workflow voordat het wordt gemerged.
 
 ## Gebruik van generatieve AI
 

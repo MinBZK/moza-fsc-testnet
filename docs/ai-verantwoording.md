@@ -14,17 +14,21 @@ FSC-testomgeving (Federated Service Connectivity) binnen MijnOverheid Zakelijk
 [OpenFSC](https://gitlab.com/rinis-oss/fsc/open-fsc) reference implementation. Zie
 de [`README.md`](../README.md) voor de actuele opzet en onderdelen.
 
-**Rol van AI.** De configuratie, scripts en documentatie zijn grotendeels
-opgesteld met de AI-assistant Claude Code (Anthropic). AI is ingezet voor het
-genereren van Helm-values, deploy-workflows, PKI-scripts en documentatie, en voor
-ondersteuning bij review. Architectuur- en ontwerpbeslissingen zijn vastgelegd in
-[`docs/ontwerpkeuzes.md`](ontwerpkeuzes.md) en
-[`docs/topologie.md`](topologie.md) en zijn menselijk genomen.
+**Rol van AI.** Hier wordt **geen applicatiecode ontwikkeld.** De FSC-software zelf
+(OpenFSC) wordt niet door ons gebouwd of geforkt — we draaien er een *instantie* van.
+Deze repository bevat uitsluitend configuratie (group-/peer-config, Helm-values),
+scripts (PKI, contract-bootstrap), deploy-workflows en documentatie. Die zijn
+grotendeels opgesteld met de AI-assistant Claude Code (Anthropic). Architectuur- en
+ontwerpbeslissingen zijn vastgelegd in [`docs/ontwerpkeuzes.md`](ontwerpkeuzes.md),
+[`docs/topologie.md`](topologie.md) en [`docs/zad-projecten.md`](zad-projecten.md)
+en zijn menselijk genomen.
 
-**Menselijke review.** Alle niet-triviale wijzigingen worden door ontwikkelaars
-gereviewd via de pull-request-workflow voordat die in de hoofdbranch worden
-opgenomen. De hoofdbranch is beschermd (review verplicht, geen directe pushes).
-De mens blijft eindverantwoordelijk; de AI is een hulpmiddel.
+**Menselijke review.** Omdat er geen grote codebase is maar een overzichtelijke set
+configuratie/scripts/docs, wordt **alles wat hier staat volledig menselijk bekeken
+en gereviewd** — er is geen steekproef of afbakening nodig zoals bij een
+applicatie-repo. Review loopt via de pull-request-workflow; de hoofdbranch is
+beschermd (review verplicht, geen directe pushes). De mens blijft
+eindverantwoordelijk; de AI is een hulpmiddel.
 
 **Gegevens.** De PoC verwerkt geen persoonsgegevens. Er wordt uitsluitend gewerkt
 met fictieve en testgegevens; de federatie gebruikt een **eigen test-CA**, geen
@@ -132,10 +136,12 @@ richtlijnen. AI is slechts een hulpmiddel.
 
 #### f. Kwaliteitsrisico: onjuiste of onveilige gegenereerde configuratie
 
-De kwaliteit wordt op meerdere niveaus geborgd: menselijke review van alle
-wijzigingen, geautomatiseerde CI-controles (markdown-/YAML-/workflow-linting,
-CodeQL, Scorecard) en het toetsen van de configuratie tegen de officiële
-OpenFSC-charts en de FSC Core-specificatie.
+De kwaliteit wordt op meerdere niveaus geborgd: **volledige menselijke review van
+alles wat hier staat** (geen applicatiecode, dus geen steekproef nodig),
+geautomatiseerde CI-controles (markdown-/YAML-/workflow-linting, CodeQL, Scorecard)
+en het toetsen van de configuratie tegen de officiële OpenFSC-charts en de
+FSC Core-specificatie. De FSC-software zelf is OpenFSC en wordt door RINIS
+onderhouden; wij beoordelen onze instantie-configuratie, niet die software.
 
 #### g. Auteursrecht op brondocumenten als input
 
