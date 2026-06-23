@@ -67,7 +67,7 @@ read-only mount in de pod). Nodig vóór per-peer certs gemount kunnen worden. B
 
 ## Repo-structuur
 
-```
+```text
 docs/        ontwerp: topologie.md + ontwerpkeuzes.md
 pki/         test-CA als trust-anchor + cert-generatie
 group/       group-id, trust-anchor, group rules (TLS)
@@ -82,14 +82,20 @@ contracts/   grant → sign → accept bootstrap
   Alleen scripts en `.example`-templates in de repo.
 - Toekomstig werk markeren met `TODO(#nnn)` verwijzend naar het GitHub-issue.
 - **Git:** nooit direct naar `main` pushen — feature branch + PR. Branch-prefix `feature/`,
-  `fix/`, `chore/`. Geen reviewer toevoegen bij aanmaken PR.
+  `fix/`, `chore/`. Geen reviewer toevoegen bij aanmaken PR. `main` is **branch-protected**
+  (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
+  `Analyze (actions)`.
+- **CI:** `lint.yml` (markdownlint + yamllint + actionlint), `codeql.yml` (Actions-analyse),
+  `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind; Dependabot houdt ze maandelijks bij.
+- **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
+  en `docs/ai-verantwoording.md`. Governance/support/security delegeren naar de MOZa-hoofdrepo.
 - `gh` CLI voor GitHub-operaties.
 
 ## Issues / stappenplan
 
-Onder #661: #720 (mTLS-spike, **done/GO**) · #721 (repo-skelet, **done**) · #722 PKI ·
-#723 directory+group · #724 peer magazijn · #725 peer uitvraag · #726 FBS-integratie ·
-#727 contracten · #728 e2e+logging · #729 CI+cleanup · #730 profiel-peer.
+Onder #661: #720 (mTLS-spike, **done/GO**) · #721 (repo-skelet + governance/CI, **in afronding**)
+· #722 PKI · #723 directory+group · #724 peer magazijn · #725 peer uitvraag
+· #726 FBS-integratie · #727 contracten · #728 e2e+logging · #729 CI+cleanup · #730 profiel-peer.
 
 **Huidige stap: #722 (test-PKI).** Het CA/cert-genereer-werk kan vooruit (OpenFSC `ca`/`ca-certportal`);
 alleen het *mounten* van certs wacht op de ZAD `attachments`-feature.

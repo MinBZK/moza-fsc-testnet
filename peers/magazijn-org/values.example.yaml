@@ -11,3 +11,12 @@ inway:
   selfAddress: "magazijn-inway:443"           # eigen SNI-hostnaam (passthrough-Route)
   directoryRegistrationAddress: "directory-manager:8443"
   upstream: "berichtenmagazijn-deployment:8090"   # ZAD intra-project DNS (hyphen)
+
+# TODO(#723): dit skelet toont alleen de hoofd-adressen. Een werkende OpenFSC-deploy
+# vereist daarnaast (zie open-fsc helm/charts):
+#   - certificaten: certificates.group.* (group-CA) + certificates.internal.* +
+#     certificates.internalUnauthenticated.* (inter-component mTLS, manager<->inway);
+#   - interne manager-poorten 9443 (authenticated) en 9444 (unauthenticated);
+#   - transaction-log: txlog-api-adres voor manager én inway (verplichte logging-extensie).
+# `upstream` is de business-app (berichtenmagazijn), geen FSC-component.
+# Echte secrets/certs worden via ZAD `attachments` gemount, nooit hier ingevuld.

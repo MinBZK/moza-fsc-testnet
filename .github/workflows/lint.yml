@@ -1,0 +1,35 @@
+name: lint
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Markdown lint
+        run: npx --yes markdownlint-cli2@0.18.1 "**/*.md" "#node_modules"
+
+      - name: YAML lint
+        run: |
+          pipx install yamllint==1.37.1
+          yamllint --strict -c .yamllint.yaml .
+
+      - name: Actions lint
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint -color

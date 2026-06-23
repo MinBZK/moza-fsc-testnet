@@ -1,0 +1,8 @@
+# markdownlint-cli2 config. https://github.com/DavidAnson/markdownlint
+default: true
+# MD013 (line length) uit: docs/ontwerpkeuzes bevatten lange URL's en tabellen.
+MD013: false
+# MD033 (inline HTML) toestaan: enkele <!-- --> en details/summary in templates.
+MD033: false
+# MD041 (first line heading) uit: commentaarblokken bovenaan templates.
+MD041: false
