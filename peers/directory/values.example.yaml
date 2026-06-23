@@ -1,0 +1,8 @@
+# Helm-values voor peer 'directory' (template — #723/#724/#725).
+# Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
+peer:
+  oin: "00000000000000000000"        # TODO(#722): geldige test-OIN -> wordt Peer ID
+  name: "directory"                          # -> subject.organization in het cert
+manager:
+  managementAddress: "directory-manager:8443"
+  postgresDsn: "postgres://fsc:fsc@directory-postgres:5432/fsc?sslmode=disable"

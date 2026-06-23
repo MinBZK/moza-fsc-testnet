@@ -1,0 +1,12 @@
+# Helm-values voor peer 'uitvraag-org' (template — #723/#724/#725).
+# Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
+peer:
+  oin: "00000000000000000000"        # TODO(#722): geldige test-OIN -> wordt Peer ID
+  name: "uitvraag-org"                          # -> subject.organization in het cert
+manager:
+  managementAddress: "uitvraag-org-manager:8443"
+  postgresDsn: "postgres://fsc:fsc@uitvraag-org-postgres:5432/fsc?sslmode=disable"
+outway:
+  # berichtenuitvraag routeert magazijn-calls hierheen i.p.v. direct (#726)
+  listenAddress: "outway:8080"
+  directoryRegistrationAddress: "directory-manager:8443"

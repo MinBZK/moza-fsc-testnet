@@ -1,0 +1,13 @@
+# Helm-values voor peer 'magazijn-org' (template — #723/#724/#725).
+# Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
+peer:
+  oin: "00000000000000000000"        # TODO(#722): geldige test-OIN -> wordt Peer ID
+  name: "magazijn-org"                          # -> subject.organization in het cert
+manager:
+  managementAddress: "magazijn-org-manager:8443"
+  postgresDsn: "postgres://fsc:fsc@magazijn-org-postgres:5432/fsc?sslmode=disable"
+inway:
+  name: "magazijn-inway"
+  selfAddress: "magazijn-inway:443"           # eigen SNI-hostnaam (passthrough-Route)
+  directoryRegistrationAddress: "directory-manager:8443"
+  upstream: "berichtenmagazijn-deployment:8090"   # ZAD intra-project DNS (hyphen)

@@ -1,0 +1,9 @@
+# Group-configuratie (template — #723). Vul in en bewaar de echte versie buiten git.
+group:
+  id: moza-fbs-test            # group_id; identificeert de federatie
+  trust_anchor:
+    # Pad naar de test-CA root (via ZAD attachments gemount). Geen PKIoverheid.
+    ca_cert: /etc/fsc/ca/root.pem
+    crl: /etc/fsc/ca/root.crl
+  rules:
+    tls_min_version: "1.2"     # conform NCSC TLS 2.1 (OpenFSC-default)
