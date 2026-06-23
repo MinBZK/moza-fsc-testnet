@@ -22,7 +22,8 @@ Eén **group** + één **directory** + N **peers** (organisaties). Voor de PoC:
 | uitvraag-org | consumer | manager + outway → `berichtenuitvraag` | `<OIN>` |
 | profiel-org | (later) | manager + inway → `moza-profiel-service` | `<OIN>` |
 
-Zie [`docs/topologie.md`](docs/topologie.md) en [`docs/ontwerpkeuzes.md`](docs/ontwerpkeuzes.md).
+Zie [`docs/topologie.md`](docs/topologie.md), [`docs/ontwerpkeuzes.md`](docs/ontwerpkeuzes.md)
+en [`docs/zad-projecten.md`](docs/zad-projecten.md) (projectverdeling + deploymodel).
 
 ## Mappenstructuur
 

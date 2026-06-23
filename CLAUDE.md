@@ -45,6 +45,10 @@ OpenFSC-keuzes die wij overnemen (en die FBS-integratie versimpelen):
 - **Topologie:** één group + één directory + N peers. Elke peer = eigen ZAD-project
   (project-isolatie). FBS-peers (magazijn-org = provider/inway, uitvraag-org = consumer/outway)
   eerst; profiel-org later (#730).
+- **Deploymodel (zie `docs/zad-projecten.md`):** peer-templates leven hier (source-of-truth),
+  maar **deployen gebeurt bij de app** (inway/outway co-located met de app voor intra-project
+  DNS). Directory/group draait centraal vanuit deze repo. Spiegelt OpenFSC's layout
+  `helm/deploy/<org>/` (per peer) plus `helm/deploy/shared/` (gedeelde kern).
 - **FBS-integratie = config-only:** `berichtenuitvraag` routeert magazijn-calls naar de lokale
   outway i.p.v. direct, door de `Magazijnregister`-URL (`magazijnen."<OIN>".url`) erheen te wijzen.
 
@@ -57,6 +61,11 @@ mTLS-passthrough is bewezen op het ODCN-prod-cluster (beide poorten, eigen cert,
 - **Poort 8443** (management, Manager-mesh): MetalLB `LoadBalancer`, eigen publiek IP per endpoint.
   Publieke IP's zijn **schaars** → minimaliseer managers (~1 per project/peer), deel IP's.
 - `edge`/`reencrypt`-terminatie of client-cert-in-header **breken** de certificate-binding — verboden.
+- **ZAD deployt images, geen Helm.** `zad-actions/deploy` neemt een `components:`-lijst van
+  `{name, image}`. OpenFSC-charts = bron voor image- + env-namen, niet het deploy-artefact.
+  Config = env-vars + gemounte certs (Operations Manager, éénmalig; previews erven via
+  `clone-from: test`). **Blocker #723:** DB-migratie draait in OpenFSC via init-container-args
+  (`manager migrate up`) — ZAD staat geen args/init-containers toe; alternatief nodig.
 - ZAD-pods configureren via **env-vars / gemounte files**, niet via CLI-args (ZAD staat geen
   component-args toe).
 
