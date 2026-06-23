@@ -6,3 +6,6 @@ MD013: false
 MD033: false
 # MD041 (first line heading) uit: commentaarblokken bovenaan templates.
 MD041: false
+# MD060 (table-column-style) uit: de gangbare GitHub-tabelstijl heeft een "compacte"
+# delimiter-rij (|---|) naast gepadde data-rijen; dat is cosmetisch en prima.
+MD060: false
