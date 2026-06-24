@@ -28,7 +28,9 @@ trust-anchor, passthrough, SNI.
 [FSC Core-standaard](https://gitdocumentatie.logius.nl/publicatie/fsc/core/). **Let op:** `fsc-nlx`
 is gearchiveerd en verhuisd naar deze repo (nu onderhouden door RINIS). Docs op
 [docs.open-fsc.nl](https://docs.open-fsc.nl). Componenten: manager, inway, outway, directory,
-`ca-certportal`, `sni-proxy` + PostgreSQL.
+`controller` (beheer-UI), `directory-ui` (dienstencatalogus), `ca-certportal`, `sni-proxy` plus
+PostgreSQL. Beheer (dienst aanmelden / afnemer-toegang aanvragen) loopt via de `controller`-UI met
+contract grant→sign→accept — géén eigen dienst/afnemer-administratie (zie `docs/ontwerpkeuzes.md`).
 
 OpenFSC-keuzes die wij overnemen (en die FBS-integratie versimpelen):
 
