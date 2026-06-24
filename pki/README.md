@@ -44,6 +44,9 @@ Maak `pki/peers/<peer>/<endpoint>/csr.json` met `serialnumber` = de OIN (wordt P
 
 ## Placeholders
 
-- **OIN's** in `csr.json` zijn dummy (`...0001`–`...0003`). `TODO(#722)`: echte test-OIN's.
+- **OIN's** in `csr.json` zijn dummy (`...0001`–`...0003`). `TODO(#722)`: echte test-OIN's invullen op
+  **twee plekken tegelijk** (OIN↔PeerID is 1:1, lockstep bijhouden om drift te voorkomen):
+  1. `pki/peers/<peer>/<endpoint>/csr.json` → veld `serialnumber`
+  2. `peers/<peer>/values.example.yaml` → veld `peer.oin`
 - **Hostnames** zijn placeholder (`*.fsc-test.local`). `TODO(#723)`: echte ZAD inway-SNI /
   manager-adressen; daarna `./pki/issue.sh -f`.
