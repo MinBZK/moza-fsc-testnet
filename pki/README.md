@@ -1,16 +1,49 @@
 # PKI — test-CA als trust-anchor
 
 Gesloten testnet → **eigen test-CA**, geen PKIoverheid (zie `docs/ontwerpkeuzes.md`).
+Spiegelt OpenFSC's cfssl-tooling (`open-fsc/pki/`). Ontwerp:
+`docs/superpowers/specs/2026-06-24-test-pki-design.md`.
 
-OpenFSC levert hiervoor `ca` + `ca-certportal`. Per peer is een cert nodig waarin:
+> **Niet voor productie.** Sleutels/certs horen **niet** in deze repo: `pki/ca/` en `pki/out/`
+> zijn gitignored. Alleen scripts, CA-configs en `csr.json`-templates staan in git.
 
-- `subject.serialNumber` = de **OIN** van de peer (wordt de Peer ID);
-- `subject.organization` = de **naam** van de peer.
+## Benodigdheden
+
+- `cfssl` + `cfssljson` (CloudFlare PKI-toolkit), `openssl`.
+
+```bash
+go install github.com/cloudflare/cfssl/cmd/cfssl@latest
+go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
+```
+
+## Gebruik
+
+```bash
+./pki/init-ca.sh          # 1. root + intermediate test-CA  -> pki/ca/
+./pki/issue.sh -f         # 2. per-peer endpoint-certs       -> pki/out/<peer>/<endpoint>/
+./pki/gen-crl.sh          # 3. lege CRL                       -> pki/ca/intermediate.crl
+./pki/fix-permissions.sh  # 4. world-rw van keys halen
+./pki/verify.sh           # 5. acceptatie-asserts (exit 0 = groen)
+```
+
+`pki/ca/root.pem` = trust-anchor voor de group rules (`group/group-config.example.yaml`).
+
+## Een peer toevoegen
+
+Maak `pki/peers/<peer>/<endpoint>/csr.json` met `serialnumber` = de OIN (wordt Peer ID),
+`names[].O` = peer-naam, `CN`/`hosts` = de endpoint-hostname. Draai `./pki/issue.sh -f`.
 
 ## Te leveren (#722)
 
-- [ ] Genereer-script voor test-CA (root) + per-peer leaf-certs (`generate-certs.sh`).
-- [ ] Secrets via ZAD `attachments` (encrypted, read-only mount) — **nooit** in image bakken.
-- [ ] CRL-distributie inrichten (OpenFSC heeft CRL-support).
+- [x] Genereer-script test-CA (root + intermediate) — `init-ca.sh`.
+- [x] Per-peer leaf-certs via script — `issue.sh`.
+- [x] CRL-distributie — `gen-crl.sh` (lege CRL, intermediate als issuer).
+- [ ] Secrets via ZAD `attachments` (encrypted, read-only mount) — **geblokkeerd**, wacht op
+      ZAD cert-upload-feature. `TODO(#723)`: mount `pki/ca/root.pem`, `pki/ca/intermediate.crl`
+      en per-peer `out/<peer>/<endpoint>/{cert,key}.pem`. Nooit in image bakken.
 
-> Sleutels/certs horen **niet** in deze repo. Alleen scripts en `.example`-templates.
+## Placeholders
+
+- **OIN's** in `csr.json` zijn dummy (`...0001`–`...0003`). `TODO(#722)`: echte test-OIN's.
+- **Hostnames** zijn placeholder (`*.fsc-test.local`). `TODO(#723)`: echte ZAD inway-SNI /
+  manager-adressen; daarna `./pki/issue.sh -f`.
