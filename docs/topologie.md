@@ -24,6 +24,9 @@
 - FBS-integratie is **config-only**: de `Magazijnregister`-URL (`magazijnen."<OIN>".url`) wijst
   naar de lokale outway i.p.v. direct op het magazijn (#726).
 - Management-pad (8443): managers wisselen contracten/peers/tokens uit.
+- Beheer-pad (HTTP-UI): elke peer draait een **controller** (dienst publiceren, afnemer-toegang
+  aanvragen, contracten beheren); de directory host **directory-ui** (gedeelde dienstencatalogus).
+  Via edge-Route, geen 8443-mesh — zie `docs/ontwerpkeuzes.md` (#723/#727).
 
 ## Schaal-aandachtspunt (8443-IP-schaarste, #720/#723)
 
