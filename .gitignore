@@ -13,3 +13,4 @@ group/group-config.yaml
 .idea/
 *.iml
 .vscode/
+.superpowers/

@@ -43,7 +43,7 @@ OpenFSC-keuzes die wij overnemen (en die FBS-integratie versimpelen):
   group zet een eigen test-CA als anchor (zoals OpenFSC lokaal). PKIoverheid is alleen nodig bij
   aansluiting op de productie-overheidsfederatie — buiten scope. (Besluit #720.)
 - **Topologie:** één group + één directory + N peers. Elke peer = eigen ZAD-project
-  (project-isolatie). FBS-peers (magazijn-org = provider/inway, uitvraag-org = consumer/outway)
+  (project-isolatie). FBS-peers (magazijn-a/-b = providers/inway, uitvraag-org = consumer/outway)
   eerst; profiel-org later (#730).
 - **Deploymodel (zie `docs/zad-projecten.md`):** peer-templates leven hier (source-of-truth),
   maar **deployen gebeurt bij de app** (inway/outway co-located met de app voor intra-project

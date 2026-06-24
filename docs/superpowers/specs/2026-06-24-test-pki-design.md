@@ -2,6 +2,12 @@
 
 > Status: vastgesteld in brainstorm 2026-06-24. Branch: `feature/test-pki-722` (op PR #4).
 > Issue: [MinBZK/MijnOverheidZakelijk#722](https://github.com/MinBZK/MijnOverheidZakelijk/issues/722).
+>
+> **Update (na FBS-OIN-inventarisatie):** de `magazijn-org`-peer is gesplitst in twee
+> provider-peers `magazijn-a`/`magazijn-b` met echte OIN's uit moza-poc-fbs-berichtenbox;
+> `uitvraag-org` en `directory` kregen synthetische test-OIN's. Actuele toewijzing:
+> `pki/README.md` → "Peers & OIN's". De `magazijn-org`/dummy-OIN-voorbeelden hieronder tonen
+> het oorspronkelijke skelet.
 
 ## 1. Doel & scope
 

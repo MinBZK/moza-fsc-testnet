@@ -5,7 +5,7 @@
 # manager óók de OpenFSC `directory`-component draait (group-anker). De directory
 # is in OpenFSC een eigen chart/component; de andere peers registreren zich hier.
 peer:
-  oin: "00000000000000000000"        # TODO(#722): geldige test-OIN -> wordt Peer ID
+  oin: "00000000000000000010"        # synthetische test-OIN (directory = infra-peer, geen org-OIN)
   name: "directory"                          # -> subject.organization in het cert
 manager:
   managementAddress: "directory-manager:8443"
