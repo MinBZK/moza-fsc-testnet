@@ -4,6 +4,8 @@
 *.crt
 *.crl
 secrets/
+pki/ca/
+pki/out/
 peers/**/values.yaml
 group/group-config.yaml
 
