@@ -47,7 +47,7 @@ root CA (RSA-4096, key offline-houdbaar)
        ├─ magazijn-org : manager-cert + inway-cert    (serialNumber=OIN_magazijn, O="magazijn-org")
        ├─ uitvraag-org : manager-cert + outway-cert   (serialNumber=OIN_uitvraag,  O="uitvraag-org")
        └─ directory    : directory-cert + manager-cert (serialNumber=OIN_directory, O="directory")
-trust_anchor (group rules) = root.pem      CRL = root.crl
+trust_anchor (group rules) = root.pem      CRL = intermediate.crl
 ```
 
 Per peer delen alle endpoints dezelfde `serialNumber` (OIN) en `O` (naam); CN/SAN verschilt per
@@ -70,11 +70,11 @@ pki/
   intermediate.json                 intermediate-CA CSR
   init-ca.sh                        genkey -initca root -> intermediate -> sign     (← open-fsc/pki/init.sh)
   issue.sh                          per-endpoint cert uit csr.json                  (← open-fsc/pki/issue.sh)
-  gen-crl.sh                        lege CRL (cfssl gencrl) -> ca/root.crl
+  gen-crl.sh                        lege CRL (cfssl gencrl) -> ca/intermediate.crl
   fix-permissions.sh                chmod o-rw op *key.pem                          (← open-fsc/pki/fix-permissions.sh)
   verify.sh                         openssl-asserts (zie §7)
   peers/<peer>/<endpoint>/csr.json  committed template (CN/OIN/O/hosts — géén secret)
-  ca/                               GITIGNORED: root+intermediate keys/pems, root.crl
+  ca/                               GITIGNORED: root+intermediate keys/pems, intermediate.crl
   out/<peer>/<endpoint>/            GITIGNORED: key.pem + cert.pem(chain)
   README.md                         run-instructies + cfssl-install + checklist
 ```
@@ -96,7 +96,7 @@ Endpoints per peer:
 1. init-ca.sh          -> ca/root.{key,pem} + ca/intermediate.{key,pem}; root.pem = trust-anchor
 2. issue.sh [-f]       -> loop peers/*/*/csr.json -> cfssl gencert -profile peer
                           -> out/<peer>/<endpoint>/{key.pem, cert.pem(+intermediate aangehecht)}
-3. gen-crl.sh          -> ca/root.crl (leeg, getekend)
+3. gen-crl.sh          -> ca/intermediate.crl (leeg, getekend)
 4. fix-permissions.sh  -> chmod o-rw *key.pem
 5. operator -> ZAD attachments (encrypted, read-only mount)        [GEBLOKKEERD: #723-dep]
 ```
@@ -130,7 +130,7 @@ Placeholders nu, definitief later:
 ```bash
 openssl verify -CAfile pki/ca/root.pem pki/out/<peer>/<endpoint>/cert.pem   # keten geldig
 openssl x509  -in pki/out/<peer>/<endpoint>/cert.pem -noout -subject        # serialNumber=OIN, O=naam
-openssl crl   -in pki/ca/root.crl -noout -text                              # CRL parseert
+openssl crl   -in pki/ca/intermediate.crl -noout -text                      # CRL parseert
 git status --porcelain pki/ | grep -E '\.(pem|key|crt|crl)$' && exit 1      # géén secrets gestaged
 ```
 
@@ -144,7 +144,7 @@ Acceptatiecriteria-mapping (#722):
 
 ## 8. Wiring naar bestaande config
 
-- `group/group-config.example.yaml`: `trust_anchor.ca_cert` → `…/root.pem`, `crl` → `…/root.crl`
+- `group/group-config.example.yaml`: `trust_anchor.ca_cert` → `…/root.pem`, `crl` → `…/intermediate.crl`
   (paden al aanwezig; bevestigen).
 - `pki/README.md`: checklist afvinken, run-volgorde, cfssl-install (`go install
   github.com/cloudflare/cfssl/cmd/...@latest` of via mise).
