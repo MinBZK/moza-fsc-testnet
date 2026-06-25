@@ -111,9 +111,9 @@ OpenFSC draait migraties in zijn charts via een init-container met args
 - **`.github/workflows/deploy.yml`**: `directory`-job die `zad-actions/deploy`
   aanroept met `components`-JSON (images gepind). Blijft `workflow_dispatch`.
   - Inputs (gegrond tegen `RijksICTGilde/zad-actions` `deploy/action.yml`):
-    `api-key` ← secret **`ZAD_API_KEY`** (project-gescoopt, ZAD geeft 'm uit bij
-    projectaanmaak); `project-id` ← variable **`vars.ZAD_PROJECT_ID`**;
-    `components` ← de directory-componentlijst.
+    `api-key` ← secret **`ZAD_API_KEY_DIRECTORY`** (project-gescoopt, ZAD geeft 'm
+    uit bij projectaanmaak); `project-id` ← **`ZAD_PROJECT_ID_DIRECTORY`**;
+    `components` ← de directory-componentlijst. Beide secrets bestaan al in de repo.
   - SHA-pinnen conform repo-conventie.
 
 ### ZAD-projecten die de mens moet aanmaken
