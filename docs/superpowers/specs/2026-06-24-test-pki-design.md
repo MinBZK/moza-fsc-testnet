@@ -26,8 +26,13 @@ reference implementation (`open-fsc/pki/` + `open-fsc/ca/`).
 
 **Out of scope:**
 
-- **Internal-component PKI** (inter-component mTLS manager↔inway↔outway↔txlog binnen één peer)
-  → hoort bij de deploy, #723.
+- ~~**Internal-component PKI** (inter-component mTLS manager↔inway↔outway↔txlog binnen één peer)
+  → hoort bij de deploy, #723.~~ **Herzien (2026-06-25):** tijdens #723-grounding bleek de
+  manager-cert-set onvolledig (`moza-fsc-testnet#5`-comment) — een werkende manager wil náást de
+  group-identity óók internal-certs (`TLS_CERT`, `TLS_INTERNAL_UNAUTHENTICATED_*`). Omdat dit
+  cert-*generatie* is (≠ deploy), is het alsnog in #722 belegd: per-peer self-signed internal-CA +
+  internal-leaf per endpoint (`pki/internal/<peer>/…`). #723 *consumeert* ze. Zie `pki/README.md`
+  → "Twee cert-ketens per endpoint".
 - **Daadwerkelijk mounten/uploaden** van certs via ZAD `attachments` → geblokkeerd door de
   openstaande ZAD cert-upload-feature (zie `CLAUDE.md` → "Openstaande ZAD-dependency"). #722
   stopt bij *genereren + mountcontract documenteren*.
@@ -43,7 +48,8 @@ reference implementation (`open-fsc/pki/` + `open-fsc/ca/`).
   - Tooling = **OpenFSC cfssl-pattern** (`init.sh` / `issue.sh` + json-profielen), niet een eigen
     openssl-script en niet step-ca.
   - CA-keten = **root → intermediate → leaf** (spiegelt OpenFSC; root-key kan offline).
-  - Cert-scope = **alleen groep/external PKI** (internal-component PKI → #723).
+  - Cert-scope = groep/external PKI **+ per-peer internal-component PKI** (herzien 2026-06-25,
+    zie "Out of scope").
 
 ## 3. Architectuur
 
@@ -169,5 +175,6 @@ Acceptatiecriteria-mapping (#722):
 
 - Geen renewal-automatisering / cert-manager (statische test-certs).
 - Geen step-ca/cfssl-serve runtime (offline genereren volstaat).
-- Geen internal-component PKI (#723).
+- Internal-component PKI = **wél** (per-peer internal-CA, herzien 2026-06-25 — zie §1).
+  Géén intermediate voor de internal-keten (één self-signed root per peer volstaat).
 - Geen OCSP (CRL volstaat voor de PoC).

@@ -6,6 +6,7 @@
 secrets/
 pki/ca/
 pki/out/
+pki/internal/
 peers/**/values.yaml
 group/group-config.yaml
 
