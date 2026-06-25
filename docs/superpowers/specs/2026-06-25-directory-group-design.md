@@ -159,6 +159,12 @@ verschijnt; exit 0 = groen. (`open-fsc/manager/ports/int/rest/list_peers.go`.)
     Beide secrets bestaan al in de repo.
   - Manager-mesh op **:443 via OpenShift-`passthrough`-Route** (geen MetalLB, §2).
   - SHA-pinnen conform repo-conventie.
+- **DB-duurzaamheid = ZAD-vereiste** (scope-aanvulling #723-comment 2026-06-24).
+  De directory- en manager-PostgreSQL zijn **system-of-record** (geen eigen
+  dienst/afnemer-administratie meer — `docs/ontwerpkeuzes.md`). Daarom moet de
+  directory-DB op ZAD **persistent + gebackupt** zijn en **uitgezonderd van
+  `clone-from: test`** (previews mogen 'm niet klonen/legen). Vastleggen in
+  `docs/zad-projecten.md` + beleggen bij ZAD-beheer als deploy-vereiste.
 
 ### ZAD-projecten die de mens moet aanmaken
 

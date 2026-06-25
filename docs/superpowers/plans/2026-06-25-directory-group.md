@@ -238,6 +238,11 @@ git commit -m "feat(directory): env-template directory-mode manager (echte OpenF
 - Consumes: secret `ZAD_API_KEY_DIRECTORY`, var `ZAD_PROJECT_ID_DIRECTORY`, wrapper-image (Taak 2).
 - Produces: een `workflow_dispatch`-job die `zad-actions/deploy` aanroept met de directory-componentlijst.
 
+**DB-duurzaamheid (#723-comment 2026-06-24):** `directory-postgres` is system-of-record →
+op ZAD **persistent + gebackupt, niet `clone-from: test`-cloned**. Niet via deze workflow
+afdwingbaar (ZAD-Operations-Manager-instelling) → beleggen bij ZAD-beheer; gedocumenteerd
+in `docs/zad-projecten.md` + `docs/ontwerpkeuzes.md`.
+
 - [ ] **Stap 1: Vervang de placeholder-job door de directory-job**
 
 ```yaml

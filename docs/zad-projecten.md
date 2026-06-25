@@ -66,6 +66,10 @@ Gevolgen:
    env-vars te configureren.
 3. **Env wordt éénmalig per component gezet in Operations Manager** — de
    deploy-action draagt geen env. Previews erven via `clone-from: test`.
+   **Uitzondering (#723):** de directory- en manager-PostgreSQL zijn
+   *system-of-record* (gepubliceerde diensten, contracten/grants) → **persistent +
+   gebackupt, niet preview-cloned/ephemeral**. De `clone-from: test`-erfenis geldt
+   dus niet voor die DB's; beleggen bij ZAD-beheer (zie `docs/ontwerpkeuzes.md`).
 4. **Certs worden gemount via ZAD `attachments`** (encrypted, read-only); de
    `TLS_*`-env-vars wijzen naar die paden. Secrets staan nooit in deze repo.
 
