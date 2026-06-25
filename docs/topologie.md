@@ -32,3 +32,12 @@
 
 Houd het aantal 8443-endpoints klein. Voorkeur: één manager per project/peer; deel publieke IP's
 waar mogelijk. 443 schaalt wél via gedeeld router-IP + SNI.
+
+**Update (#723): de manager hóeft niet op 8443/MetalLB.** De mesh authenticeert op OIN
+(`Subject.SerialNumber`), niet op hostname (`InsecureSkipVerify` + `VerifyConnStatePeerID`), dus hij
+kan via de gedeelde router op **443 met `passthrough` + SNI** — net als de inway, zonder eigen IP.
+Bewezen met een lokale plug-and-play compose (HAProxy `mode tcp`): peers registreren zich bij de
+directory met `manager_address` op `:443`. Zie [`spikes/manager-443-sni.md`](spikes/manager-443-sni.md).
+Gevolg voor ZAD: de SNI-hostname hoeft **niet** in de cert-SAN — alleen een geldige OIN + keten naar
+de trust-anchor. De cluster-Route op ODCN (i.p.v. de lokale sni-proxy) valt samen met de
+directory/group-deploy zodra ZAD `attachments` (cert-mount) beschikbaar is.

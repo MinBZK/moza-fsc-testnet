@@ -1,0 +1,168 @@
+# Spike #723 — manager-mesh op poort 443 via SNI-passthrough (HAProxy).
+#
+# Bewijst: managers authenticeren op OIN (niet hostname), dus de mesh werkt op
+# 443 achter een SNI-passthrough-router — geen 8443/MetalLB-IP nodig.
+#
+# Topologie: directory-manager + 2 peer-managers + 1 postgres + HAProxy-router.
+# Alle mesh-endpoints worden geadverteerd op :443. HAProxy doet `mode tcp`
+# (passthrough, termineert NIET) en routeert puur op SNI — net als de
+# OpenShift-router op ODCN.
+#
+# Verifieer ZONDER UI/contract: de peers dialen de directory op :443 bij
+# startup (announce + sync). Groene logs = mesh werkt op 443.
+#
+# !!! Door de auteur NIET gedraaid (geen docker in de bouw-omgeving). Zie
+#     README.md → "Troubleshooting / risk-toggles" als iets niet boot.
+
+x-manager-image: &manager-image docker.io/federatedserviceconnectivity/manager:${IMAGE_TAG:-v1.43.7}
+
+# Env die elke manager deelt.
+x-manager-common-env: &manager-common-env
+  LOG_TYPE: local
+  LOG_LEVEL: debug
+  GROUP_ID: fsc-local
+  DIRECTORY_PEER_ID: "12345678901234567899"
+  # Mesh-doeladres van de directory = :443 (de spike). HAProxy routeert op SNI.
+  DIRECTORY_MANAGER_ADDRESS: https://directory.shared.open-fsc.localhost:443
+  AUDITLOG_TYPE: stdout
+  DISABLE_CRL_CHECKS: "true"            # lokaal: geen CRL-distributiepunt
+  TLS_GROUP_ROOT_CERT: /pki/external/ca/root.pem
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    volumes:
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # --- HAProxy: SNI-passthrough router op 443 (≙ OpenShift-router) -----------
+  router:
+    image: haproxy:2.9
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      default:
+        # Alle mesh-hostnames wijzen naar de router; SNI bepaalt de backend.
+        aliases:
+          - directory.shared.open-fsc.localhost
+          - manager.organization-a.open-fsc.localhost
+          - manager.organization-b.open-fsc.localhost
+    depends_on:
+      manager-directory: { condition: service_started }
+      manager-org-a: { condition: service_started }
+      manager-org-b: { condition: service_started }
+
+  # --- DB-migraties (one-shot; ZAD-blocker lokaal omzeild via args) ----------
+  migrate-directory:
+    image: *manager-image
+    command: ["/usr/local/bin/manager", "migrate", "up", "--postgres-dsn", "postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: on-failure
+  migrate-org-a:
+    image: *manager-image
+    command: ["/usr/local/bin/manager", "migrate", "up", "--postgres-dsn", "postgres://postgres:postgres@postgres:5432/fsc_org_a?sslmode=disable"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: on-failure
+  migrate-org-b:
+    image: *manager-image
+    command: ["/usr/local/bin/manager", "migrate", "up", "--postgres-dsn", "postgres://postgres:postgres@postgres:5432/fsc_org_b?sslmode=disable"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: on-failure
+
+  # --- Directory-manager (adverteert zichzelf op :443) -----------------------
+  manager-directory:
+    image: *manager-image
+    command: ["/usr/local/bin/manager", "serve"]
+    environment:
+      <<: *manager-common-env
+      SELF_ADDRESS: https://directory.shared.open-fsc.localhost:443
+      AUTO_SIGN_GRANTS: servicePublication,delegatedServicePublication
+      LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:7501
+      LISTEN_ADDRESS_INTERNAL: 0.0.0.0:7500
+      LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:7503
+      MONITORING_ADDRESS: 0.0.0.0:7507
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable
+      TLS_GROUP_CERT: &dir-ext /pki/external/certs/directory/directory.shared.open-fsc.localhost/cert.pem
+      TLS_GROUP_KEY: &dir-ext-key /pki/external/certs/directory/directory.shared.open-fsc.localhost/key.pem
+      TLS_GROUP_TOKEN_CERT: *dir-ext
+      TLS_GROUP_TOKEN_KEY: *dir-ext-key
+      TLS_GROUP_CONTRACT_CERT: *dir-ext
+      TLS_GROUP_CONTRACT_KEY: *dir-ext-key
+      TLS_ROOT_CERT: /pki/internal/directory/ca/root.pem
+      TLS_CERT: &dir-int /pki/internal/directory/certs/manager/cert.pem
+      TLS_KEY: &dir-int-key /pki/internal/directory/certs/manager/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: /pki/internal/directory/ca/root.pem
+      TLS_INTERNAL_UNAUTHENTICATED_CERT: *dir-int
+      TLS_INTERNAL_UNAUTHENTICATED_KEY: *dir-int-key
+    volumes: [ "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro" ]
+    depends_on: { migrate-directory: { condition: service_completed_successfully } }
+
+  # --- Peer org-a (provider) — adverteert mesh op :443 -----------------------
+  manager-org-a:
+    image: *manager-image
+    command: ["/usr/local/bin/manager", "serve"]
+    environment:
+      <<: *manager-common-env
+      SELF_ADDRESS: https://manager.organization-a.open-fsc.localhost:443
+      # Presence-check (serve.go:236). Wordt pas gedialed bij een echte
+      # data-transactie (inway/outway) — niet bij announce/sync. Placeholder
+      # volstaat voor de mesh-proof; voor echte txlog: zie README toggle 3.
+      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:7614
+      LISTEN_ADDRESS_INTERNAL: 0.0.0.0:7613
+      LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:7616
+      MONITORING_ADDRESS: 0.0.0.0:7618
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_org_a?sslmode=disable
+      TLS_GROUP_CERT: &a-ext /pki/external/certs/organization-a/manager.organization-a.open-fsc.localhost/cert.pem
+      TLS_GROUP_KEY: &a-ext-key /pki/external/certs/organization-a/manager.organization-a.open-fsc.localhost/key.pem
+      TLS_GROUP_TOKEN_CERT: *a-ext
+      TLS_GROUP_TOKEN_KEY: *a-ext-key
+      TLS_GROUP_CONTRACT_CERT: *a-ext
+      TLS_GROUP_CONTRACT_KEY: *a-ext-key
+      TLS_ROOT_CERT: /pki/internal/organization-a/ca/root.pem
+      TLS_CERT: &a-int /pki/internal/organization-a/certs/manager/cert.pem
+      TLS_KEY: &a-int-key /pki/internal/organization-a/certs/manager/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: /pki/internal/organization-a/ca/root.pem
+      TLS_INTERNAL_UNAUTHENTICATED_CERT: *a-int
+      TLS_INTERNAL_UNAUTHENTICATED_KEY: *a-int-key
+    volumes: [ "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro" ]
+    depends_on: { migrate-org-a: { condition: service_completed_successfully } }
+
+  # --- Peer org-b (consumer) — adverteert mesh op :443 -----------------------
+  manager-org-b:
+    image: *manager-image
+    command: ["/usr/local/bin/manager", "serve"]
+    environment:
+      <<: *manager-common-env
+      SELF_ADDRESS: https://manager.organization-b.open-fsc.localhost:443
+      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611   # zie org-a / README toggle 3
+      LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:7708
+      LISTEN_ADDRESS_INTERNAL: 0.0.0.0:7707
+      LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:7709
+      MONITORING_ADDRESS: 0.0.0.0:7712
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_org_b?sslmode=disable
+      TLS_GROUP_CERT: &b-ext /pki/external/certs/organization-b/manager.organization-b.open-fsc.localhost/cert.pem
+      TLS_GROUP_KEY: &b-ext-key /pki/external/certs/organization-b/manager.organization-b.open-fsc.localhost/key.pem
+      TLS_GROUP_TOKEN_CERT: *b-ext
+      TLS_GROUP_TOKEN_KEY: *b-ext-key
+      TLS_GROUP_CONTRACT_CERT: *b-ext
+      TLS_GROUP_CONTRACT_KEY: *b-ext-key
+      TLS_ROOT_CERT: /pki/internal/organization-b/ca/root.pem
+      TLS_CERT: &b-int /pki/internal/organization-b/certs/manager/cert.pem
+      TLS_KEY: &b-int-key /pki/internal/organization-b/certs/manager/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: /pki/internal/organization-b/ca/root.pem
+      TLS_INTERNAL_UNAUTHENTICATED_CERT: *b-int
+      TLS_INTERNAL_UNAUTHENTICATED_KEY: *b-int-key
+    volumes: [ "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro" ]
+    depends_on: { migrate-org-b: { condition: service_completed_successfully } }
+
+networks:
+  default:
+    driver: bridge
