@@ -10,6 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     # NB: deze deploy slaagt pas zodra ZAD `attachments` (cert-mount) beschikbaar
     # is; tot die tijd is dit het bron-artefact, niet een groene run (#723).
+    # TODO(#729): bouw + push de wrapper-image (deploy/zad/manager-migrate) naar
+    #   ghcr.io/minbzk/moza-fsc-testnet/manager-migrate in een eigen CI-job; nu
+    #   bestaat 'm alleen lokaal (docker compose build).
+    # TODO(#729): bootstrap de `fsc_directory`-database op directory-postgres. De
+    #   wrapper draait alleen `migrate up` (geen CREATE DATABASE); lokaal doet
+    #   postgres-init.sql dat. Zet op ZAD POSTGRES_DB=fsc_directory of een init-stap.
     steps:
       - name: Deploy directory (group-anker) naar ZAD
         # Versie-gepind (toegestaan); TODO(#729): naar SHA-pin voor Scorecard

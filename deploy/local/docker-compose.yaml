@@ -47,6 +47,7 @@ services:
       args:
         IMAGE_TAG: ${IMAGE_TAG:-v1.43.7}
     image: manager-migrate:${IMAGE_TAG:-v1.43.7}
+    restart: on-failure   # migreert bij boot; herstart bij transiënte DB-race (parity met siblings)
     # Draai als de host-UID/GID zodat de pod de 0600-privékeys leest (matching owner)
     # i.p.v. ze open te zetten. HOST_UID/HOST_GID uit .env (zie README, stap 3).
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
