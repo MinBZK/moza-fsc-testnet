@@ -6,8 +6,9 @@ set -uo pipefail
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 fail=0
 
-# 1. Ketengeldigheid per leaf
+# 1. Ketengeldigheid per group-leaf
 for cert in "${BASE_DIR}"/out/*/*/cert.pem; do
+  [ -e "${cert}" ] || { echo "FAIL group-certs ontbreken (issue.sh gedraaid?)"; fail=1; break; }
   if openssl verify -CAfile "${BASE_DIR}/ca/root.pem" \
        -untrusted "${BASE_DIR}/ca/intermediate.pem" "${cert}" >/dev/null 2>&1; then
     echo "OK  keten: ${cert#"${BASE_DIR}/"}"
@@ -16,8 +17,9 @@ for cert in "${BASE_DIR}"/out/*/*/cert.pem; do
   fi
 done
 
-# 2. serialNumber (OIN) aanwezig in subject
-for cert in "${BASE_DIR}"/out/*/*/cert.pem; do
+# 2. serialNumber (OIN) aanwezig in subject — group én internal (zelfde csr.json)
+for cert in "${BASE_DIR}"/out/*/*/cert.pem "${BASE_DIR}"/internal/*/*/cert.pem; do
+  [ -e "${cert}" ] || continue
   if openssl x509 -in "${cert}" -noout -subject -nameopt sep_multiline | grep -q 'serialNumber'; then
     echo "OK  OIN:   ${cert#"${BASE_DIR}/"}"
   else
@@ -35,6 +37,33 @@ for cert in "${BASE_DIR}"/internal/*/*/cert.pem; do
   else
     echo "FAIL internal-keten: ${cert#"${BASE_DIR}/"}"; fail=1
   fi
+done
+
+# 3b. ISOLATIE: internal-leaf mag NIET tegen de group-trust-anchor valideren,
+#     en peer-A's leaf NIET tegen peer-B's internal-root. Slagen = boundary lek = FAIL.
+for cert in "${BASE_DIR}"/internal/*/*/cert.pem; do
+  [ -e "${cert}" ] || break
+  rel="${cert#"${BASE_DIR}/internal/"}"
+  peer="$(basename "$(dirname "$(dirname "${cert}")")")"
+  if openssl verify -CAfile "${BASE_DIR}/ca/root.pem" \
+       -untrusted "${BASE_DIR}/ca/intermediate.pem" "${cert}" >/dev/null 2>&1; then
+    echo "FAIL isolatie: internal-leaf accepteert group-anchor: ${rel}"; fail=1
+  fi
+  for other_root in "${BASE_DIR}"/internal/*/ca/root.pem; do
+    other_peer="$(basename "$(dirname "$(dirname "${other_root}")")")"
+    [ "${other_peer}" = "${peer}" ] && continue
+    if openssl verify -CAfile "${other_root}" "${cert}" >/dev/null 2>&1; then
+      echo "FAIL isolatie: ${peer}-leaf accepteert ${other_peer}-internal-root: ${rel}"; fail=1
+    fi
+  done
+done
+[ "${fail}" -eq 0 ] && echo "OK  isolatie group<->internal + cross-peer"
+
+# 3c. PARITEIT: elk group-endpoint heeft een internal-tegenhanger (en omgekeerd)
+for g in "${BASE_DIR}"/out/*/*/cert.pem; do
+  [ -e "${g}" ] || break
+  rel="${g#"${BASE_DIR}/out/"}"
+  [ -f "${BASE_DIR}/internal/${rel}" ] || { echo "FAIL pariteit: geen internal-cert voor ${rel%/cert.pem}"; fail=1; }
 done
 
 # 4. CRL parseert
