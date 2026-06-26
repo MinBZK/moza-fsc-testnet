@@ -83,6 +83,54 @@ services:
       migrate-directory:
         condition: service_completed_successfully
 
+  migrate-magazijn-a:
+    image: *manager-image
+    command:
+      - /usr/local/bin/manager
+      - migrate
+      - up
+      - --postgres-dsn
+      - postgres://postgres:postgres@postgres:5432/fsc_magazijn_a?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  manager-magazijn-a:
+    image: *manager-image
+    command:
+      - /usr/local/bin/manager
+      - serve
+    environment:
+      <<: *manager-common-env
+      SELF_ADDRESS: https://magazijn-a.fsc-test.local:443
+      # presence-check (serve.go); niet gedialed bij announce
+      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
+      LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
+      LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
+      MONITORING_ADDRESS: 0.0.0.0:8080
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_magazijn_a?sslmode=disable
+      TLS_GROUP_CERT: &maga-grp /pki/out/magazijn-a/manager/cert.pem
+      TLS_GROUP_KEY: &maga-grp-key /pki/out/magazijn-a/manager/key.pem
+      TLS_GROUP_TOKEN_CERT: *maga-grp
+      TLS_GROUP_TOKEN_KEY: *maga-grp-key
+      TLS_GROUP_CONTRACT_CERT: *maga-grp
+      TLS_GROUP_CONTRACT_KEY: *maga-grp-key
+      TLS_ROOT_CERT: &maga-introot /pki/internal/magazijn-a/ca/root.pem
+      TLS_CERT: &maga-int /pki/internal/magazijn-a/manager/cert.pem
+      TLS_KEY: &maga-int-key /pki/internal/magazijn-a/manager/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: *maga-introot
+      TLS_INTERNAL_UNAUTHENTICATED_CERT: *maga-int
+      TLS_INTERNAL_UNAUTHENTICATED_KEY: *maga-int-key
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    depends_on:
+      migrate-magazijn-a:
+        condition: service_completed_successfully
+      manager-directory:
+        condition: service_started
+
 networks:
   default:
     driver: bridge
