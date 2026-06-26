@@ -28,11 +28,13 @@ git switch feature/directory-group-723
 ./pki/init-ca.sh          # group root + intermediate -> pki/ca/
 ./pki/issue.sh -f         # per peer: group- + internal-certs -> pki/out, pki/internal
 ./pki/gen-crl.sh          # lege CRL -> pki/ca/intermediate.crl
-./pki/fix-permissions.sh  # world-rw van keys halen
+./pki/fix-permissions.sh  # privékeys -> 0600 (owner-only); de pod leest ze via stap 3
 ./pki/verify.sh           # acceptatie-asserts; verwacht: "== ALLE ASSERTS GROEN =="
 
-# 3. Harness-env (PKI_DIR wijst al naar ../../pki).
+# 3. Harness-env. De cert-lezende pods draaien als JOUW UID/GID, zodat ze de
+#    0600-privékeys via de owner-bit lezen (keys blijven dicht).
 cp deploy/local/.env.example deploy/local/.env
+printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> deploy/local/.env
 
 # 4. Start de stack (postgres, SNI-router, directory + magazijn-a, UIs).
 docker compose -f deploy/local/docker-compose.yaml up -d
@@ -57,14 +59,28 @@ Na stap 4 draaien ook:
 
 - **directory-ui** (catalogus): `http://localhost:8080`, geen login. De aangemelde
   magazijn-a-peer is hier zichtbaar.
-- **controller** (beheer-UI met OIDC): `http://localhost:8090`, login via keycloak.
-- **keycloak**: `http://localhost:8081`, admin `keycloak-admin` / `keycloak`
-  (dev-defaults uit de baked image — **niet voor productie**). De
-  `AUTHN_OIDC_CLIENT_SECRET` is eveneens een publieke OpenFSC dev-default.
+- **controller** (beheer-UI): `http://localhost:8090`. Draait lokaal **zonder login**
+  (`AUTHN_TYPE=none`, een door OpenFSC ondersteunde modus). De management — dienst
+  publiceren, toegang aanvragen, contract grant→sign→accept — werkt zonder loginscherm,
+  dus dit volstaat om dienst-koppeling lokaal te testen.
+- **keycloak**: `http://localhost:8081`, admin `keycloak-admin` / `keycloak` (dev-defaults
+  — **niet voor productie**). Alleen nodig voor de optionele OIDC-login hieronder.
 
-> **OIDC-redirect-fallback:** lukt de keycloak-redirect lokaal niet (baked
-> hostnames), zet dan `AUTHN_TYPE=none` op de `controller`-service en herstart;
-> de controller draait dan zonder login.
+### Volledige OIDC-login (later, conform OpenFSC) — TODO
+
+OIDC is enkel de auth-laag vóór de controller; niet nodig om diensten te koppelen.
+Volledig bedraden zoals OpenFSC vergt:
+
+- realm **`organization-a`** + client **`open-fsc-controller-a`** (de keycloak-image bakt
+  deze; **niet** `open-fsc`, wat het plan abusievelijk aannam). De echte waarden staan al
+  in de controller-env (`docker-compose.yaml`).
+- de **issuer-split** oplossen: `KC_HOSTNAME` (browser, `localhost`) vs intern
+  (`keycloak:8080`) met één gedeelde hostnaam + `/etc/hosts` (zoals `open-fsc/.hosts`),
+  anders faalt de OIDC-init met `issuer mismatch`.
+- de **redirect-URI** van de baked client uitbreiden met onze controller-URL (de client
+  kent alleen OpenFSC's eigen `…open-fsc.localhost:3011`).
+
+Zet daarna `AUTHN_TYPE=oidc` op de controller.
 
 ## Troubleshooting
 
@@ -72,6 +88,12 @@ Na stap 4 draaien ook:
   `./pki/issue.sh -f` opnieuw.
 - **Container kan cert niet vinden** → controleer dat `pki/out/<peer>/<endpoint>/`
   en `pki/internal/<peer>/…` bestaan; paden moeten matchen met de compose-env.
+- **`permission denied` op `key.pem` bij boot (manager fatal)** → `HOST_UID`/`HOST_GID`
+  in `deploy/local/.env` matchen niet met de eigenaar van de keys. Zet ze met
+  `printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> deploy/local/.env` en
+  `docker compose -f deploy/local/docker-compose.yaml up -d --force-recreate`.
+- **`WARN invalid internal PKI key permissions`** → de keys staan te open. Met de
+  UID-match + `0600` blijft deze WARN weg; hij is hoe dan ook niet-fataal.
 - **Poort bezet** (443, 8080, 8081, 8090) → stop de conflicterende dienst of pas de
   `ports`/`bind` in `docker-compose.yaml` / `haproxy.cfg` aan.
 - **Smoke faalt** → `docker compose -f deploy/local/docker-compose.yaml logs

@@ -14,13 +14,13 @@ elapsed=0
 while [ "$elapsed" -lt "$TIMEOUT" ]; do
   rows=$("${COMPOSE[@]}" exec -T postgres \
     psql -U postgres -d fsc_directory -tA \
-    -c "SELECT peer_id FROM peers.peers;" 2>/dev/null || true)
+    -c "SELECT id FROM peers.peers;" 2>/dev/null || true)
   if printf '%s\n' "$rows" | grep -qx "$MAGA_OIN"; then
     echo "OK: magazijn-a is aangemeld bij de directory."
     echo "Aangemelde peers:"
     "${COMPOSE[@]}" exec -T postgres \
       psql -U postgres -d fsc_directory \
-      -c "SELECT peer_id, name, manager_address FROM peers.peers;"
+      -c "SELECT id, name, manager_address FROM peers.peers;"
     exit 0
   fi
   sleep "$INTERVAL"; elapsed=$((elapsed + INTERVAL))
