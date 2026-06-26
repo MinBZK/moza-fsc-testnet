@@ -1,0 +1,88 @@
+# Lokale harness (#723). Zie deploy/local/README.md voor het cert-contract (#722).
+x-manager-image: &manager-image docker.io/federatedserviceconnectivity/manager:${IMAGE_TAG:-v1.43.7}
+x-manager-common-env: &manager-common-env
+  LOG_TYPE: local
+  LOG_LEVEL: debug
+  GROUP_ID: moza-fbs-test
+  DIRECTORY_PEER_ID: "00000000000000000010"
+  DIRECTORY_MANAGER_ADDRESS: https://directory.fsc-test.local:443
+  AUDITLOG_TYPE: stdout
+  DISABLE_CRL_CHECKS: "true"            # lokaal geen CRL-distributiepunt (zie README)
+  TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  router:
+    image: haproxy:2.9
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      default:
+        aliases:
+          - directory.fsc-test.local
+          - magazijn-a.fsc-test.local
+    depends_on:
+      manager-directory:
+        condition: service_started
+
+  migrate-directory:
+    image: *manager-image
+    command:
+      - /usr/local/bin/manager
+      - migrate
+      - up
+      - --postgres-dsn
+      - postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  manager-directory:
+    image: *manager-image
+    command:
+      - /usr/local/bin/manager
+      - serve
+    environment:
+      <<: *manager-common-env
+      SELF_ADDRESS: https://directory.fsc-test.local:443
+      TX_LOG_API_ADDRESS: ""                 # directory-mode: geen txlog
+      AUTO_SIGN_GRANTS: servicePublication,delegatedServicePublication
+      LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
+      LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
+      LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
+      MONITORING_ADDRESS: 0.0.0.0:8080
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable
+      TLS_GROUP_CERT: &dir-grp /pki/out/directory/directory/cert.pem
+      TLS_GROUP_KEY: &dir-grp-key /pki/out/directory/directory/key.pem
+      TLS_GROUP_TOKEN_CERT: *dir-grp
+      TLS_GROUP_TOKEN_KEY: *dir-grp-key
+      TLS_GROUP_CONTRACT_CERT: *dir-grp
+      TLS_GROUP_CONTRACT_KEY: *dir-grp-key
+      TLS_ROOT_CERT: &dir-introot /pki/internal/directory/ca/root.pem
+      TLS_CERT: &dir-int /pki/internal/directory/directory/cert.pem
+      TLS_KEY: &dir-int-key /pki/internal/directory/directory/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: *dir-introot
+      TLS_INTERNAL_UNAUTHENTICATED_CERT: *dir-int
+      TLS_INTERNAL_UNAUTHENTICATED_KEY: *dir-int-key
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    depends_on:
+      migrate-directory:
+        condition: service_completed_successfully
+
+networks:
+  default:
+    driver: bridge
