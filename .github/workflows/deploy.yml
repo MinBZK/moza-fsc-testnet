@@ -1,16 +1,26 @@
-# ZAD deploy (#729) — skelet. workflow_dispatch zodat het niet auto-draait op de lege repo.
+# ZAD deploy (#723/#729). workflow_dispatch zodat het niet auto-draait.
 name: deploy-fsc-testnet
 on:
   workflow_dispatch:
 
-# Least-privilege: deze placeholder heeft geen token-rechten nodig. TODO(#729):
-# verhoog per job naar het minimum dat zad-actions vereist.
 permissions: {}
 
 jobs:
-  # TODO(#729): per peer + directory een job (geïsoleerde ZAD-projecten), parallel,
-  # SHA-pinned zad-actions, conform het FBS-deploy.yml-patroon.
-  placeholder:
+  directory:
     runs-on: ubuntu-latest
+    # NB: deze deploy slaagt pas zodra ZAD `attachments` (cert-mount) beschikbaar
+    # is; tot die tijd is dit het bron-artefact, niet een groene run (#723).
     steps:
-      - run: echo "TODO(#729) zad-actions deploy directory en peers"
+      - name: Deploy directory (group-anker) naar ZAD
+        # SHA-pin conform repo-conventie; vervang door de gepinde SHA bij merge.
+        uses: RijksICTGilde/zad-actions/deploy@v1
+        with:
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          deployment-name: directory
+          components: >-
+            [
+              {"name":"directory-postgres","image":"postgres:17"},
+              {"name":"directory-manager","image":"ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:v1.43.7"},
+              {"name":"directory-ui","image":"docker.io/federatedserviceconnectivity/directory-ui:v1.43.7"}
+            ]
