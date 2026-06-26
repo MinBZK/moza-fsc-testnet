@@ -63,8 +63,10 @@ Na stap 4 draaien ook:
   (`AUTHN_TYPE=none`, een door OpenFSC ondersteunde modus). De management — dienst
   publiceren, toegang aanvragen, contract grant→sign→accept — werkt zonder loginscherm,
   dus dit volstaat om dienst-koppeling lokaal te testen.
-- **keycloak**: `http://localhost:8081`, admin `keycloak-admin` / `keycloak` (dev-defaults
-  — **niet voor productie**). Alleen nodig voor de optionele OIDC-login hieronder.
+- **keycloak**: standaard **uit** (achter een compose-profile). Alleen nodig voor de
+  optionele OIDC-login hieronder; start met `docker compose --profile oidc up -d`. Dan op
+  `http://localhost:8081`, admin `keycloak-admin` / `keycloak` (dev-defaults — **niet voor
+  productie**).
 
 ### Volledige OIDC-login (later, conform OpenFSC) — TODO
 
@@ -80,7 +82,8 @@ Volledig bedraden zoals OpenFSC vergt:
 - de **redirect-URI** van de baked client uitbreiden met onze controller-URL (de client
   kent alleen OpenFSC's eigen `…open-fsc.localhost:3011`).
 
-Zet daarna `AUTHN_TYPE=oidc` op de controller.
+Zet daarna `AUTHN_TYPE=oidc` op de controller en start keycloak mee:
+`docker compose --profile oidc up -d`.
 
 ## Troubleshooting
 
@@ -98,6 +101,11 @@ Zet daarna `AUTHN_TYPE=oidc` op de controller.
   `ports`/`bind` in `docker-compose.yaml` / `haproxy.cfg` aan.
 - **Smoke faalt** → `docker compose -f deploy/local/docker-compose.yaml logs
   manager-directory manager-magazijn-a` voor de mesh-logs.
+- **`migrate-*` hangt / `database "…" does not exist`** → `postgres-init.sql` draait
+  alleen bij een **vers** volume. Heb je al een postgres-volume van een eerdere run en
+  voeg je een database toe, maak 'm dan eenmalig aan:
+  `docker compose -f deploy/local/docker-compose.yaml exec -T postgres psql -U postgres
+  -c "CREATE DATABASE <naam>;"` — of `down -v && up -d` (wist alles, re-init incl. nieuwe DB).
 
 ## Cert-contract (referentie)
 

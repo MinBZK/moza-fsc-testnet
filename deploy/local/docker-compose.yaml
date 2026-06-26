@@ -165,6 +165,9 @@ services:
         condition: service_started
 
   keycloak:
+    # Alleen voor de optionele OIDC-variant; standaard uit. Starten met:
+    #   docker compose --profile oidc up -d   (+ AUTHN_TYPE=oidc op de controller)
+    profiles: ["oidc"]
     image: registry.gitlab.com/rinis-oss/fsc/images/keycloak:bfca938d
     command: start --optimized
     ports:
@@ -244,8 +247,6 @@ services:
     depends_on:
       migrate-controller:
         condition: service_completed_successfully
-      keycloak:
-        condition: service_started
       manager-magazijn-a:
         condition: service_started
 

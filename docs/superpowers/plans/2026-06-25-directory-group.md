@@ -736,10 +736,12 @@ git commit -m "feat(local): directory-ui (visuele catalogus, group-certs) (#723)
 
 **Interfaces:**
 
-- Consumes: directory-manager internal endpoint (:9443, internal certs), keycloak-realm `open-fsc`.
-- Produces: keycloak (baked realm `open-fsc`, client `open_fsc-controller`) + de controller-UI op `http://localhost:8090` met OIDC-login.
+- Consumes: directory-manager internal endpoint (:9443, internal certs); optioneel keycloak (realm `organization-a`) voor OIDC.
+- Produces: de controller-UI op `http://localhost:8090`. Lokaal zonder login (`AUTHN_TYPE=none`); OIDC (realm `organization-a`, client `open-fsc-controller-a`) is optioneel achter `--profile oidc`.
 
-**Context:** De controller praat met de **interne** manager-API (:9443) met internal-certs én doet OIDC tegen keycloak. Het realm `open-fsc` + client `open_fsc-controller` zit in de custom keycloak-image gebakken (geen JSON-import). Lukt de OIDC-redirect lokaal niet (baked hostnames), zet dan `AUTHN_TYPE=none` (fallback; controller draait dan zonder login — zie `gemeente-stijns/values.yaml`).
+**Context:** De controller praat met de **interne** manager-API (:9443, via de cert-hostnaam `manager.magazijn-a.fsc-test.local`) met internal-certs, en heeft een **eigen database** (`fsc_controller_magazijn_a` + `controller migrate up`; OpenFSC scheidt manager- en controller-DB — beide hebben een `public.schema_migrations`). Auth: lokaal `AUTHN_TYPE=none` (door OpenFSC ondersteunde modus; management werkt zonder login). De keycloak-image bakt realm `organization-a` (**niet** `open-fsc`, een foute aanname uit de eerste opzet); volledige OIDC vergt de issuer-split (gedeelde hostnaam + `/etc/hosts`) + redirect-URI-plumbing en is een gedocumenteerde TODO (zie `deploy/local/README.md`).
+
+> **Correctie (laptop-run):** de YAML hieronder toont de oorspronkelijke opzet; tijdens de echte run zijn de waarden bijgesteld. Authoritatief = `deploy/local/docker-compose.yaml`: `AUTHN_TYPE=none`, realm `organization-a`, client `open-fsc-controller-a`, eigen controller-DB, keycloak achter `--profile oidc`.
 
 - [ ] **Stap 1: Voeg keycloak toe**
 
