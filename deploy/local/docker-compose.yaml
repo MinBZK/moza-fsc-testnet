@@ -131,6 +131,29 @@ services:
       manager-directory:
         condition: service_started
 
+  directory-ui:
+    image: docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG:-v1.43.7}
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      LOG_TYPE: local
+      LOG_LEVEL: info
+      LISTEN_ADDRESS: 0.0.0.0:8080
+      MONITORING_ADDRESS: 0.0.0.0:8081
+      # Externe directory-manager via de SNI-router op :443.
+      DIRECTORY_MANAGER_ADDRESS: https://directory.fsc-test.local:443
+      BASE_URL_PATH: /
+      TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
+      TLS_GROUP_CERT: /pki/out/magazijn-a/manager/cert.pem   # lezer-peer-identiteit
+      TLS_GROUP_KEY: /pki/out/magazijn-a/manager/key.pem
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    depends_on:
+      manager-directory:
+        condition: service_started
+      router:
+        condition: service_started
+
 networks:
   default:
     driver: bridge
