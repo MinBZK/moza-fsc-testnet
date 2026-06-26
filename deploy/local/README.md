@@ -34,6 +34,18 @@ docker compose -f deploy/local/docker-compose.yaml up -d
 ./deploy/local/smoke-announce.sh                 # exit 0 = announce bewezen
 ```
 
+## Beheer-UI (Fase C) — keycloak + controller
+
+- **directory-ui** (catalogus): `http://localhost:8080`, geen login.
+- **controller** (beheer-UI met OIDC): `http://localhost:8090`, login via keycloak.
+- **keycloak**: `http://localhost:8081`, admin `keycloak-admin` / `keycloak`
+  (dev-defaults uit de baked image — **niet voor productie**). De
+  `AUTHN_OIDC_CLIENT_SECRET` is eveneens een publieke OpenFSC dev-default.
+
+> **OIDC-redirect-fallback:** lukt de keycloak-redirect lokaal niet (baked
+> hostnames), zet dan `AUTHN_TYPE=none` op de `controller`-service en herstart;
+> de controller draait dan zonder login.
+
 ## Opruimen
 
 ```bash

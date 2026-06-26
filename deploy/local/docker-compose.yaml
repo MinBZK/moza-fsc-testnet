@@ -154,6 +154,64 @@ services:
       router:
         condition: service_started
 
+  keycloak:
+    image: registry.gitlab.com/rinis-oss/fsc/images/keycloak:bfca938d
+    command: start --optimized
+    ports:
+      - "127.0.0.1:8081:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: keycloak-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: keycloak
+      KC_HOSTNAME: http://localhost:8081
+      KC_HOSTNAME_ADMIN: http://localhost:8081
+    restart: on-failure
+
+  controller:
+    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v1.43.7}
+    ports:
+      - "127.0.0.1:8090:8080"
+    environment:
+      LOG_TYPE: local
+      LOG_LEVEL: info
+      LISTEN_ADDRESS_UI: 0.0.0.0:8080
+      LISTEN_ADDRESS_REGISTRATION_API: 0.0.0.0:9443
+      LISTEN_ADDRESS_ADMINISTRATION_API: 0.0.0.0:9444
+      MONITORING_ADDRESS: 0.0.0.0:8081
+      MANAGER_ADDRESS_INTERNAL: https://manager-magazijn-a:9443
+      GROUP_ID: moza-fbs-test
+      DIRECTORY_PEER_ID: "00000000000000000010"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DATABASE: fsc_magazijn_a
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGSSLMODE: disable
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_magazijn_a?sslmode=disable
+      AUTHN_TYPE: oidc
+      AUTHN_OIDC_CLIENT_ID: open_fsc-controller
+      # OpenFSC dev-default (publiek, baked in keycloak-image) — geen echt secret.
+      AUTHN_OIDC_CLIENT_SECRET: 99DbIk7FqlUYqbyD3qSX4Wmf
+      AUTHN_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/open-fsc/.well-known/openid-configuration
+      AUTHN_OIDC_REDIRECT_URL: http://localhost:8090/authentication/callback
+      AUTHN_OIDC_SESSION_COOKIE_SECURE: "false"
+      AUTHN_OIDC_PKCE_ENABLED: "false"
+      AUTHN_OIDC_INSECURE_SKIP_VERIFY_TLS: "true"
+      AUTHN_OIDC_ROLES_SCOPE: groups
+      AUTHN_OIDC_ROLES_CLAIM: groups
+      AUTHZ_TYPE: rbac
+      CSRF_PROTECTION_ENABLED: "false"
+      AUDITLOG_TYPE: stdout
+      TLS_ROOT_CERT: /pki/internal/magazijn-a/ca/root.pem
+      TLS_CERT: /pki/internal/magazijn-a/manager/cert.pem
+      TLS_KEY: /pki/internal/magazijn-a/manager/key.pem
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    depends_on:
+      keycloak:
+        condition: service_started
+      manager-magazijn-a:
+        condition: service_started
+
 networks:
   default:
     driver: bridge
