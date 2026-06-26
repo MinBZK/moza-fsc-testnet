@@ -201,18 +201,18 @@ MONITORING_ADDRESS=0.0.0.0:8080
 STORAGE_POSTGRES_DSN=postgres://fsc:CHANGEME@directory-postgres:5432/fsc_directory?sslmode=require
 # Certs (gemount via ZAD attachments; paden == lokale harness).
 TLS_GROUP_ROOT_CERT=/etc/fsc/ca/root.pem
-TLS_GROUP_CERT=/etc/fsc/certs/directory/group/cert.pem
-TLS_GROUP_KEY=/etc/fsc/certs/directory/group/key.pem
-TLS_GROUP_TOKEN_CERT=/etc/fsc/certs/directory/group/cert.pem
-TLS_GROUP_TOKEN_KEY=/etc/fsc/certs/directory/group/key.pem
-TLS_GROUP_CONTRACT_CERT=/etc/fsc/certs/directory/group/cert.pem
-TLS_GROUP_CONTRACT_KEY=/etc/fsc/certs/directory/group/key.pem
-TLS_ROOT_CERT=/etc/fsc/ca/internal-root.pem
-TLS_CERT=/etc/fsc/certs/directory/internal/cert.pem
-TLS_KEY=/etc/fsc/certs/directory/internal/key.pem
-TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT=/etc/fsc/ca/internal-root.pem
-TLS_INTERNAL_UNAUTHENTICATED_CERT=/etc/fsc/certs/directory/internal/cert.pem
-TLS_INTERNAL_UNAUTHENTICATED_KEY=/etc/fsc/certs/directory/internal/key.pem
+TLS_GROUP_CERT=/etc/fsc/out/directory/directory/cert.pem
+TLS_GROUP_KEY=/etc/fsc/out/directory/directory/key.pem
+TLS_GROUP_TOKEN_CERT=/etc/fsc/out/directory/directory/cert.pem
+TLS_GROUP_TOKEN_KEY=/etc/fsc/out/directory/directory/key.pem
+TLS_GROUP_CONTRACT_CERT=/etc/fsc/out/directory/directory/cert.pem
+TLS_GROUP_CONTRACT_KEY=/etc/fsc/out/directory/directory/key.pem
+TLS_ROOT_CERT=/etc/fsc/internal/directory/ca/root.pem
+TLS_CERT=/etc/fsc/internal/directory/directory/cert.pem
+TLS_KEY=/etc/fsc/internal/directory/directory/key.pem
+TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT=/etc/fsc/internal/directory/ca/root.pem
+TLS_INTERNAL_UNAUTHENTICATED_CERT=/etc/fsc/internal/directory/directory/cert.pem
+TLS_INTERNAL_UNAUTHENTICATED_KEY=/etc/fsc/internal/directory/directory/key.pem
 ```
 
 - [ ] **Stap 3: Lint**
@@ -307,21 +307,24 @@ Runnable shift-left van de ZAD-deploy: directory + magazijn-a-peer + SNI-router 
 
 ## Prerequisite (#722) — cert-contract
 
-De harness mount onze test-CA read-only. #722 (PR #5) moet deze leveren onder `pki/`:
+De harness mount onze test-CA read-only. #722 (PR #5, geleverd in `ba46bcc`/`2880c5b`)
+levert per endpoint **twee ketens** onder `pki/`:
 
 | Pad | Doel | Env |
 |-----|------|-----|
-| `pki/ca/root.pem` | group-CA root (bestaat) | `TLS_GROUP_ROOT_CERT` |
-| `pki/ca/internal-root.pem` | internal-CA root (#722 toe te voegen) | `TLS_ROOT_CERT`, `TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT` |
-| `pki/out/<peer>/group/{cert,key}.pem` | group-identity (hergebruikt voor token+contract) | `TLS_GROUP_CERT/KEY`, `TLS_GROUP_TOKEN_*`, `TLS_GROUP_CONTRACT_*` |
-| `pki/out/<peer>/internal/{cert,key}.pem` | internal mTLS (#722 toe te voegen) | `TLS_CERT/KEY`, `TLS_INTERNAL_UNAUTHENTICATED_*` |
+| `pki/ca/root.pem` | group-CA root (trust-anchor) | `TLS_GROUP_ROOT_CERT` |
+| `pki/internal/<peer>/ca/root.pem` | **per-peer** internal-CA root | `TLS_ROOT_CERT`, `TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT` |
+| `pki/out/<peer>/<endpoint>/{cert,key}.pem` | group-identity (hergebruikt voor token+contract) | `TLS_GROUP_CERT/KEY`, `TLS_GROUP_TOKEN_*`, `TLS_GROUP_CONTRACT_*` |
+| `pki/internal/<peer>/<endpoint>/{cert,key}.pem` | internal mTLS | `TLS_CERT/KEY`, `TLS_INTERNAL_UNAUTHENTICATED_*` |
 
-`<peer>` ∈ {`directory`, `magazijn-a`}. Hostnames in de certs: `directory.fsc-test.local`,
-`magazijn-a.fsc-test.local`. De mesh verifieert de hostname niet (auth op OIN), maar
-houd ze consistent met `SELF_ADDRESS`/SNI.
+`<peer>` ∈ {`directory`, `magazijn-a`}; `<endpoint>` = de component (`manager` voor de
+mesh, `directory` voor de directory-component). Internal-root is **per peer** — mount voor
+elke peer zijn eigen `pki/internal/<peer>/ca/root.pem`. Hostnames in de certs:
+`directory.fsc-test.local`, `magazijn-a.fsc-test.local`. De mesh verifieert de hostname
+niet (auth op OIN), maar houd ze consistent met `SELF_ADDRESS`/SNI.
 
-> Token+contract hergebruiken de group-identity-cert (zoals de spike). Wil #722 ze
-> als losse certs uitgeven, splits dan de env-paden navenant.
+> Token+contract hergebruiken de group-identity-cert — bevestigd conform OpenFSC
+> (`modd.conf:194-199`); geen losse token/contract-certs.
 
 ## Draaien
 
@@ -470,16 +473,16 @@ services:
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
       MONITORING_ADDRESS: 0.0.0.0:8080
       STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable
-      TLS_GROUP_CERT: &dir-grp /pki/out/directory/group/cert.pem
-      TLS_GROUP_KEY: &dir-grp-key /pki/out/directory/group/key.pem
+      TLS_GROUP_CERT: &dir-grp /pki/out/directory/directory/cert.pem
+      TLS_GROUP_KEY: &dir-grp-key /pki/out/directory/directory/key.pem
       TLS_GROUP_TOKEN_CERT: *dir-grp
       TLS_GROUP_TOKEN_KEY: *dir-grp-key
       TLS_GROUP_CONTRACT_CERT: *dir-grp
       TLS_GROUP_CONTRACT_KEY: *dir-grp-key
-      TLS_ROOT_CERT: /pki/ca/internal-root.pem
-      TLS_CERT: &dir-int /pki/out/directory/internal/cert.pem
-      TLS_KEY: &dir-int-key /pki/out/directory/internal/key.pem
-      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: /pki/ca/internal-root.pem
+      TLS_ROOT_CERT: &dir-introot /pki/internal/directory/ca/root.pem
+      TLS_CERT: &dir-int /pki/internal/directory/directory/cert.pem
+      TLS_KEY: &dir-int-key /pki/internal/directory/directory/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: *dir-introot
       TLS_INTERNAL_UNAUTHENTICATED_CERT: *dir-int
       TLS_INTERNAL_UNAUTHENTICATED_KEY: *dir-int-key
     volumes:
@@ -541,16 +544,16 @@ Voeg onder `services:` toe (vóór `networks:`):
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
       MONITORING_ADDRESS: 0.0.0.0:8080
       STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_magazijn_a?sslmode=disable
-      TLS_GROUP_CERT: &maga-grp /pki/out/magazijn-a/group/cert.pem
-      TLS_GROUP_KEY: &maga-grp-key /pki/out/magazijn-a/group/key.pem
+      TLS_GROUP_CERT: &maga-grp /pki/out/magazijn-a/manager/cert.pem
+      TLS_GROUP_KEY: &maga-grp-key /pki/out/magazijn-a/manager/key.pem
       TLS_GROUP_TOKEN_CERT: *maga-grp
       TLS_GROUP_TOKEN_KEY: *maga-grp-key
       TLS_GROUP_CONTRACT_CERT: *maga-grp
       TLS_GROUP_CONTRACT_KEY: *maga-grp-key
-      TLS_ROOT_CERT: /pki/ca/internal-root.pem
-      TLS_CERT: &maga-int /pki/out/magazijn-a/internal/cert.pem
-      TLS_KEY: &maga-int-key /pki/out/magazijn-a/internal/key.pem
-      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: /pki/ca/internal-root.pem
+      TLS_ROOT_CERT: &maga-introot /pki/internal/magazijn-a/ca/root.pem
+      TLS_CERT: &maga-int /pki/internal/magazijn-a/manager/cert.pem
+      TLS_KEY: &maga-int-key /pki/internal/magazijn-a/manager/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: *maga-introot
       TLS_INTERNAL_UNAUTHENTICATED_CERT: *maga-int
       TLS_INTERNAL_UNAUTHENTICATED_KEY: *maga-int-key
     volumes:
@@ -680,8 +683,8 @@ git commit -m "test(local): smoke-announce — peer-registratie in directory-DB 
       DIRECTORY_MANAGER_ADDRESS: https://directory.fsc-test.local:443
       BASE_URL_PATH: /
       TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
-      TLS_GROUP_CERT: /pki/out/magazijn-a/group/cert.pem   # lezer-peer-identiteit
-      TLS_GROUP_KEY: /pki/out/magazijn-a/group/key.pem
+      TLS_GROUP_CERT: /pki/out/magazijn-a/manager/cert.pem   # lezer-peer-identiteit
+      TLS_GROUP_KEY: /pki/out/magazijn-a/manager/key.pem
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
     depends_on:
@@ -769,9 +772,9 @@ git commit -m "feat(local): directory-ui (visuele catalogus, group-certs) (#723)
       AUTHZ_TYPE: rbac
       CSRF_PROTECTION_ENABLED: "false"
       AUDITLOG_TYPE: stdout
-      TLS_ROOT_CERT: /pki/ca/internal-root.pem
-      TLS_CERT: /pki/out/magazijn-a/internal/cert.pem
-      TLS_KEY: /pki/out/magazijn-a/internal/key.pem
+      TLS_ROOT_CERT: /pki/internal/magazijn-a/ca/root.pem
+      TLS_CERT: /pki/internal/magazijn-a/manager/cert.pem
+      TLS_KEY: /pki/internal/magazijn-a/manager/key.pem
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
     depends_on:
@@ -839,6 +842,6 @@ git commit -m "docs(directory): migratie+443-mesh+keycloak vastleggen (#723)"
 
 **Placeholder-scan:** Geen TBD/TODO in stappen; elk config-bestand staat volledig uitgeschreven. De `txlog.placeholder.invalid` is een bewuste, gegronde waarde (spike), geen plan-placeholder.
 
-**Type-consistentie:** OINs (`00000000000000000010` directory, `00000001003214345000` magazijn-a), hostnames (`directory.fsc-test.local`, `magazijn-a.fsc-test.local`), cert-paden (`/pki/out/<peer>/{group,internal}/…`, `/pki/ca/{root,internal-root}.pem`) en `GROUP_ID=moza-fbs-test` zijn over alle taken identiek. Env-namen consistent met de manager-chart.
+**Type-consistentie:** OINs (`00000000000000000010` directory, `00000001003214345000` magazijn-a), hostnames (`directory.fsc-test.local`, `magazijn-a.fsc-test.local`), cert-paden (group `/pki/out/<peer>/<endpoint>/…`, internal `/pki/internal/<peer>/<endpoint>/…`, roots `/pki/ca/root.pem` + per-peer `/pki/internal/<peer>/ca/root.pem`) en `GROUP_ID=moza-fbs-test` zijn over alle taken identiek. Env-namen consistent met de manager-chart.
 
 **Bekende gate:** Fase B/C end-to-end-acceptatie hangt op #722-certs + een Docker-host; elke gated stap is als zodanig gemarkeerd, met het faal-pad (Taak 8 stap 3) als bewijs-nu dat de test meet.
