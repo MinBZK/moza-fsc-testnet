@@ -55,31 +55,57 @@ services:
           - manager.organization-a.open-fsc.localhost
           - manager.organization-b.open-fsc.localhost
     depends_on:
-      manager-directory: { condition: service_started }
-      manager-org-a: { condition: service_started }
-      manager-org-b: { condition: service_started }
+      manager-directory:
+        condition: service_started
+      manager-org-a:
+        condition: service_started
+      manager-org-b:
+        condition: service_started
 
   # --- DB-migraties (one-shot; ZAD-blocker lokaal omzeild via args) ----------
   migrate-directory:
     image: *manager-image
-    command: ["/usr/local/bin/manager", "migrate", "up", "--postgres-dsn", "postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable"]
-    depends_on: { postgres: { condition: service_healthy } }
+    command:
+      - /usr/local/bin/manager
+      - migrate
+      - up
+      - --postgres-dsn
+      - postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: on-failure
   migrate-org-a:
     image: *manager-image
-    command: ["/usr/local/bin/manager", "migrate", "up", "--postgres-dsn", "postgres://postgres:postgres@postgres:5432/fsc_org_a?sslmode=disable"]
-    depends_on: { postgres: { condition: service_healthy } }
+    command:
+      - /usr/local/bin/manager
+      - migrate
+      - up
+      - --postgres-dsn
+      - postgres://postgres:postgres@postgres:5432/fsc_org_a?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: on-failure
   migrate-org-b:
     image: *manager-image
-    command: ["/usr/local/bin/manager", "migrate", "up", "--postgres-dsn", "postgres://postgres:postgres@postgres:5432/fsc_org_b?sslmode=disable"]
-    depends_on: { postgres: { condition: service_healthy } }
+    command:
+      - /usr/local/bin/manager
+      - migrate
+      - up
+      - --postgres-dsn
+      - postgres://postgres:postgres@postgres:5432/fsc_org_b?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: on-failure
 
   # --- Directory-manager (adverteert zichzelf op :443) -----------------------
   manager-directory:
     image: *manager-image
-    command: ["/usr/local/bin/manager", "serve"]
+    command:
+      - /usr/local/bin/manager
+      - serve
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://directory.shared.open-fsc.localhost:443
@@ -101,13 +127,18 @@ services:
       TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: /pki/internal/directory/ca/root.pem
       TLS_INTERNAL_UNAUTHENTICATED_CERT: *dir-int
       TLS_INTERNAL_UNAUTHENTICATED_KEY: *dir-int-key
-    volumes: [ "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro" ]
-    depends_on: { migrate-directory: { condition: service_completed_successfully } }
+    volumes:
+      - "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro"
+    depends_on:
+      migrate-directory:
+        condition: service_completed_successfully
 
   # --- Peer org-a (provider) — adverteert mesh op :443 -----------------------
   manager-org-a:
     image: *manager-image
-    command: ["/usr/local/bin/manager", "serve"]
+    command:
+      - /usr/local/bin/manager
+      - serve
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://manager.organization-a.open-fsc.localhost:443
@@ -132,13 +163,18 @@ services:
       TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: /pki/internal/organization-a/ca/root.pem
       TLS_INTERNAL_UNAUTHENTICATED_CERT: *a-int
       TLS_INTERNAL_UNAUTHENTICATED_KEY: *a-int-key
-    volumes: [ "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro" ]
-    depends_on: { migrate-org-a: { condition: service_completed_successfully } }
+    volumes:
+      - "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro"
+    depends_on:
+      migrate-org-a:
+        condition: service_completed_successfully
 
   # --- Peer org-b (consumer) — adverteert mesh op :443 -----------------------
   manager-org-b:
     image: *manager-image
-    command: ["/usr/local/bin/manager", "serve"]
+    command:
+      - /usr/local/bin/manager
+      - serve
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://manager.organization-b.open-fsc.localhost:443
@@ -160,8 +196,11 @@ services:
       TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: /pki/internal/organization-b/ca/root.pem
       TLS_INTERNAL_UNAUTHENTICATED_CERT: *b-int
       TLS_INTERNAL_UNAUTHENTICATED_KEY: *b-int-key
-    volumes: [ "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro" ]
-    depends_on: { migrate-org-b: { condition: service_completed_successfully } }
+    volumes:
+      - "${PKI_DIR:?set PKI_DIR in .env to <open-fsc>/pki}:/pki:ro"
+    depends_on:
+      migrate-org-b:
+        condition: service_completed_successfully
 
 networks:
   default:
