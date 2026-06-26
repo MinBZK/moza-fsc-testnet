@@ -1,0 +1,26 @@
+# Helm-values voor peer 'magazijn-a' (template — #723/#724/#725).
+# Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
+#
+# OIN = echte afzender-OIN van Magazijn A, overgenomen uit moza-poc-fbs-berichtenbox
+# (services/berichtenuitvraag/.../application.properties). Houd 1:1 lockstep met
+# pki/peers/magazijn-a/<endpoint>/csr.json -> veld `serialnumber`.
+peer:
+  oin: "00000001003214345000"                   # echte OIN Magazijn A -> wordt Peer ID
+  name: "magazijn-a"                            # -> subject.organization in het cert
+manager:
+  managementAddress: "magazijn-a-manager:8443"
+  postgresDsn: "postgres://fsc:fsc@magazijn-a-postgres:5432/fsc?sslmode=disable"
+inway:
+  name: "magazijn-a-inway"
+  selfAddress: "magazijn-a-inway:443"           # eigen SNI-hostnaam (passthrough-Route)
+  directoryRegistrationAddress: "directory-manager:8443"
+  upstream: "berichtenmagazijn-deployment:8090"   # ZAD intra-project DNS (hyphen)
+
+# TODO(#723): dit skelet toont alleen de hoofd-adressen. Een werkende OpenFSC-deploy
+# vereist daarnaast (zie open-fsc helm/charts):
+#   - certificaten: certificates.group.* (group-CA) + certificates.internal.* +
+#     certificates.internalUnauthenticated.* (inter-component mTLS, manager<->inway);
+#   - interne manager-poorten 9443 (authenticated) en 9444 (unauthenticated);
+#   - transaction-log: txlog-api-adres voor manager én inway (verplichte logging-extensie).
+# `upstream` is de business-app (berichtenmagazijn), geen FSC-component.
+# Echte secrets/certs worden via ZAD `attachments` gemount, nooit hier ingevuld.
