@@ -80,8 +80,9 @@ broncode-fork** — consistent met "geen fork van de FSC-software".
 ### Keycloak als OIDC-provider (#723)
 
 De controller-beheer-UI doet OIDC. OpenFSC levert standaard **Keycloak** (baked realm
-`open-fsc`), niet Dex. Lokaal valt de controller terug op `AUTHN_TYPE=none` als de
-OIDC-redirect niet lukt (zie `deploy/local/README.md`).
+`organization-a`), niet Dex. Lokaal draait de controller bewust **zonder** login
+(`AUTHN_TYPE=none`, een door OpenFSC ondersteunde modus); volledige OIDC is een
+gedocumenteerde TODO (issuer-split + redirect-URI — zie `deploy/local/README.md`).
 
 ### Openstaande ZAD-dependency
 

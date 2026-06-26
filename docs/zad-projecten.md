@@ -28,6 +28,8 @@ Dit spiegelt OpenFSC's eigen layout (`helm/deploy/<org>/` per organisatie +
 - **Lifecycle.** Een app-team deployt zijn app én zijn peer samen.
 - **8443-IP-schaarste (#720).** Publieke IP's voor de management-poort zijn schaars
   → houd het aantal managers klein (~1 per peer-project), deel IP's waar mogelijk.
+  **Update (#723):** de manager-mesh loopt nu op **:443-SNI-passthrough** (zie
+  "Open punten / blockers" onder), dus MetalLB:8443 is voor de mesh niet meer nodig.
 
 ## Projecten
 

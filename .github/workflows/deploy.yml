@@ -12,7 +12,8 @@ jobs:
     # is; tot die tijd is dit het bron-artefact, niet een groene run (#723).
     steps:
       - name: Deploy directory (group-anker) naar ZAD
-        # SHA-pin conform repo-conventie; vervang door de gepinde SHA bij merge.
+        # Versie-gepind (toegestaan); TODO(#729): naar SHA-pin voor Scorecard
+        # Pinned-Dependencies zodra zad-actions een release-SHA publiceert.
         uses: RijksICTGilde/zad-actions/deploy@v1
         with:
           api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}

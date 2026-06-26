@@ -9,7 +9,12 @@ if [ -z "$DSN" ]; then
   echo "FATAL: STORAGE_POSTGRES_DSN (of POSTGRES_DSN) niet gezet" >&2
   exit 1
 fi
+# `serve` leest de DSN uit STORAGE_POSTGRES_DSN; normaliseer zodat de POSTGRES_DSN-
+# fallback ook serve bereikt (niet alleen de migrate-stap).
+export STORAGE_POSTGRES_DSN="$DSN"
 
+# NB: draait `migrate up` bij elke pod-start (ZAD verbiedt args/init-containers).
+# golang-migrate is idempotent + lockt; ga uit van 1 manager-replica per peer.
 echo "manager-migrate: migraties draaien..."
 /usr/local/bin/manager migrate up --postgres-dsn "$DSN"
 
