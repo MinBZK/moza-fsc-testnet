@@ -37,27 +37,18 @@ services:
       manager-directory:
         condition: service_started
 
-  migrate-directory:
-    image: *manager-image
-    command:
-      - /usr/local/bin/manager
-      - migrate
-      - up
-      - --postgres-dsn
-      - postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: on-failure
-
   manager-directory:
-    image: *manager-image
+    # ZAD-artefact: wrapper-image (migrate->serve in de entrypoint), zoals deploy.yml.
+    # Compose bouwt 'm lokaal uit deploy/zad/manager-migrate -> migrate-directory
+    # is daarmee overbodig (de wrapper migreert fsc_directory bij start).
+    build:
+      context: ../../deploy/zad/manager-migrate
+      args:
+        IMAGE_TAG: ${IMAGE_TAG:-v1.43.7}
+    image: manager-migrate:${IMAGE_TAG:-v1.43.7}
     # Draai als de host-UID/GID zodat de pod de 0600-privékeys leest (matching owner)
     # i.p.v. ze open te zetten. HOST_UID/HOST_GID uit .env (zie README, stap 3).
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
-    command:
-      - /usr/local/bin/manager
-      - serve
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://directory.fsc-test.local:443
@@ -83,8 +74,8 @@ services:
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
     depends_on:
-      migrate-directory:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
 
   migrate-magazijn-a:
     image: *manager-image

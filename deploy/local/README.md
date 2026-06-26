@@ -36,8 +36,10 @@ git switch feature/directory-group-723
 cp deploy/local/.env.example deploy/local/.env
 printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> deploy/local/.env
 
-# 4. Start de stack (postgres, SNI-router, directory + magazijn-a, UIs).
-docker compose -f deploy/local/docker-compose.yaml up -d
+# 4. Start de stack. --build bouwt de directory-manager-wrapper
+#    (deploy/zad/manager-migrate) lokaal -> de harness test meteen het echte
+#    ZAD-artefact (migrate->serve in de pod-entrypoint).
+docker compose -f deploy/local/docker-compose.yaml up -d --build
 
 # 5. Bewijs de announce (pollt de directory-DB tot magazijn-a verschijnt).
 ./deploy/local/smoke-announce.sh     # verwacht: "OK: magazijn-a is aangemeld" + exit 0
