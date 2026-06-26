@@ -58,16 +58,18 @@ OpenFSC-keuzes die wij overnemen (en die FBS-integratie versimpelen):
 
 mTLS-passthrough is bewezen op het ODCN-prod-cluster (beide poorten, eigen cert, cert-binding intact).
 
-- **Poort 443** (data, Outway→Inway): OpenShift Route met `passthrough`. Schaalt — gedeeld
-  router-IP, routering op **SNI**-hostnaam. Elke inway krijgt een eigen, stabiele SNI-hostnaam.
-- **Poort 8443** (management, Manager-mesh): MetalLB `LoadBalancer`, eigen publiek IP per endpoint.
-  Publieke IP's zijn **schaars** → minimaliseer managers (~1 per project/peer), deel IP's.
+- **Poort 443** (data Outway→Inway **én manager-mesh**): OpenShift Route met `passthrough`.
+  Schaalt — gedeeld router-IP, routering op **SNI**-hostnaam. Elke inway én manager krijgt een
+  eigen, stabiele SNI-hostnaam. Manager-mesh op :443 bewezen in `docs/spikes/manager-443-sni.md` (#723).
+- **Poort 8443/MetalLB (Manager-mesh): vervallen (#723)** — mesh loopt op :443-SNI (zie boven).
+  MetalLB-IP's blijven schaars maar zijn voor de mesh niet meer nodig.
 - `edge`/`reencrypt`-terminatie of client-cert-in-header **breken** de certificate-binding — verboden.
 - **ZAD deployt images, geen Helm.** `zad-actions/deploy` neemt een `components:`-lijst van
   `{name, image}`. OpenFSC-charts = bron voor image- + env-namen, niet het deploy-artefact.
   Config = env-vars + gemounte certs (Operations Manager, éénmalig; previews erven via
-  `clone-from: test`). **Blocker #723:** DB-migratie draait in OpenFSC via init-container-args
-  (`manager migrate up`) — ZAD staat geen args/init-containers toe; alternatief nodig.
+  `clone-from: test`). **DB-migratie (#723, opgelost):** ZAD staat geen args/init-containers
+  toe → migreren zit in een wrapper-image `deploy/zad/manager-migrate/` (`migrate up && serve`
+  in de entrypoint; deploy-image, geen fork).
 - ZAD-pods configureren via **env-vars / gemounte files**, niet via CLI-args (ZAD staat geen
   component-args toe).
 

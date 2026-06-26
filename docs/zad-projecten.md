@@ -28,6 +28,8 @@ Dit spiegelt OpenFSC's eigen layout (`helm/deploy/<org>/` per organisatie +
 - **Lifecycle.** Een app-team deployt zijn app én zijn peer samen.
 - **8443-IP-schaarste (#720).** Publieke IP's voor de management-poort zijn schaars
   → houd het aantal managers klein (~1 per peer-project), deel IP's waar mogelijk.
+  **Update (#723):** de manager-mesh loopt nu op **:443-SNI-passthrough** (zie
+  "Open punten / blockers" onder), dus MetalLB:8443 is voor de mesh niet meer nodig.
 
 ## Projecten
 
@@ -66,6 +68,10 @@ Gevolgen:
    env-vars te configureren.
 3. **Env wordt éénmalig per component gezet in Operations Manager** — de
    deploy-action draagt geen env. Previews erven via `clone-from: test`.
+   **Uitzondering (#723):** de directory- en manager-PostgreSQL zijn
+   *system-of-record* (gepubliceerde diensten, contracten/grants) → **persistent +
+   gebackupt, niet preview-cloned/ephemeral**. De `clone-from: test`-erfenis geldt
+   dus niet voor die DB's; beleggen bij ZAD-beheer (zie `docs/ontwerpkeuzes.md`).
 4. **Certs worden gemount via ZAD `attachments`** (encrypted, read-only); de
    `TLS_*`-env-vars wijzen naar die paden. Secrets staan nooit in deze repo.
 
@@ -119,14 +125,18 @@ De env-var-templates (`.env.example`) worden in alle gevallen door het app-team
 
 - **ZAD `attachments` (cert-mount).** Nog niet beschikbaar; blocker voor #722/#723.
   Zonder cert-mount kunnen peers geen group-trust opzetten. Beleggen bij ZAD-beheer.
-- **DB-migraties.** De OpenFSC-charts draaien migraties via een init-container met
-  args (`manager migrate up`). ZAD staat geen args/init-containers toe → er is een
-  alternatief nodig (one-shot migratie-component, of een image-entrypoint dat
-  migreert). Uit te zoeken in #723.
+- **DB-migraties → opgelost (wrapper-image, #723).** ZAD staat geen args/init-containers
+  toe, dus migreren zit nu in de image-entrypoint: `deploy/zad/manager-migrate/`
+  (`migrate up && serve` in één dunne laag boven de stock-manager — geen broncode-fork).
+  De directory-job in `deploy.yml` gebruikt deze `manager-migrate`-image.
 - **Env is een handmatige stap.** Operations Manager-config is niet via de
-  deploy-action te zetten; documenteer per component welke env nodig is.
-- **8443-IP's.** Minimaliseer managers; deel IP's. 443 schaalt via SNI + gedeeld
-  router-IP.
+  deploy-action te zetten; documenteer per component welke env nodig is. Templates:
+  `peers/directory/manager.env.example`.
+- **8443-IP's → 443-mesh (#723).** De manager-mesh loopt op **:443 via SNI-passthrough**
+  (OpenShift `passthrough`-Route, gedeeld router-IP), niet 8443/MetalLB — bewezen in
+  `docs/spikes/manager-443-sni.md`. 8443/MetalLB is niet meer nodig voor de mesh.
+- **Directory = manager-in-directory-mode.** Geen apart image; een OpenFSC-manager met
+  `DIRECTORY_PEER_ID` = eigen OIN en lege `TX_LOG_API_ADDRESS`.
 
 ## Referenties
 

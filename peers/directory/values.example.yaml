@@ -1,21 +1,12 @@
-# Helm-values voor de 'directory'-peer (template — #723/#724/#725).
-# Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
-#
-# LET OP: 'directory' is geen apart peer-type. Het is een gewone peer die naast de
-# manager óók de OpenFSC `directory`-component draait (group-anker). De directory
-# is in OpenFSC een eigen chart/component; de andere peers registreren zich hier.
+# Directory-peer = OpenFSC-manager in DIRECTORY-MODE (geen apart image).
+# Directory-mode = DIRECTORY_PEER_ID == eigen OIN + lege TX_LOG_API_ADDRESS.
+# Echte env-namen: open-fsc/helm/charts/open-fsc-manager/templates/deployment.yaml.
 peer:
-  oin: "00000000000000000010"        # synthetische test-OIN (directory = infra-peer, geen org-OIN)
-  name: "directory"                          # -> subject.organization in het cert
+  oin: "00000000000000000010"        # synthetische infra-OIN -> Peer ID (directory)
+  name: "directory"                  # -> subject.organization in het cert
 manager:
-  managementAddress: "directory-manager:8443"
-  postgresDsn: "postgres://fsc:fsc@directory-postgres:5432/fsc?sslmode=disable"
-
-# TODO(#723): dit skelet toont alleen de hoofd-adressen. Een werkende OpenFSC-deploy
-# vereist daarnaast (zie open-fsc helm/charts):
-#   - certificaten: certificates.group.* (group-CA) + certificates.internal.* +
-#     certificates.internalUnauthenticated.* (inter-component mTLS);
-#   - interne manager-poorten 9443 (authenticated) en 9444 (unauthenticated);
-#   - transaction-log: txlog-api-adres per component (verplichte logging-extensie);
-#   - de `directory`-component zelf (chart open-fsc-directory).
-# Echte secrets/certs worden via ZAD `attachments` gemount, nooit hier ingevuld.
+  # Mesh-endpoint op :443 (SNI-passthrough-Route), NIET 8443/MetalLB (#723-spike).
+  selfAddress: "https://directory.fsc-test.local:443"   # -> SELF_ADDRESS
+  directoryMode: true                # DIRECTORY_PEER_ID == peer.oin; TX_LOG_API_ADDRESS leeg
+  image: "manager-migrate"           # wrapper-image (Taak 2), niet de stock-image
+# Echte env in peers/directory/manager.env.example. Secrets/certs via ZAD attachments.
