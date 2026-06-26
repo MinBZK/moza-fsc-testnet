@@ -23,7 +23,7 @@ FORCE=0
 for PEER_DIR in "${BASE_DIR}"/peers/*/; do
   PEER="$(basename "${PEER_DIR}")"
   ICA_DIR="${BASE_DIR}/internal/${PEER}/ca"
-  if [ -f "${ICA_DIR}/root.pem" ] && [ "${FORCE}" -eq 0 ]; then
+  if [ -s "${ICA_DIR}/root.pem" ] && [ -s "${ICA_DIR}/root-key.pem" ] && [ "${FORCE}" -eq 0 ]; then
     echo "skip internal-CA ${PEER} (geen -f)"
     continue
   fi
@@ -31,6 +31,8 @@ for PEER_DIR in "${BASE_DIR}"/peers/*/; do
   echo "internal-CA voor ${PEER}..."
   cfssl genkey -initca "${INTERNAL_CA_SPEC}" | cfssljson -bare "${ICA_DIR}/root"
   rm -f "${ICA_DIR}/root.csr"
+  [ -s "${ICA_DIR}/root.pem" ] && [ -s "${ICA_DIR}/root-key.pem" ] \
+    || { echo "FAIL: internal-CA ${PEER} onvolledig" >&2; exit 1; }
 done
 
 # 2. Per endpoint: group-cert (extern) + internal-cert (per-peer CA). Zelfde csr.json.
@@ -42,7 +44,7 @@ find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; 
   ICA_DIR="${BASE_DIR}/internal/${PEER}/ca"
 
   # GROUP (extern, group-intermediate). Hecht intermediate aan voor de keten.
-  if [ -f "${GROUP_OUT}/cert.pem" ] && [ "${FORCE}" -eq 0 ]; then
+  if [ -s "${GROUP_OUT}/cert.pem" ] && [ -s "${GROUP_OUT}/key.pem" ] && [ "${FORCE}" -eq 0 ]; then
     echo "skip group ${REL} (geen -f)"
   else
     mkdir -p "${GROUP_OUT}"
@@ -52,10 +54,12 @@ find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; 
     cat "${CA_CERT}" >> "${GROUP_OUT}/cert.pem"          # hecht intermediate aan (keten)
     mv "${GROUP_OUT}/cert-key.pem" "${GROUP_OUT}/key.pem"
     rm -f "${GROUP_OUT}/cert.csr"
+    [ -s "${GROUP_OUT}/cert.pem" ] && [ -s "${GROUP_OUT}/key.pem" ] \
+      || { echo "FAIL: group-cert ${REL} onvolledig" >&2; exit 1; }
   fi
 
   # INTERNAL (per-peer internal-CA). Bare leaf; TLS_ROOT_CERT wijst los naar de internal-root.
-  if [ -f "${INT_OUT}/cert.pem" ] && [ "${FORCE}" -eq 0 ]; then
+  if [ -s "${INT_OUT}/cert.pem" ] && [ -s "${INT_OUT}/key.pem" ] && [ "${FORCE}" -eq 0 ]; then
     echo "skip internal ${REL} (geen -f)"
   else
     mkdir -p "${INT_OUT}"
@@ -64,6 +68,8 @@ find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; 
       -profile peer "${CSR}" | cfssljson -bare "${INT_OUT}/cert"
     mv "${INT_OUT}/cert-key.pem" "${INT_OUT}/key.pem"
     rm -f "${INT_OUT}/cert.csr"
+    [ -s "${INT_OUT}/cert.pem" ] && [ -s "${INT_OUT}/key.pem" ] \
+      || { echo "FAIL: internal-cert ${REL} onvolledig" >&2; exit 1; }
   fi
 done
 echo "OK: group-certs in ${BASE_DIR}/out, internal-certs in ${BASE_DIR}/internal"

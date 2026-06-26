@@ -177,4 +177,12 @@ Acceptatiecriteria-mapping (#722):
 - Geen step-ca/cfssl-serve runtime (offline genereren volstaat).
 - Internal-component PKI = **wél** (per-peer internal-CA, herzien 2026-06-25 — zie §1).
   Géén intermediate voor de internal-keten (één self-signed root per peer volstaat).
+- **Eén group-trust-anchor (single-TA), géén intermediate op de internal-keten** — bewuste
+  versimpeling t.o.v. OpenFSC. OpenFSC's dev-harness draait twee parallelle group-CA's
+  (`AMOUNT_OF_CAS=2`, round-robin) om de **Trust-Anchor-List** (FSC-Core §4.1.5) te oefenen, en
+  geeft de internal-keten een intermediate. Dat test OpenFSC's *eigen* keten-/TA-afhandeling —
+  code die wij niet wijzigen en die OpenFSC's harness al bewijst → bewezen techniek, niet door
+  ons aan te tonen. Voor een gesloten testnet met één eigen CA is single-TA de natuurlijke
+  minimale config. `TODO(#723)`: tweede trust-anchor + internal-intermediate toevoegen áls
+  productie-federatie-fidelity (multi-TA-rotatie) ooit binnen scope komt.
 - Geen OCSP (CRL volstaat voor de PoC).

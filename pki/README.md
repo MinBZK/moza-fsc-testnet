@@ -38,9 +38,10 @@ endpoint twee certs uit twee losse ketens:
 |-------|--------|-----|--------------------|
 | **group** (extern) | group-intermediate (`pki/ca/`) | `pki/out/<peer>/<endpoint>/` | `TLS_GROUP_CERT/KEY` + hergebruikt voor `TLS_GROUP_TOKEN_*` en `TLS_GROUP_CONTRACT_*` |
 | **internal** | per-peer internal-CA (`pki/internal/<peer>/ca/`) | `pki/internal/<peer>/<endpoint>/` | `TLS_CERT/KEY` + hergebruikt voor `TLS_INTERNAL_UNAUTHENTICATED_*` |
+| **internal-root** | self-signed root (zie boven) | `pki/internal/<peer>/ca/root.pem` | `TLS_ROOT_CERT` + `TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT` |
 
 Token + contract **hergebruiken** de group-identity-cert — zoals open-fsc dat zelf
-doet (`modd.conf:175-178`), geen losse certs. De internal-CA is een eigen,
+doet (`modd.conf:194-199`), geen losse certs. De internal-CA is een eigen,
 self-signed root **per peer** (spiegelt open-fsc `pki/internal/<org>/ca/`), staat
 los van de group-trust-anchor en wordt door `issue.sh` automatisch aangemaakt.
 
