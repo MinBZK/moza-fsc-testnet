@@ -123,14 +123,18 @@ De env-var-templates (`.env.example`) worden in alle gevallen door het app-team
 
 - **ZAD `attachments` (cert-mount).** Nog niet beschikbaar; blocker voor #722/#723.
   Zonder cert-mount kunnen peers geen group-trust opzetten. Beleggen bij ZAD-beheer.
-- **DB-migraties.** De OpenFSC-charts draaien migraties via een init-container met
-  args (`manager migrate up`). ZAD staat geen args/init-containers toe → er is een
-  alternatief nodig (one-shot migratie-component, of een image-entrypoint dat
-  migreert). Uit te zoeken in #723.
+- **DB-migraties → opgelost (wrapper-image, #723).** ZAD staat geen args/init-containers
+  toe, dus migreren zit nu in de image-entrypoint: `deploy/zad/manager-migrate/`
+  (`migrate up && serve` in één dunne laag boven de stock-manager — geen broncode-fork).
+  De directory-job in `deploy.yml` gebruikt deze `manager-migrate`-image.
 - **Env is een handmatige stap.** Operations Manager-config is niet via de
-  deploy-action te zetten; documenteer per component welke env nodig is.
-- **8443-IP's.** Minimaliseer managers; deel IP's. 443 schaalt via SNI + gedeeld
-  router-IP.
+  deploy-action te zetten; documenteer per component welke env nodig is. Templates:
+  `peers/directory/manager.env.example`.
+- **8443-IP's → 443-mesh (#723).** De manager-mesh loopt op **:443 via SNI-passthrough**
+  (OpenShift `passthrough`-Route, gedeeld router-IP), niet 8443/MetalLB — bewezen in
+  `docs/spikes/manager-443-sni.md`. 8443/MetalLB is niet meer nodig voor de mesh.
+- **Directory = manager-in-directory-mode.** Geen apart image; een OpenFSC-manager met
+  `DIRECTORY_PEER_ID` = eigen OIN en lege `TX_LOG_API_ADDRESS`.
 
 ## Referenties
 
