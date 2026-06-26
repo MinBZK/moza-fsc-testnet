@@ -33,8 +33,10 @@ echo "FAIL: magazijn-a ($MAGA_OIN) niet aangemeld op :443 binnen ${TIMEOUT}s." >
 # Positief-controle: staat de directory zélf in peers.peers? Zo niet, dan is de
 # query/DB/het schema kapot (bv. kolomnaam), niet de announce.
 if ! "${COMPOSE[@]}" exec -T postgres psql -U postgres -d fsc_directory -tA \
-     -c "SELECT id FROM peers.peers;" 2>/dev/null | grep -qx "$DIR_OIN"; then
-  echo "  -> directory self-row ($DIR_OIN) ontbreekt: query/DB/schema kapot, niet de announce." >&2
+     -c "SELECT id FROM peers.peers WHERE manager_address LIKE '%:443';" 2>/dev/null \
+     | grep -qx "$DIR_OIN"; then
+  echo "  -> directory self-row ($DIR_OIN op :443) ontbreekt: query/DB/schema" \
+       "(id/manager_address) kapot, niet de announce." >&2
 fi
 echo "Debug: logs (postgres + migrate + managers):" >&2
 "${COMPOSE[@]}" logs --tail=50 \
