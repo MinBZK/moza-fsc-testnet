@@ -27,6 +27,7 @@ startup** (announce + sync). Lukt dat, dan is de mesh-op-443 bewezen.
 
 - Docker + Docker Compose v2.
 - Een lokale **open-fsc**-checkout voor de test-PKI (keys staan niet in deze repo):
+
   ```bash
   git clone https://gitlab.com/rinis-oss/fsc/open-fsc
   ```
@@ -76,10 +77,12 @@ Dingen die de auteur niet kon testen, met de fix als ze opduiken:
 1. **`*.open-fsc.localhost` resolved naar 127.0.0.1.**
    Sommige libc's behandelen `.localhost` speciaal. Zien de managers daardoor de
    router niet, voeg dan aan elke manager-service een expliciete mapping toe:
+
    ```yaml
    extra_hosts:
      - "directory.shared.open-fsc.localhost:<router-container-ip>"
    ```
+
    of geef de router een vast IP via een `ipam`-config en wijs ernaar.
 
 2. **`migrate`/`serve` not found in $PATH.** (Opgelost in de compose.)

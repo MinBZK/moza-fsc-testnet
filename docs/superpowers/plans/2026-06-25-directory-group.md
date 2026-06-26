@@ -50,9 +50,11 @@ Drie fasen, elk een onafhankelijk testbare deliverable:
 ### Taak 1: Group-config finaliseren
 
 **Files:**
+
 - Modify: `group/group-config.example.yaml`
 
 **Interfaces:**
+
 - Produces: het group-id `moza-fbs-test` + trust-anchor-paden die fase B als `GROUP_ID`-env en cert-mounts consumeert.
 
 - [ ] **Stap 1: Schrijf de group-config**
@@ -87,10 +89,12 @@ git commit -m "feat(group): group-config finaliseren (id + trust-anchor + TLS-mi
 ### Taak 2: Wrapper-image voor ZAD-migratie
 
 **Files:**
+
 - Create: `deploy/zad/manager-migrate/Dockerfile`
 - Create: `deploy/zad/manager-migrate/entrypoint.sh`
 
 **Interfaces:**
+
 - Produces: image `manager-migrate` met entrypoint dat `manager migrate up` draait en daarna `manager serve` exec't — ZAD-compatibel zonder args/init-container. Fase A Taak 4 (deploy.yml) verwijst ernaar als manager-image.
 
 **Context:** ZAD staat geen component-args/init-containers toe; de OpenFSC-manager migreert alleen via het `migrate up`-subcommando. Deze dunne laag bakt "migreren-dan-serven" in de image. Het is een *deploy-image* boven de stock-image, geen broncode-fork.
@@ -152,10 +156,12 @@ git commit -m "feat(zad): wrapper-image manager-migrate (migrate up && serve) (#
 ### Taak 3: Env-template directory-manager (ZAD)
 
 **Files:**
+
 - Modify: `peers/directory/values.example.yaml`
 - Create: `peers/directory/manager.env.example`
 
 **Interfaces:**
+
 - Consumes: env-namen uit `open-fsc/helm/charts/open-fsc-manager/templates/deployment.yaml`.
 - Produces: de directory-mode env-set die in Operations Manager wordt ingevoerd en die de harness (Taak 6) spiegelt.
 
@@ -232,9 +238,11 @@ git commit -m "feat(directory): env-template directory-mode manager (echte OpenF
 ### Taak 4: Deploy-workflow directory-job
 
 **Files:**
+
 - Modify: `.github/workflows/deploy.yml`
 
 **Interfaces:**
+
 - Consumes: secret `ZAD_API_KEY_DIRECTORY`, var `ZAD_PROJECT_ID_DIRECTORY`, wrapper-image (Taak 2).
 - Produces: een `workflow_dispatch`-job die `zad-actions/deploy` aanroept met de directory-componentlijst.
 
@@ -291,9 +299,11 @@ git commit -m "feat(ci): directory-job in deploy.yml (zad-actions/deploy) (#723)
 ### Taak 5: Cert-contract + harness-prerequisites documenteren
 
 **Files:**
+
 - Modify: `deploy/local/README.md` (aanmaken in deze taak)
 
 **Interfaces:**
+
 - Produces: de exacte cert-paden + hostnames die #722 moet leveren, zodat Taak 6–8 daar tegenaan kunnen bouwen.
 
 - [ ] **Stap 1: Schrijf `deploy/local/README.md`**
@@ -359,12 +369,14 @@ git commit -m "docs(local): cert-contract + run-instructies harness (#723)"
 ### Taak 6: Harness — router, postgres, migraties, directory-manager
 
 **Files:**
+
 - Create: `deploy/local/.env.example`
 - Create: `deploy/local/postgres-init.sql`
 - Create: `deploy/local/haproxy.cfg`
 - Create: `deploy/local/docker-compose.yaml`
 
 **Interfaces:**
+
 - Consumes: certs onder `pki/` (Taak 5-contract), group-config (Taak 1).
 - Produces: een compose-stack waarin de directory-manager op :443 luistert via de router. Taak 7 voegt de peer toe; Taak 8 de smoke-assert.
 
@@ -513,9 +525,11 @@ git commit -m "feat(local): harness-basis — router + postgres + directory-mana
 ### Taak 7: Harness — magazijn-a-peer (de announcer)
 
 **Files:**
+
 - Modify: `deploy/local/docker-compose.yaml`
 
 **Interfaces:**
+
 - Consumes: de directory-service (Taak 6).
 - Produces: een peer-manager die bij startup announce't naar de directory; Taak 8 assert't dat.
 
@@ -582,9 +596,11 @@ git commit -m "feat(local): magazijn-a-peer als announcer (txlog-placeholder) (#
 ### Taak 8: Smoke-test — announce aantoonbaar (criterium 3)
 
 **Files:**
+
 - Create: `deploy/local/smoke-announce.sh`
 
 **Interfaces:**
+
 - Consumes: de draaiende harness (Taak 6–7).
 - Produces: exit 0 ⇔ magazijn-a-OIN staat als aangemeld in de directory-DB.
 
@@ -641,11 +657,13 @@ Expected: eindigt met `FAIL` + `exit=1` (geen stack → geen announce). Dit bewi
 - [ ] **Stap 4: Acceptatie (gated op #722-certs + Docker-host)**
 
 Run:
+
 ```bash
 cd deploy/local && cp -n .env.example .env
 docker compose up -d
 ./smoke-announce.sh
 ```
+
 Expected: `OK: magazijn-a is aangemeld` + de peers-tabel met manager_address op `:443`, exit 0.
 > Slaagt alleen nadat #722 de certs onder `pki/` heeft geleverd (Taak 5-contract) en op een host met Docker. Tot dan: Stap 3 (faal-pad) is het bewijs dat de test werkt; noteer de gate in de PR-omschrijving.
 
@@ -661,9 +679,11 @@ git commit -m "test(local): smoke-announce — peer-registratie in directory-DB 
 ### Taak 9: Fase C — directory-ui (visuele catalogus, geen keycloak)
 
 **Files:**
+
 - Modify: `deploy/local/docker-compose.yaml`
 
 **Interfaces:**
+
 - Consumes: de directory-manager external endpoint (:443 via router) + group-certs.
 - Produces: een web-UI op `http://localhost:8080` die de aangemelde peers/diensten toont. **Geen keycloak nodig** (directory-ui heeft geen OIDC-env; `open-fsc/helm/charts/open-fsc-directory-ui/templates/deployment.yaml`).
 
@@ -711,9 +731,11 @@ git commit -m "feat(local): directory-ui (visuele catalogus, group-certs) (#723)
 ### Taak 10: Fase C — keycloak + controller (beheer-UI met OIDC)
 
 **Files:**
+
 - Modify: `deploy/local/docker-compose.yaml`
 
 **Interfaces:**
+
 - Consumes: directory-manager internal endpoint (:9443, internal certs), keycloak-realm `open-fsc`.
 - Produces: keycloak (baked realm `open-fsc`, client `open_fsc-controller`) + de controller-UI op `http://localhost:8090` met OIDC-login.
 
@@ -803,11 +825,13 @@ git commit -m "feat(local): keycloak + controller (OIDC, AUTHN=none fallback) (#
 ### Taak 11: Docs — open-punten sluiten + kernbeslissingen bijwerken
 
 **Files:**
+
 - Modify: `docs/zad-projecten.md`
 - Modify: `docs/ontwerpkeuzes.md`
 - Modify: `CLAUDE.md`
 
 **Interfaces:**
+
 - Produces: de definitieve vastlegging van migratie-oplossing (wrapper-image), 443-mesh (8443/MetalLB vervalt) en Keycloak.
 
 - [ ] **Stap 1: `docs/zad-projecten.md` — sluit de open-punten**

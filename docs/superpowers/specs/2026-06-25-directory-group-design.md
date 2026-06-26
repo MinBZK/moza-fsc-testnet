@@ -34,7 +34,7 @@ Besluit (2026-06-25): werk splitsen in twee sporen die beide *nu* af kunnen; de
 echte ZAD-deploy slaagt pas zodra `attachments` er is.
 
 - **Spoor A — ZAD-deploy-prep.** Alle deploy-artefacten productieklaar: component-
-  + image-lijst, env-templates met échte OpenFSC-namen, group-config, deploy-job,
+  - image-lijst, env-templates met échte OpenFSC-namen, group-config, deploy-job,
   én een **wrapper-image** die de migratie-blocker omzeilt (zie §5).
 - **Spoor B — lokale docker-compose harness (shift-left).** Een getrouwe, runnable
   spiegel, **voortbouwend op de bewezen 443-mesh-spike** (§7). Bewijst criterium 3
@@ -66,8 +66,8 @@ De harness is geen apart bouwsel maar een shift-left van de ZAD-deploy. Wat
 - **Router-mechanisme** — SNI-passthrough op :443 (HAProxy `mode tcp` lokaal,
   OpenShift-`passthrough`-Route op ZAD).
 
-Wat **noodzakelijk verschilt** (alleen env-*waarden*): adressen (compose-service-DNS
-+ SNI-hostnames lokaal vs ZAD-ingress-URL's op ZAD).
+Wat **noodzakelijk verschilt** (alleen env-*waarden*): adressen (compose-service-DNS en
+SNI-hostnames lokaal vs ZAD-ingress-URL's op ZAD).
 
 ## 4. Componenten — wie waar
 
