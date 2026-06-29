@@ -14,6 +14,42 @@ ZAD `attachments` (sinds 2026-06-29 beschikbaar, zie [[zad-attachments-available
 
 FSC-certs zijn klein (~2–4 kB elk), dus 256 kB is ruim per cert.
 
+## Inbound TLS-exposure: "Publicatie op het web" (apart mechanisme)
+
+ZAD-deployments hebben een kop **"Publicatie op het web"** met 3 TLS-modi voor inkomend :443:
+
+| Modus | Wat | FSC? |
+|-------|-----|------|
+| 1. Standaard certificaat (platform regelt het) | Platform termineert TLS aan de edge | **NEE** — edge-terminatie breekt de certificate-binding (#720, CLAUDE.md) |
+| 2. Eigen certificaat op de pod (passthrough) | Route forwardt raw TLS; de pod presenteert de cert | **JA** — de bewezen passthrough-Route (#720/#723) |
+| 3. Eigen certificaat op de Ingress (aangeleverd) | Ingress termineert met een geüpload cert | **NEE** — ingress-terminatie breekt de cert-binding |
+
+**Besluit: modus 2 (passthrough).** Modi 1 en 3 termineren TLS aan de rand → de outway/manager
+ziet geen client-cert meer → certificate-bound tokens (RFC 8705, `cnf.x5t#S256`) breken. Verboden
+per #720.
+
+**De passthrough-cert moet één PEM zijn met cert + key.** `pki/issue.sh` levert gescheiden
+`cert.pem` (leaf + intermediate-chain) en `key.pem`; voor deze upload samenvoegen:
+`cat pki/out/<peer>/<endpoint>/cert.pem pki/out/<peer>/<endpoint>/key.pem > combined.pem`.
+
+> Twee mechanismen, niet verwarren: **attachments** = de cert-files op de `TLS_*`-paden ín de pod
+> (tabel hieronder); **"Publicatie op het web" modus 2** = de inbound :443-cert+key-PEM voor de
+> passthrough-Route.
+
+### Extra vragen (modus 2)
+
+- **Pod-cert vs Route-laag.** Wordt de geüploade cert+key-PEM de cert die de pod presenteert op
+  :443, of zit die op de Route-laag? Moet FSC's `TLS_GROUP_CERT`/`KEY` (op
+  `LISTEN_ADDRESS_EXTERNAL` :8443) naar hetzelfde materiaal wijzen, of regelt modus 2 het
+  externe TLS volledig?
+  **Bevinding:** _(in te vullen)_
+- **SNI-routing.** Doet de passthrough SNI-routing per hostname? Per manager/inway is een eigen,
+  stabiele SNI-hostname nodig op een gedeeld router-IP (zie `manager-443-sni.md`).
+  **Bevinding:** _(in te vullen)_
+- **Eigen hostname.** Krijgt elke deployment een eigen, stabiele hostname via "Publicatie op het
+  web"? Is dat de SNI-hostname die in `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` moet?
+  **Bevinding:** _(in te vullen)_
+
 ## Wat de directory-manager nodig heeft
 
 Cert-files + `TLS_*`-paden uit `peers/directory/manager.env.example` (6 losse files):
