@@ -36,20 +36,6 @@ per #720.
 > (tabel hieronder); **"Publicatie op het web" modus 2** = de inbound :443-cert+key-PEM voor de
 > passthrough-Route.
 
-### Extra vragen (modus 2)
-
-- **Pod-cert vs Route-laag.** Wordt de geüploade cert+key-PEM de cert die de pod presenteert op
-  :443, of zit die op de Route-laag? Moet FSC's `TLS_GROUP_CERT`/`KEY` (op
-  `LISTEN_ADDRESS_EXTERNAL` :8443) naar hetzelfde materiaal wijzen, of regelt modus 2 het
-  externe TLS volledig?
-  **Bevinding:** _(in te vullen)_
-- **SNI-routing.** Doet de passthrough SNI-routing per hostname? Per manager/inway is een eigen,
-  stabiele SNI-hostname nodig op een gedeeld router-IP (zie `manager-443-sni.md`).
-  **Bevinding:** _(in te vullen)_
-- **Eigen hostname.** Krijgt elke deployment een eigen, stabiele hostname via "Publicatie op het
-  web"? Is dat de SNI-hostname die in `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` moet?
-  **Bevinding:** _(in te vullen)_
-
 ## Wat de directory-manager nodig heeft
 
 Cert-files + `TLS_*`-paden uit `peers/directory/manager.env.example` (6 losse files):
@@ -65,27 +51,38 @@ Cert-files + `TLS_*`-paden uit `peers/directory/manager.env.example` (6 losse fi
 
 `directory-ui` heeft een subset nodig (group-root + een lezer-cert/key); zelfde mechaniek.
 
-## Te beantwoorden (test met één dummy-bestand, bv. `root.pem`)
+## Vragen aan ZAD-beheer (1-op-1 met de doorgestuurde lijst)
 
-1. **Koppelen als bestand → op welk pad landt het in de pod?** Is het pad/de filenaam zelf
-   te kiezen (kunnen we `/etc/fsc/out/directory/directory/cert.pem` afdwingen), of vast/afgeleid
-   van de identifier?
+Test met één dummy-bestand (bv. `root.pem`). Nummering = de naar ZAD gestuurde lijst
+(**1–4** attachments, **5–8** "Publicatie op het web" / passthrough):
+
+1. Bestand-koppeling → op welk pad landt het in de pod? Pad/bestandsnaam zelf bepaalbaar
+   (kunnen we `/etc/fsc/out/directory/directory/cert.pem` afdwingen) of vast/afgeleid van de
+   identifier?
+   **Bevinding:** _(in te vullen)_
+2. Hoeveel attachments per component? Meerdere is mogelijk (beheer, 2026-06-29); praktisch
+   maximum? We hebben er ~6 per component nodig.
+   **Bevinding:** _(in te vullen)_
+3. Env-var-koppeling → waarde = inhoud (PEM-tekst) of pad/identifier? Encoding (raw of base64)?
+   (FSC `TLS_*` verwacht een pad, geen inhoud.)
+   **Bevinding:** _(in te vullen)_
+4. Read-only + byte-intact? PEM exact bewaard (geen newline-mangling/BOM), read-only gemount?
+   **Bevinding:** _(in te vullen)_
+5. Modus 2 → wordt de geüploade cert+key-PEM in de pod gemount (op welk pad?) zodat de app hem
+   zelf presenteert, of blijft hij op de ingress/route-laag? Moet FSC's `TLS_GROUP_CERT`/`KEY`
+   (`LISTEN_ADDRESS_EXTERNAL` :8443) naar hetzelfde materiaal wijzen?
+   **Bevinding:** _(in te vullen)_
+6. Doet de passthrough SNI-routing per hostnaam? Meerdere componenten elk op eigen hostnaam op
+   :443, gedeeld ingress-IP (zie `manager-443-sni.md`).
+   **Bevinding:** _(in te vullen)_
+7. Eigen, stabiele externe hostnaam per deployment? Welke (voor `SELF_ADDRESS` /
+   `DIRECTORY_MANAGER_ADDRESS`), en zelf hostnaam/SAN kiesbaar?
+   **Bevinding:** _(in te vullen)_
+8. Bevestiging: modus 2 termineert de TLS niet (geen edge/reencrypt, geen client-cert-in-header)
+   — verbinding ongebroken tot de pod?
    **Bevinding:** _(in te vullen)_
 
-2. **Meerdere attachments op één component.** → **JA, mogelijk** (beheer, 2026-06-29). Is er een
-   praktisch maximum (we hebben er ~6 op de manager)?
-   **Bevinding:** _(aantal-limiet in te vullen)_
-
-3. **Koppelen als env-var → wat is de waarde?** De _inhoud_ (PEM-tekst) of een pad/identifier?
-   Welke encoding (raw of base64)? (Bepaalt of env-koppeling überhaupt bruikbaar is voor certs —
-   FSC `TLS_*` verwacht een **pad**, geen inhoud.)
-   **Bevinding:** _(in te vullen)_
-
-4. **Read-only + inhoud onaangetast?** Wordt de PEM exact bewaard (geen newline-mangling, geen
-   BOM)? Mount read-only?
-   **Bevinding:** _(in te vullen)_
-
-## Ontwerp-keuze (afhankelijk van vraag 1 + 3)
+## Ontwerp-keuze (afhankelijk van vraag 1, 3 + 5)
 
 - **A — pad kiesbaar bij bestand-koppeling (voorkeur).** Mount elke cert direct op zijn
   `TLS_*`-pad; de env-vars (uit `manager.env.example`) wijzen er al naar. Geen extra logica.
@@ -95,6 +92,9 @@ Cert-files + `TLS_*`-paden uit `peers/directory/manager.env.example` (6 losse fi
 - **C — fallback: gebundeld.** Eén attachment met alle certs (256 kB ruim); de `manager-migrate`-
   wrapper splitst ze bij start naar de losse paden (entrypoint doet al `migrate`). Alleen nodig
   als bestand-koppeling te beperkt blijkt. Env-koppeling (vraag 3) zou hier de bundel kunnen leveren.
+- **Group-cert via modus 2?** Als vraag 5 zegt dat de modus-2-PEM ín de pod gemount wordt, dan
+  komt de group-cert (`TLS_GROUP_*`) via "Publicatie op het web" en leveren attachments alleen de
+  root- + internal-certs. Anders levert attachments óók de group-cert.
 
 ## Aangrenzende ZAD-prereqs (#723-deploy, geen spike — vastgelegd)
 
