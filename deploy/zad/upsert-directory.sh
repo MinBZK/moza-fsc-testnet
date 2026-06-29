@@ -19,8 +19,10 @@ set -euo pipefail
 
 MODE="${1:?usage: upsert-directory.sh <validate|plan|apply> [deployment=test] [tag=v1.43.7] [clone_from]}"
 DEPLOYMENT="${2:-test}"
-IMAGE_TAG="${3:-v1.43.7}"
+IMAGE_TAG="${3:-v1.43.7}"               # OpenFSC stock-tag (directory-ui, en default voor de manager)
 CLONE_FROM="${4:-}"
+# manager-migrate is onze ghcr-image en kan een eigen tag hebben (bv. een branch-tag van de build).
+MANAGER_TAG="${ZAD_MANAGER_TAG:-${IMAGE_TAG}}"
 PROJECT="${ZAD_PROJECT:-mft-tp9}"
 BASE="${ZAD_BASE:-https://zad.rijksapp.nl}"
 BASE_DOMAIN="${ZAD_BASE_DOMAIN:-rig.prd1.gn2.quattro.rijksapps.nl}"
@@ -29,10 +31,11 @@ PG_PASSWORD="${ZAD_PG_PASSWORD:-fsc-test-pw}"          # test-env; geen echte da
 case "${MODE}" in validate|plan|apply) ;; *) echo "mode = validate | plan | apply"; exit 1 ;; esac
 case "${DEPLOYMENT}" in ""|*[!a-z0-9-]*) echo "ongeldige deployment: '${DEPLOYMENT}'"; exit 1 ;; esac
 case "${IMAGE_TAG}" in ""|*[!A-Za-z0-9._-]*) echo "ongeldige image_tag: '${IMAGE_TAG}'"; exit 1 ;; esac
+case "${MANAGER_TAG}" in ""|*[!A-Za-z0-9._-]*) echo "ongeldige ZAD_MANAGER_TAG: '${MANAGER_TAG}'"; exit 1 ;; esac
 case "${CLONE_FROM}" in *[!a-z0-9-]*) echo "ongeldige clone_from: '${CLONE_FROM}'"; exit 1 ;; esac
 [ "${MODE}" = apply ] && : "${ZAD_API_KEY:?zet ZAD_API_KEY in je env}"
 
-MANAGER_IMAGE="ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${IMAGE_TAG}"
+MANAGER_IMAGE="ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${MANAGER_TAG}"
 UI_IMAGE="docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG}"
 MANAGER_HOST="directory-manager-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
 DSN="postgres://fsc:${PG_PASSWORD}@directory-postgres:5432/fsc_directory?sslmode=disable"

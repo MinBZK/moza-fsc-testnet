@@ -19,9 +19,13 @@ on:
         required: false
         default: "test"
       image_tag:
-        description: "manager-migrate / directory-ui tag"
+        description: "OpenFSC stock-tag (directory-ui; default voor de manager)"
         required: false
         default: "v1.43.7"
+      manager_tag:
+        description: "ghcr manager-migrate-tag (bv. branch-tag); leeg = image_tag"
+        required: false
+        default: ""
       clone_from:
         description: "optioneel: erf componenten van deze deployment (bv. test)"
         required: false
@@ -50,5 +54,6 @@ jobs:
           MODE: ${{ inputs.mode }}
           DEPLOYMENT: ${{ inputs.deployment || 'test' }}
           IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
+          ZAD_MANAGER_TAG: ${{ inputs.manager_tag }}
           CLONE_FROM: ${{ inputs.clone_from }}
         run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}" "${CLONE_FROM}"
