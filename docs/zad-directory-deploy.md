@@ -89,10 +89,15 @@ gewone (edge) publicatie krijgen — die doet geen mTLS-mesh.
 
 ### 6. Deployen
 
-Draai `deploy.yml` (Actions → `deploy-fsc-testnet` → workflow_dispatch). Dat upsert het deployment
-met componenten + images op project `mft-tp9`, geauthenticeerd met `ZAD_API_KEY_DIRECTORY`.
-`TODO`: bevestig of `deploy.yml`/zad-actions de componenten **aanmaakt** (upsert) of dat ze in de UI
-vooraf moeten bestaan; en of `domain_format` daar gezet wordt of in de UI.
+Twee opties (beide gebruiken het secret `ZAD_API_KEY_DIRECTORY`):
+
+- **`zad-deploy-directory.yml`** (directe v2-API, aanbevolen). Draai eerst met `mode=validate`
+  (read-only GET — checkt auth + connectie zonder te muteren), daarna `mode=apply`. Doet
+  `POST /:upsert-deployment` met de 3 component-referenties + `domain_format=component-deployment-project`.
+- **`deploy.yml`** (zad-actions). Zelfde upsert via de composite action; geen `domain_format`-controle.
+
+Beide zetten **geen** env / bijlagen / web-publicatie (stappen 3–5, UI). `TODO`: bevestig in
+`mode=validate` of auth werkt en of het upsert-deployment de componenten aanmaakt zoals verwacht.
 
 ### 7. Verifiëren
 
