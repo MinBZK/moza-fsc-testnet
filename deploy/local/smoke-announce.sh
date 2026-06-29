@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Smoke: bewijst dat magazijn-a zich aanmeldt (announce) bij de directory ÉN dat
-# dat via de :443-SNI-mesh gaat. Pollt de directory-DB tot de magazijn-a-OIN met
+# Smoke: bewijst dat example-provider zich aanmeldt (announce) bij de directory ÉN dat
+# dat via de :443-SNI-mesh gaat. Pollt de directory-DB tot de example-provider-OIN met
 # een manager_address op :443 in peers.peers verschijnt.
 # NB: de kolomnaam `id` + tabel `peers.peers` zijn een load-bearing schema-contract.
 set -euo pipefail
 
 COMPOSE=(docker compose -f "$(dirname "$0")/docker-compose.yaml")
-MAGA_OIN="00000001003214345000"
+PROVIDER_OIN="00000000000000000030"
 DIR_OIN="00000000000000000010"
 TIMEOUT=120
 INTERVAL=5
@@ -17,14 +17,14 @@ INTERVAL=5
 ERRLOG=$(mktemp)
 trap 'rm -f "$ERRLOG"' EXIT
 
-echo "smoke: wachten tot magazijn-a ($MAGA_OIN) announce't bij de directory (op :443)..."
+echo "smoke: wachten tot example-provider ($PROVIDER_OIN) announce't bij de directory (op :443)..."
 elapsed=0
 while [ "$elapsed" -lt "$TIMEOUT" ]; do
   rows=$("${COMPOSE[@]}" exec -T postgres \
     psql -U postgres -d fsc_directory -tA \
     -c "SELECT id FROM peers.peers WHERE manager_address LIKE '%:443';" 2>"$ERRLOG" || true)
-  if printf '%s\n' "$rows" | grep -qx "$MAGA_OIN"; then
-    echo "OK: magazijn-a is aangemeld bij de directory (manager_address op :443)."
+  if printf '%s\n' "$rows" | grep -qx "$PROVIDER_OIN"; then
+    echo "OK: example-provider is aangemeld bij de directory (manager_address op :443)."
     echo "Aangemelde peers:"
     "${COMPOSE[@]}" exec -T postgres \
       psql -U postgres -d fsc_directory \
@@ -35,7 +35,7 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
   echo "  ...nog niet aangemeld (${elapsed}s)"
 done
 
-echo "FAIL: magazijn-a ($MAGA_OIN) niet aangemeld op :443 binnen ${TIMEOUT}s." >&2
+echo "FAIL: example-provider ($PROVIDER_OIN) niet aangemeld op :443 binnen ${TIMEOUT}s." >&2
 # Positief-controle: staat de directory zélf in peers.peers? Zo niet, dan is de
 # query/DB/het schema kapot (bv. kolomnaam), niet de announce. Laat stderr hier
 # DOOR (in ERRLOG) zodat de conclusie op de échte psql-fout rust.
@@ -52,5 +52,5 @@ if [ -s "$ERRLOG" ]; then
 fi
 echo "Debug: logs (postgres + migrate + managers):" >&2
 "${COMPOSE[@]}" logs --tail=50 \
-  postgres manager-directory migrate-magazijn-a manager-magazijn-a >&2 || true
+  postgres manager-directory migrate-example-provider manager-example-provider >&2 || true
 exit 1
