@@ -99,11 +99,11 @@ outway i.p.v. direct naar het magazijn. Geen code-wijziging in de uitwissellogic
 - `berichtenuitvraag` → outway → inway → `berichtenmagazijn` end-to-end (#726/#728).
 - Bestaande FBS-app-tests blijven groen (config-only-wijziging).
 
-## #737-herziening (labels)
+## #737-herziening (titel-prefixes)
 
-#724/#725/#726 krijgen een `repo: B`-sectie met het FBS-onboardingdeel als checklist;
-#727/#728 worden gesplitst (mechanisme A / FBS-toepassing B). Zie Spec A voor de
-A/B-labelaanpak. Concrete issue-edits worden apart voorgelegd.
+De issues #724/#725/#726 krijgen een `[FBS]`/`[FSC][FBS]`-titel-prefix; #727/#728 worden
+gesplitst (mechanisme A / FBS-toepassing B). Zie Spec A voor de prefix-aanpak
+(`[FSC]`/`[FBS]`/`[PROFIEL]`). Toegepast op 2026-06-29.
 
 ## Open punten
 

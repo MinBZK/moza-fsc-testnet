@@ -26,6 +26,7 @@
 Verwijder de FBS-peers en maak één neutrale `example-provider`-peer. De PKI-scripts adapteren automatisch.
 
 **Files:**
+
 - Delete: `peers/magazijn-a/`, `peers/magazijn-b/`, `peers/uitvraag-org/` (volledige mappen)
 - Delete: `pki/peers/magazijn-a/`, `pki/peers/magazijn-b/`, `pki/peers/uitvraag-org/` (volledige mappen)
 - Create: `pki/peers/example-provider/manager/csr.json`
@@ -34,6 +35,7 @@ Verwijder de FBS-peers en maak één neutrale `example-provider`-peer. De PKI-sc
 - Test (bestaand, generiek): `pki/verify.sh`
 
 **Interfaces:**
+
 - Produces: peer-naam `example-provider`, OIN `00000000000000000030`, endpoints `manager` + `inway`, cert-paden `pki/out/example-provider/{manager,inway}/{cert,key}.pem` en `pki/internal/example-provider/{ca/root,manager/{cert,key},inway/{cert,key}}.pem`. Task 2 (harness) consumeert deze paden.
 
 - [ ] **Step 1: Verwijder de FBS-peer-mappen**
@@ -163,6 +165,7 @@ EOF
 Hernoem elke `magazijn-a`-referentie in de harness naar `example-provider`. De harness blijft functioneel identiek (manager + controller + directory + directory-ui), alleen de peer-naam/OIN/DB's/SNI wijzigen.
 
 **Files:**
+
 - Modify: `deploy/local/docker-compose.yaml`
 - Modify: `deploy/local/haproxy.cfg`
 - Modify: `deploy/local/postgres-init.sql`
@@ -170,12 +173,14 @@ Hernoem elke `magazijn-a`-referentie in de harness naar `example-provider`. De h
 - Test (bestaand): `deploy/local/smoke-announce.sh`
 
 **Interfaces:**
+
 - Consumes: cert-paden uit Task 1 (`pki/out/example-provider/...`, `pki/internal/example-provider/...`).
 - Produces: compose-services `migrate-example-provider`, `manager-example-provider`; DB's `fsc_example_provider`, `fsc_controller_example_provider`; SNI-host `example-provider.fsc-test.local`; smoke pollt op OIN `...030`.
 
 - [ ] **Step 1: Pas de smoke-test eerst aan (faalt nu tegen de oude compose)**
 
 In `deploy/local/smoke-announce.sh`:
+
 - Regel 9: `MAGA_OIN="00000001003214345000"` → `PROVIDER_OIN="00000000000000000030"`
 - Vervang overal in het bestand `magazijn-a` → `example-provider` (regels 2–4, 20, 27, 38) en `$MAGA_OIN` → `$PROVIDER_OIN` (regels 20, 26).
 - Regel 55: in de `logs --tail=50`-lijst `migrate-magazijn-a manager-magazijn-a` → `migrate-example-provider manager-example-provider`.
@@ -205,6 +210,7 @@ Expected: FAIL — de smoke pollt op OIN `...030`, maar de compose meldt nog `ma
 - [ ] **Step 3: Herbedraad `docker-compose.yaml`**
 
 Voer in `deploy/local/docker-compose.yaml` deze exacte vervangingen door (alle occurrences):
+
 - `magazijn-a` → `example-provider`  (dekt servicenamen `migrate-magazijn-a`/`manager-magazijn-a`, SNI-aliassen `magazijn-a.fsc-test.local` + `manager.magazijn-a.fsc-test.local`, en cert-paden `/pki/out/magazijn-a/...` + `/pki/internal/magazijn-a/...`)
 - `magazijn_a` → `example_provider`  (dekt DB's `fsc_magazijn_a`, `fsc_controller_magazijn_a`)
 - YAML-anchors voor leesbaarheid: `maga-grp` → `ep-grp`, `maga-grp-key` → `ep-grp-key`, `maga-introot` → `ep-introot`, `maga-int` → `ep-int`, `maga-int-key` → `ep-int-key` (zowel de `&`-definitie als de `*`-referentie).
@@ -261,12 +267,13 @@ Expected: geen treffers.
 - [ ] **Step 4: Herbedraad `haproxy.cfg`**
 
 In `deploy/local/haproxy.cfg`:
+
 - Regel 31: `use_backend maga if { req_ssl_sni -i magazijn-a.fsc-test.local }` → `use_backend ep if { req_ssl_sni -i example-provider.fsc-test.local }`
 - Regel 35–36: `backend maga` / `server s1 manager-magazijn-a:8443` → `backend ep` / `server s1 manager-example-provider:8443`
 
 Resultaat:
 
-```
+```text
     use_backend dir  if { req_ssl_sni -i directory.fsc-test.local }
     use_backend ep   if { req_ssl_sni -i example-provider.fsc-test.local }
 
@@ -330,10 +337,12 @@ EOF
 De handleiding `deploy/local/README.md` gebruikt `magazijn-a` in voorbeelden/verwachte output. Herschrijf naar `example-provider` zodat de README klopt met de harness.
 
 **Files:**
+
 - Modify: `deploy/local/README.md`
 - Test: `markdownlint`
 
 **Interfaces:**
+
 - Consumes: namen/paden uit Task 1 + 2.
 
 - [ ] **Step 1: Lees de README en vervang FBS-namen**
@@ -345,6 +354,7 @@ grep -n 'magazijn\|maga\|00000001003214345000' deploy/local/README.md
 ```
 
 Vervang in `deploy/local/README.md` op elke getoonde regel:
+
 - `magazijn-a` → `example-provider`
 - cert-paden `out/magazijn-a/...` → `out/example-provider/...`, `internal/magazijn-a/...` → `internal/example-provider/...`
 - OIN `00000001003214345000` → `00000000000000000030`

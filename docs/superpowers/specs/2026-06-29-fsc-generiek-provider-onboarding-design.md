@@ -7,8 +7,8 @@
 ## Aanleiding
 
 Dit repo (`moza-fsc-testnet`) is bedoeld als **generieke FSC-testomgeving**: het draait
-OpenFSC voor MOZa, en elk team sluit aan als eigen peer. In de praktijk is het tijdens
-#722/#723 vermengd geraakt met de FBS-PoC: echte FBS-OINs (magazijn-a/-b, uitvraag-org),
+OpenFSC voor MOZa, en elk team sluit aan als eigen peer. In de praktijk raakte het
+tijdens #722/#723 vermengd met de FBS-PoC: echte FBS-OINs (magazijn-a/-b, uitvraag-org),
 `berichtenmagazijn`-upstream en FBS-peer-config staan nu hardcoded in dit repo. Dat hoort
 hier niet: FBS-peers worden door het FBS-team opgezet, co-located met hun app, in
 `moza-poc-fbs-berichtenbox` (Spec B).
@@ -87,7 +87,7 @@ dóór de inway is #728.
 
 ## Data flow (onboarding, niet data-pad)
 
-```
+```text
 example-provider                          centrale kern
   controller ──CreateService(admin-API)──► (eigen DB)
   manager ───announce──────────────────► directory-manager (peers.peers)
@@ -162,12 +162,11 @@ self-service-onboarding zonder de hele tweede peer te hoeven draaien.
   noemen, maar niet als ingebakken peer).
 - Lint groen (markdownlint + yamllint + actionlint).
 
-## #737-herziening (labels)
+## #737-herziening (titel-prefixes)
 
-Elk sub-issue krijgt een `repo: A` / `repo: B`-markering (sectie in de body; geen nieuwe
-epic). #724/#725 worden generiek (A); hun FBS-deel als checklist-item richting B. De
-concrete issue-body-edits worden apart gedraft en vóór toepassen voorgelegd (issues
-aanpassen vereist akkoord).
+Elk sub-issue krijgt een titel-prefix die de track toont: `[FSC]` (generieke infra, dit
+repo), `[FBS]` (FBS-app-onboarding), `[FSC][FBS]` (gesplitst) of `[PROFIEL]` (profiel-app).
+Issues #724/#725 worden generiek (FSC); hun FBS-deel hoort bij repo B. Toegepast op 2026-06-29.
 
 ## Open punten / blockers
 
