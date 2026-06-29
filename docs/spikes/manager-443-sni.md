@@ -98,9 +98,9 @@ group-cert (hostname niet geverifieerd → SAN-mismatch maakt niet uit).
 
 Revert de twee diffs. Geen PKI/DB-state om op te ruimen.
 
-## Wat dit NIET dekt (→ cluster-spike, #723, geblokkeerd op ZAD `attachments`)
+## Wat dit NIET dekt (→ cluster-spike, #723)
 
 De echte HAProxy-`passthrough`-Route op ODCN (i.p.v. de lokale sni-proxy) +
 gemounte certs. Gegeven het source-bewijs + #720 (passthrough op beide poorten
-bewezen) is dit laag-risico; bundel het met de directory/group-deploy zodra
-ZAD `attachments` beschikbaar is.
+bewezen) is dit laag-risico; bundel het met de directory/group-deploy. ZAD
+`attachments` (cert-mount) is sinds 2026-06-29 beschikbaar.

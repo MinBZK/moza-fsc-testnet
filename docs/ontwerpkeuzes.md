@@ -84,7 +84,7 @@ De controller-beheer-UI doet OIDC. OpenFSC levert standaard **Keycloak** (baked 
 (`AUTHN_TYPE=none`, een door OpenFSC ondersteunde modus); volledige OIDC is een
 gedocumenteerde TODO (issuer-split + redirect-URI — zie `deploy/local/README.md`).
 
-### Openstaande ZAD-dependency
+### ZAD-dependency: cert-mount (opgelost, 2026-06-29)
 
-ZAD heeft (nog) geen cert-upload. Er komt een generiek `attachments`-blok (encrypted opslag,
-read-only mount in de pod). Nodig vóór #722/#723 live kunnen.
+ZAD `attachments` (generiek blok: encrypted opslag, read-only mount in de pod) is beschikbaar.
+Per-peer certs kunnen gemount worden — #722/#723 zijn hierop niet langer geblokkeerd.

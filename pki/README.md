@@ -58,8 +58,8 @@ nieuwe peer wordt automatisch aangemaakt.
 - [x] Per-peer leaf-certs via script — `issue.sh` (group- én internal-keten).
 - [x] Per-peer internal-CA + internal-certs (manager-cert-set compleet) — `issue.sh`.
 - [x] CRL-distributie — `gen-crl.sh` (lege CRL, intermediate als issuer).
-- [ ] Secrets via ZAD `attachments` (encrypted, read-only mount) — **geblokkeerd**, wacht op
-      ZAD cert-upload-feature. `TODO(#723)`: mount group-trust (`pki/ca/root.pem`,
+- [ ] Secrets via ZAD `attachments` (encrypted, read-only mount) — feature **beschikbaar sinds
+      2026-06-29** (eerder geblokkeerd). `TODO(#723)`: mount group-trust (`pki/ca/root.pem`,
       `pki/ca/intermediate.crl`), per-peer `out/<peer>/<endpoint>/{cert,key}.pem` (group) plus
       `internal/<peer>/ca/root.pem` + `internal/<peer>/<endpoint>/{cert,key}.pem` (internal).
       Nooit in image bakken.

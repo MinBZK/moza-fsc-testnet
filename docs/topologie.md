@@ -40,4 +40,4 @@ Bewezen met een lokale plug-and-play compose (HAProxy `mode tcp`): peers registr
 directory met `manager_address` op `:443`. Zie [`spikes/manager-443-sni.md`](spikes/manager-443-sni.md).
 Gevolg voor ZAD: de SNI-hostname hoeft **niet** in de cert-SAN — alleen een geldige OIN + keten naar
 de trust-anchor. De cluster-Route op ODCN (i.p.v. de lokale sni-proxy) valt samen met de
-directory/group-deploy zodra ZAD `attachments` (cert-mount) beschikbaar is.
+directory/group-deploy; ZAD `attachments` (cert-mount) is sinds 2026-06-29 beschikbaar.

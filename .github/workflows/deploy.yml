@@ -8,8 +8,8 @@ permissions: {}
 jobs:
   directory:
     runs-on: ubuntu-latest
-    # NB: deze deploy slaagt pas zodra ZAD `attachments` (cert-mount) beschikbaar
-    # is; tot die tijd is dit het bron-artefact, niet een groene run (#723).
+    # NB: ZAD `attachments` (cert-mount) is sinds 2026-06-29 beschikbaar — mount de certs
+    # als attachments (paden: zie peers/directory/manager.env.example) om groen te draaien (#723).
     # TODO(#729): bouw + push de wrapper-image (deploy/zad/manager-migrate) naar
     #   ghcr.io/minbzk/moza-fsc-testnet/manager-migrate in een eigen CI-job; nu
     #   bestaat 'm alleen lokaal (docker compose build).

@@ -73,10 +73,11 @@ mTLS-passthrough is bewezen op het ODCN-prod-cluster (beide poorten, eigen cert,
 - ZAD-pods configureren via **env-vars / gemounte files**, niet via CLI-args (ZAD staat geen
   component-args toe).
 
-### Openstaande ZAD-dependency (blocker voor #722/#723)
+### ZAD-dependency: cert-mount (opgelost, 2026-06-29)
 
-ZAD heeft (nog) geen cert-upload. Er komt een generiek `attachments`-blok (encrypted opslag,
-read-only mount in de pod). Nodig vóór per-peer certs gemount kunnen worden. Beleggen bij ZAD-beheer.
+ZAD `attachments` (generiek blok: encrypted opslag, read-only mount in de pod) is **sinds
+2026-06-29 beschikbaar**. Per-peer certs kunnen nu gemount worden — de eerdere blocker
+voor #722/#723 is opgeheven.
 
 ## Repo-structuur
 
@@ -111,7 +112,7 @@ Onder #661: #720 (mTLS-spike, **done/GO**) · #721 (repo-skelet + governance/CI,
 · #726 FBS-integratie · #727 contracten · #728 e2e+logging · #729 CI+cleanup · #730 profiel-peer.
 
 **Huidige stap: #722 (test-PKI).** Het CA/cert-genereer-werk kan vooruit (OpenFSC `ca`/`ca-certportal`);
-alleen het *mounten* van certs wacht op de ZAD `attachments`-feature.
+het *mounten* van certs kan nu via ZAD `attachments` (sinds 2026-06-29 beschikbaar).
 
 ## Referenties
 

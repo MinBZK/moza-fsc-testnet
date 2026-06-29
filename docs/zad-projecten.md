@@ -123,8 +123,9 @@ De env-var-templates (`.env.example`) worden in alle gevallen door het app-team
 
 ## Open punten / blockers
 
-- **ZAD `attachments` (cert-mount).** Nog niet beschikbaar; blocker voor #722/#723.
-  Zonder cert-mount kunnen peers geen group-trust opzetten. Beleggen bij ZAD-beheer.
+- **ZAD `attachments` (cert-mount) → beschikbaar (2026-06-29).** Per-peer certs kunnen nu
+  read-only gemount worden; de eerdere blocker voor #722/#723 is opgeheven. Mount group-trust +
+  per-peer group/internal-certs op de gedocumenteerde paden (zie `peers/directory/manager.env.example`).
 - **DB-migraties → opgelost (wrapper-image, #723).** ZAD staat geen args/init-containers
   toe, dus migreren zit nu in de image-entrypoint: `deploy/zad/manager-migrate/`
   (`migrate up && serve` in één dunne laag boven de stock-manager — geen broncode-fork).
