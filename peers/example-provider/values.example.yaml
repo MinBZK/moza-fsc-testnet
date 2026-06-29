@@ -1,0 +1,26 @@
+# Helm-values voor de neutrale voorbeeld-provider-peer (Spec A, #724).
+# Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
+#
+# example-provider = neutraal voorbeeld dat de generieke provider-onboarding bewijst.
+# GEEN echte organisatie. Houd de OIN 1:1 in lockstep met
+# pki/peers/example-provider/<endpoint>/csr.json -> veld `serialnumber`.
+peer:
+  oin: "00000000000000000030"                   # synthetische voorbeeld-OIN -> wordt Peer ID
+  name: "example-provider"                       # -> subject.organization in het cert
+manager:
+  managementAddress: "example-provider-manager:8443"
+  postgresDsn: "postgres://fsc:fsc@example-provider-postgres:5432/fsc?sslmode=disable"
+inway:
+  name: "example-provider-inway"
+  selfAddress: "example-provider-inway:443"      # eigen SNI-hostnaam (passthrough-Route)
+  directoryRegistrationAddress: "directory-manager:8443"
+  upstream: "example-upstream:8080"              # neutrale stub-upstream (geen FBS-app)
+
+# TODO(#724): dit skelet toont alleen de hoofd-adressen. Een werkende OpenFSC-deploy
+# vereist daarnaast (zie open-fsc helm/charts), uitgewerkt in vervolgplannen:
+#   - certificaten: certificates.group.* + certificates.internal.* +
+#     certificates.internalUnauthenticated.* (inter-component mTLS, manager<->inway);
+#   - interne manager-poorten 9443 (authenticated) en 9444 (unauthenticated);
+#   - transaction-log: txlog-api-adres voor manager én inway (verplichte logging-extensie).
+# `upstream` is een neutrale stub die de business-app vervangt.
+# Echte secrets/certs worden via ZAD `attachments` gemount, nooit hier ingevuld.
