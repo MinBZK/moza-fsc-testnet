@@ -1,9 +1,18 @@
 # Runbook: directory live op ZAD (#723)
 
 > Doel: de centrale **directory** (group-anker) draaiend krijgen op ZAD-project `mft-tp9`, zodat
-> peers kunnen announcen. Status: klaar om af te lopen; `TODO`-markers = door jou in ZAD te
-> bevestigen/invullen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
+> peers kunnen announcen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
 > ZAD Operations Manager API (`https://zad.rijksapp.nl/openapi.json`, v2).
+>
+> **Status (2026-06-29):** eerste bring-up gestart op deployment `pr-723`; componenten
+> `dirmgr`/`dirui` aangemaakt via de API. **Geblokkeerd:** na het toevoegen + opslaan van de
+> bijlagen op `dirmgr` verdwenen de componenten uit het project (ZAD-bug → bij beheer belegd).
+>
+> **Wijziging — managed PostgreSQL:** we draaien GEEN eigen `postgres:17` meer; we gebruiken ZAD's
+> managed Postgres (`postgresql-database`-service) voor betere resource-pooling. `dirdb` vervalt;
+> de manager krijgt de service + bouwt `STORAGE_POSTGRES_DSN` uit de connection-substitutievars
+> (`$HOST`/`$PORT`/`$DB_NAME` + credentials — exacte vars TODO bij beheer). Script + onderstaande
+> stappen worden hierop aangepast zodra die conventie bekend is.
 
 ## Taakverdeling: API/CI vs UI
 
