@@ -37,8 +37,8 @@ case "${CLONE_FROM}" in *[!a-z0-9-]*) echo "ongeldige clone_from: '${CLONE_FROM}
 
 MANAGER_IMAGE="ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${MANAGER_TAG}"
 UI_IMAGE="docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG}"
-MANAGER_HOST="dir-mgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
-DSN="postgres://fsc:${PG_PASSWORD}@dir-db:5432/fsc_directory?sslmode=disable"
+MANAGER_HOST="dirmgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
+DSN="postgres://fsc:${PG_PASSWORD}@dirdb:5432/fsc_directory?sslmode=disable"
 
 # --- env-blobs (KEY=value, newline-sep). TLS_*-paden = de bijlage-mounts (UI, ontwerp A). ---
 PG_ENV="$(printf '%s\n' \
@@ -94,17 +94,17 @@ DEPLOY_BODY="$(jq -n --arg d "${DEPLOYMENT}" --arg cf "${CLONE_FROM}" \
   '{deploymentName:$d, domain_format:"component-deployment-project", components:[]}
    + (if $cf=="" then {} else {cloneFrom:$cf, forceClone:true} end)')"
 
-PG_BODY="$(component_body dir-db "postgres:17" 5432 "${PG_ENV}")"
-MANAGER_BODY="$(component_body dir-mgr "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}")"
-UI_BODY="$(component_body dir-ui "${UI_IMAGE}" 8080 "${UI_ENV}")"
+PG_BODY="$(component_body dirdb "postgres:17" 5432 "${PG_ENV}")"
+MANAGER_BODY="$(component_body dirmgr "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}")"
+UI_BODY="$(component_body dirui "${UI_IMAGE}" 8080 "${UI_ENV}")"
 
 # ---- plan: toon alleen ----
 if [ "${MODE}" = plan ]; then
   echo "### deployment (:upsert-deployment)"; echo "${DEPLOY_BODY}"
   if [ -z "${CLONE_FROM}" ]; then
-    echo "### component dir-db";  echo "${PG_BODY}"
-    echo "### component dir-mgr";   echo "${MANAGER_BODY}"
-    echo "### component dir-ui";    echo "${UI_BODY}"
+    echo "### component dirdb";  echo "${PG_BODY}"
+    echo "### component dirmgr";   echo "${MANAGER_BODY}"
+    echo "### component dirui";    echo "${UI_BODY}"
   else
     echo "(cloneFrom=${CLONE_FROM} -> componenten geërfd; geen POST /components)"
   fi
@@ -152,12 +152,12 @@ post "deployment" "/:upsert-deployment" "${DEPLOY_BODY}"
 
 if [ -z "${CLONE_FROM}" ]; then
   echo "== componenten aanmaken =="
-  post "dir-db" "/components" "${PG_BODY}"
-  post "dir-mgr"  "/components" "${MANAGER_BODY}"
-  post "dir-ui"       "/components" "${UI_BODY}"
+  post "dirdb" "/components" "${PG_BODY}"
+  post "dirmgr"  "/components" "${MANAGER_BODY}"
+  post "dirui"       "/components" "${UI_BODY}"
 else
   echo "== cloneFrom=${CLONE_FROM}: componenten geërfd =="
 fi
 
-echo "Klaar. Nog handmatig (UI): bijlagen (certs op /etc/fsc/...) + Publicatie op het web modus 2 op dir-mgr."
+echo "Klaar. Nog handmatig (UI): bijlagen (certs op /etc/fsc/...) + Publicatie op het web modus 2 op dirmgr."
 echo "Manager-hostnaam: ${MANAGER_HOST}"
