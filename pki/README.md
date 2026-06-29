@@ -25,13 +25,21 @@ go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 ./pki/fix-permissions.sh  # 4. world-rw van keys halen
 ./pki/verify.sh           # 5. acceptatie-asserts (exit 0 = groen)
 ./pki/combine-pem.sh      # 6. (ZAD) cert+key -> combined.pem voor de passthrough-upload
+./pki/zad-bundle.sh directory   # 7. (ZAD) upload-set + manifest per peer -> pki/zad-upload/
 ```
 
 `pki/ca/root.pem` = trust-anchor voor de group rules (`group/group-config.example.yaml`).
 
-`combine-pem.sh` voegt per group-endpoint `cert.pem` + `key.pem` samen tot `combined.pem`
-(gitignored) voor ZAD "Publicatie op het web" modus 2 (eigen certificaat op de pod /
-passthrough), die één PEM met cert + key wil. Zie `docs/spikes/zad-attachments.md`.
+Voor ZAD (zie `docs/spikes/zad-attachments.md`):
+
+- `combine-pem.sh` voegt per group-endpoint `cert.pem` + `key.pem` samen tot `combined.pem`
+  voor "Publicatie op het web" modus 2 (eigen certificaat op de pod / passthrough), die één PEM
+  met cert + key wil.
+- `zad-bundle.sh <peer>` verzamelt de hele upload-set (group-root, per-endpoint cert/key +
+  combined, internal-CA + internal cert/key) in `pki/zad-upload/<peer>/` met een `MANIFEST.md`
+  dat per bestand het beoogde pod-pad (attachment) + de `TLS_*`-env-var noemt.
+
+Beide outputs zijn gitignored (bevatten privésleutels).
 
 ## Twee cert-ketens per endpoint
 
