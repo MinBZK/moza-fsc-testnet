@@ -1,20 +1,23 @@
 # Directe ZAD-API-deploy van de directory (#723) via de v2 Operations Manager API.
-# Alternatief/aanvulling op deploy.yml (zad-actions): geeft controle over `domain_format` en
-# een read-only `validate`-modus om auth + connectie te checken vóór een mutatie.
+# Roept deploy/zad/upsert-directory.sh aan (zelfde bron als de CLI). `validate` is read-only;
+# `apply` upsert het deployment. Model: PR = eigen deployment; main -> deployment `test`.
 #
-# Dekt alleen wat de deploy-API kan: deployment + component-referenties + images + domain_format.
-# NIET via de API (UI-only, zie docs/zad-directory-deploy.md): bijlagen (cert-mount), env-vars,
-# "Publicatie op het web" (passthrough-TLS).
+# Dekt alleen de deploy-API (deployment + componenten + images + domain_format). NIET via de API
+# (UI-only): bijlagen (cert-mount), env-vars, "Publicatie op het web" (passthrough-TLS).
 name: zad-deploy-directory
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "validate = read-only GET (auth-check); apply = upsert het deployment"
+        description: "validate = read-only auth-check; apply = upsert het deployment"
         type: choice
         options: [validate, apply]
         default: validate
+      deployment:
+        description: "deployment-naam (main -> test; PR -> eigen naam)"
+        required: false
+        default: "test"
       image_tag:
         description: "manager-migrate / directory-ui tag"
         required: false
@@ -24,54 +27,23 @@ permissions:
   contents: read
 
 concurrency:
-  group: zad-deploy-directory
+  group: zad-deploy-directory-${{ inputs.deployment }}
   cancel-in-progress: false
 
 jobs:
   zad:
     runs-on: ubuntu-latest
-    env:
-      ZAD_BASE: https://zad.rijksapp.nl
-      PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-      X_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
-      IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
     steps:
-      - name: Validate — auth + huidige deployments (read-only)
-        run: |
-          set -euo pipefail
-          [ -n "${PROJECT}" ] || { echo "ZAD_PROJECT_ID_DIRECTORY (var) leeg"; exit 1; }
-          [ -n "${X_API_KEY}" ] || { echo "ZAD_API_KEY_DIRECTORY (secret) leeg"; exit 1; }
-          code=$(curl -sS -o resp.json -w '%{http_code}' \
-            -H "X-API-Key: ${X_API_KEY}" \
-            "${ZAD_BASE}/api/v2/projects/${PROJECT}/deployments")
-          echo "GET /deployments -> HTTP ${code}"
-          if [ "${code}" != "200" ]; then echo "Auth/connectie faalt:"; cat resp.json; exit 1; fi
-          jq . resp.json 2>/dev/null || cat resp.json
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
-      - name: Apply — upsert directory-deployment
-        if: ${{ inputs.mode == 'apply' }}
-        run: |
-          set -euo pipefail
-          # image_tag gaat in de JSON-body — beperk tot een veilige tag-charset (geen injectie).
-          case "${IMAGE_TAG}" in
-            ""|*[!A-Za-z0-9._-]*) echo "ongeldige image_tag: '${IMAGE_TAG}'"; exit 1;;
-          esac
-          cat > body.json <<JSON
-          {
-            "deploymentName": "directory",
-            "domain_format": "component-deployment-project",
-            "components": [
-              {"reference": "directory-postgres", "image": "postgres:17"},
-              {"reference": "directory-manager", "image": "ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${IMAGE_TAG}"},
-              {"reference": "directory-ui", "image": "docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG}"}
-            ]
-          }
-          JSON
-          echo "Body:"; jq . body.json
-          code=$(curl -sS -o resp.json -w '%{http_code}' -X POST \
-            -H "X-API-Key: ${X_API_KEY}" -H "Content-Type: application/json" \
-            --data @body.json \
-            "${ZAD_BASE}/api/v2/projects/${PROJECT}/:upsert-deployment")
-          echo "POST /:upsert-deployment -> HTTP ${code}"
-          jq . resp.json 2>/dev/null || cat resp.json
-          case "${code}" in 2*) echo "OK — upsert geaccepteerd (volg de task/UI).";; *) echo "FAIL"; exit 1;; esac
+      - name: Upsert directory via ZAD v2-API
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          MODE: ${{ inputs.mode }}
+          DEPLOYMENT: ${{ inputs.deployment || 'test' }}
+          IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
+        run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}"

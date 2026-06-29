@@ -32,10 +32,11 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 - Cluster = `odcn-production` (prod). Voorbeeld bestaande URL: `directory-test-mft-tp9.<base_domain>`.
 - De manager-hostnaam is de **SNI-hostnaam** voor `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` (zie env).
 
-> **Let op — bestaande staat (API, 2026-06-29):** project `mft-tp9` heeft al een deployment
-> `test` met één component `directory` (image leeg). De component/deployment-namen hieronder
-> (`directory` + `directory-postgres/-manager/-ui`) zijn nog niet definitief — zie de
-> structuur-keuze, want ze bepalen de hostnamen en mogen de bestaande `test` niet breken.
+> **Deploymodel:** een PR krijgt een eigen deployment; wat naar `main` gaat landt in deployment
+> **`test`**. De directory = 3 componenten (`directory-postgres/-manager/-ui`); een upsert van
+> `test` vervangt de bestaande placeholder-component `directory` (image leeg). Manager-hostnaam
+> dan: `directory-manager-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR-preview gebruikt
+> zijn eigen deployment-naam i.p.v. `test`.
 
 ## Stappen
 
@@ -76,7 +77,7 @@ binary-safe (spike vraag 4).
 ### 4. Env zetten (Operations Manager, of `env_vars` via API)
 
 - `directory-manager`: de waarden uit `peers/directory/manager.env.example`, met:
-  - `SELF_ADDRESS=https://directory-manager-directory-mft-tp9.<base_domain>:443`
+  - `SELF_ADDRESS=https://directory-manager-test-mft-tp9.<base_domain>:443` (of de PR-deployment)
   - `DIRECTORY_MANAGER_ADDRESS=` idem (directory wijst naar zichzelf)
   - `DISABLE_CRL_CHECKS` **niet** op `true` zetten op ZAD — `TODO(#722)`: óf een CRL-pad
     configureren, óf bewust uitzetten (zie `peers/directory/manager.env.example`).
@@ -94,15 +95,22 @@ gewone (edge) publicatie krijgen — die doet geen mTLS-mesh.
 
 ### 6. Deployen
 
-Twee opties (beide gebruiken het secret `ZAD_API_KEY_DIRECTORY`):
+Eén bron — `deploy/zad/upsert-directory.sh` — voor zowel CLI als CI:
 
-- **`zad-deploy-directory.yml`** (directe v2-API, aanbevolen). Draai eerst met `mode=validate`
-  (read-only GET — checkt auth + connectie zonder te muteren), daarna `mode=apply`. Doet
-  `POST /:upsert-deployment` met de 3 component-referenties + `domain_format=component-deployment-project`.
-- **`deploy.yml`** (zad-actions). Zelfde upsert via de composite action; geen `domain_format`-controle.
+- **Nu, via CLI** (werkt direct, geen merge nodig):
 
-Beide zetten **geen** env / bijlagen / web-publicatie (stappen 3–5, UI). `TODO`: bevestig in
-`mode=validate` of auth werkt en of het upsert-deployment de componenten aanmaakt zoals verwacht.
+  ```bash
+  read -rs ZAD_API_KEY; export ZAD_API_KEY     # plak de key niet inline
+  ./deploy/zad/upsert-directory.sh validate              # read-only auth/connectie-check
+  ./deploy/zad/upsert-directory.sh apply test v1.43.7    # main -> test (of een PR-deployment-naam)
+  ```
+
+- **Later, via CI**: `zad-deploy-directory.yml` (workflow_dispatch: `mode`/`deployment`/`image_tag`)
+  roept hetzelfde script aan. Beschikbaar zodra de workflow op `main` staat (dispatch-knop vereist
+  de default branch).
+
+Doet `POST /:upsert-deployment` met de 3 component-referenties + `domain_format=component-deployment-project`.
+Zet **geen** env / bijlagen / web-publicatie (stappen 3–5, UI). Draai eerst `validate`.
 
 ### 7. Verifiëren
 
