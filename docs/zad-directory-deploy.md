@@ -22,15 +22,20 @@
 - **Alleen in de Operations Manager UI** (niet in de deploy-API): **bijlagen** (cert-mount, ontwerp A)
   en **"Publicatie op het web"** (passthrough-TLS, modus 2).
 
-## Componenten (deployment `directory`, project `mft-tp9`)
+## Componenten (project `mft-tp9`)
 
-| Component | Image | Rol |
-|-----------|-------|-----|
-| `directory-postgres` | `postgres:17` | system-of-record (persistent, gebackupt — niet preview-cloned) |
-| `directory-manager` | `ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:v1.43.7` | manager in directory-mode (migrate→serve) |
-| `directory-ui` | `docker.io/federatedserviceconnectivity/directory-ui:v1.43.7` | dienstencatalogus-UI |
+Namen: kleine letters + cijfers, geen streepjes, max 12 tekens. Aangemaakt door
+`deploy/zad/upsert-directory.sh` (`apply`).
 
-Dit is exact de `components`-lijst in `.github/workflows/deploy.yml`.
+| Component | Image | Service / Web / Bijlagen | Rol |
+|-----------|-------|--------------------------|-----|
+| `dirmgr` | `ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:<tag>` | **`postgresql-database`** + **Web modus 2** + **6 bijlagen** | manager (directory-mode, migrate→serve) + managed Postgres |
+| `dirui` | `docker.io/federatedserviceconnectivity/directory-ui:v1.43.7` | Web (edge) + 3 bijlagen | dienstencatalogus-UI |
+
+**Geen eigen postgres-component** — `dirmgr` gebruikt ZAD's managed Postgres via de
+`postgresql-database`-service. De DSN komt uit substitutievars
+(`$DATABASE_SERVER_USER`/`$DATABASE_PASSWORD`/`$DATABASE_SERVER_HOST`/`$DATABASE_DB`, poort 5432),
+via een `aliases`-regel in `STORAGE_POSTGRES_DSN` (conventie uit het berichtenbox-project).
 
 ## Hostnaam
 
