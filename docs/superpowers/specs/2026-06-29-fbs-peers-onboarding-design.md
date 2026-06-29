@@ -89,7 +89,7 @@ outway i.p.v. direct naar het magazijn. Geen code-wijziging in de uitwissellogic
 - **Repo A af** (Spec A): generieke template + cert-portal beschikbaar, directory draait.
 - **#729**: deploy-mechanisme (reusable workflow / componentlijst) om de peer naast de app
   te deployen. Tot die er is: lokaal bewijzen (compose), ZAD volgt.
-- **ZAD `attachments`**: cert-mount (gedeelde blocker met repo A).
+- **ZAD `attachments`**: cert-mount **beschikbaar sinds 2026-06-29** (niet langer een blocker).
 - **#727**: contract-bootstrap voor de consumer↔provider-toegang.
 
 ## Testen / acceptatie

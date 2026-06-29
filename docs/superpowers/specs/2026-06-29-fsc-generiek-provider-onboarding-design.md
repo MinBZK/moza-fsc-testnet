@@ -32,8 +32,9 @@ end-to-end met één neutraal voorbeeld.
 - De échte data-call dóór de inway naar de app → #728.
 - De FBS-peers zelf → Spec B (repo B).
 - De reusable cross-repo deploy-workflow → #729.
-- Groen draaien op ZAD → geblokkeerd door ZAD `attachments` (cert-mount); deze spec
-  levert de ZAD-artefacten als source-of-truth, niet een groene ZAD-run.
+- Groen draaien op ZAD → buiten scope van deze spec (levert de ZAD-artefacten als
+  source-of-truth). NB: ZAD `attachments` (cert-mount) is sinds 2026-06-29 beschikbaar,
+  dus de groene ZAD-run is niet langer geblokkeerd — apart vervolg (#729).
 
 ## Architectuur
 
@@ -170,8 +171,9 @@ aanpassen vereist akkoord).
 
 ## Open punten / blockers
 
-- **ZAD `attachments`** (cert-mount) nog niet beschikbaar → centrale kern + peers draaien
-  nog niet groen op ZAD. Deze spec levert artefacten als source-of-truth.
+- **ZAD `attachments`** (cert-mount) is sinds 2026-06-29 beschikbaar → centrale kern + peers
+  kunnen nu groen op ZAD (certs als attachments mounten). Deze spec levert de artefacten;
+  de groene ZAD-run is vervolgwerk (#729).
 - **ca-cfssl op ZAD**: of de CFSSL-CA centraal op ZAD draait of alleen lokaal/offline blijft,
   is een vervolgkeuze (raakt #729). Lokaal bewijzen we de portal; ZAD-deploy van de CA is
   TODO(#729).
