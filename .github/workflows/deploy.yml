@@ -10,9 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     # NB: ZAD `attachments` (cert-mount) is sinds 2026-06-29 beschikbaar — mount de certs
     # als attachments (paden: zie peers/directory/manager.env.example) om groen te draaien (#723).
-    # TODO(#729): bouw + push de wrapper-image (deploy/zad/manager-migrate) naar
-    #   ghcr.io/minbzk/moza-fsc-testnet/manager-migrate in een eigen CI-job; nu
-    #   bestaat 'm alleen lokaal (docker compose build).
+    # De wrapper-image wordt gebouwd + gepusht door build-manager-migrate.yml (#729)
+    #   naar ghcr.io/minbzk/moza-fsc-testnet/manager-migrate. Draai die workflow eerst.
     # TODO(#729): bootstrap de `fsc_directory`-database op directory-postgres. De
     #   wrapper draait alleen `migrate up` (geen CREATE DATABASE); lokaal doet
     #   postgres-init.sql dat. Zet op ZAD POSTGRES_DB=fsc_directory of een init-stap.

@@ -1,0 +1,58 @@
+# Bouwt + pusht de manager-migrate-wrapper-image naar ghcr (#729).
+# ZAD pullt images uit een registry; de wrapper (deploy/zad/manager-migrate, migrate->serve)
+# bestond tot nu toe alleen lokaal (docker compose build). Deze job publiceert 'm zodat
+# deploy.yml de directory-manager op ZAD kan draaien.
+#
+# Geen marketplace docker-actions: we gebruiken de op de runner voorgeïnstalleerde docker +
+# buildx in run-steps. Zo is er geen extra action-SHA te pinnen (alleen checkout) en blijft
+# Scorecard Pinned-Dependencies groen.
+name: build-manager-migrate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/zad/manager-migrate/**"
+      - ".github/workflows/build-manager-migrate.yml"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "OpenFSC manager-basisversie (build-arg IMAGE_TAG + image-tag)"
+        required: false
+        default: "v1.43.7"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-manager-migrate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build en push manager-migrate naar ghcr
+        env:
+          # Lowercase image-pad, exact zoals deploy.yml het consumeert.
+          IMAGE: ghcr.io/minbzk/moza-fsc-testnet/manager-migrate
+          IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          docker buildx build \
+            --build-arg "IMAGE_TAG=${IMAGE_TAG}" \
+            --tag "${IMAGE}:${IMAGE_TAG}" \
+            --label "org.opencontainers.image.source=https://github.com/${REPO}" \
+            --push \
+            deploy/zad/manager-migrate
+          echo "Gepusht: ${IMAGE}:${IMAGE_TAG}"
