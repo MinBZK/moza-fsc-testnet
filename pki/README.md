@@ -24,9 +24,14 @@ go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 ./pki/gen-crl.sh          # 3. lege CRL                          -> pki/ca/intermediate.crl
 ./pki/fix-permissions.sh  # 4. world-rw van keys halen
 ./pki/verify.sh           # 5. acceptatie-asserts (exit 0 = groen)
+./pki/combine-pem.sh      # 6. (ZAD) cert+key -> combined.pem voor de passthrough-upload
 ```
 
 `pki/ca/root.pem` = trust-anchor voor de group rules (`group/group-config.example.yaml`).
+
+`combine-pem.sh` voegt per group-endpoint `cert.pem` + `key.pem` samen tot `combined.pem`
+(gitignored) voor ZAD "Publicatie op het web" modus 2 (eigen certificaat op de pod /
+passthrough), die één PEM met cert + key wil. Zie `docs/spikes/zad-attachments.md`.
 
 ## Twee cert-ketens per endpoint
 

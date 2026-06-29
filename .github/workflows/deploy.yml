@@ -12,9 +12,9 @@ jobs:
     # als attachments (paden: zie peers/directory/manager.env.example) om groen te draaien (#723).
     # De wrapper-image wordt gebouwd + gepusht door build-manager-migrate.yml (#729)
     #   naar ghcr.io/minbzk/moza-fsc-testnet/manager-migrate. Draai die workflow eerst.
-    # TODO(#729): bootstrap de `fsc_directory`-database op directory-postgres. De
-    #   wrapper draait alleen `migrate up` (geen CREATE DATABASE); lokaal doet
-    #   postgres-init.sql dat. Zet op ZAD POSTGRES_DB=fsc_directory of een init-stap.
+    # DB-bootstrap: zet POSTGRES_DB=fsc_directory op de directory-postgres-component
+    #   (env-template peers/directory/postgres.env.example) — postgres:17 maakt de DB aan;
+    #   de wrapper draait alleen `migrate up` (geen CREATE DATABASE).
     steps:
       - name: Deploy directory (group-anker) naar ZAD
         # Versie-gepind (toegestaan); TODO(#729): naar SHA-pin voor Scorecard
