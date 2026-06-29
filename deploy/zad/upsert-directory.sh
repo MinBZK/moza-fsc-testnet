@@ -4,9 +4,13 @@
 # workflow zad-deploy-directory.yml. Zie docs/zad-directory-deploy.md en [[zad-deploy-api-model]].
 #
 # Model: PR = eigen deployment; main -> deployment `test`. `:upsert-deployment` REFEREERT alleen
-# bestaande componenten; componenten maak je met POST /components (incl. env_vars + port).
+# bestaande componenten; componenten maak je met POST /components (incl. env_vars/services/aliases).
 # Previews kunnen `cloneFrom` een bestaande deployment (erven componenten, alleen images zetten).
 # NIET via de API (UI-only): bijlagen (cert-mount) + "Publicatie op het web" (passthrough-TLS).
+#
+# DB: ZAD's managed Postgres (`postgresql-database`-service op de manager). De connection komt uit
+# substitutievars ($DATABASE_SERVER_HOST/$DATABASE_DB/$DATABASE_SERVER_USER/$DATABASE_PASSWORD),
+# via een alias in STORAGE_POSTGRES_DSN gegoten. Geen eigen postgres-component.
 #
 # Usage:
 #   export ZAD_API_KEY=...                          # niet inline (echo't anders)
@@ -14,19 +18,18 @@
 #   ./deploy/zad/upsert-directory.sh plan   [deployment] [tag] [clone_from]   # toont bodies, muteert niet
 #   ./deploy/zad/upsert-directory.sh apply  [deployment] [tag] [clone_from]   # muteert + pollt tasks
 # Env: ZAD_API_KEY (verplicht), ZAD_PROJECT (mft-tp9), ZAD_BASE (zad.rijksapp.nl),
-#      ZAD_BASE_DOMAIN (rig.prd1.gn2.quattro.rijksapps.nl), ZAD_PG_PASSWORD (test-wachtwoord).
+#      ZAD_BASE_DOMAIN (rig.prd1...), ZAD_MANAGER_TAG (ghcr manager-tag), ZAD_PG_SSLMODE (disable).
 set -euo pipefail
 
 MODE="${1:?usage: upsert-directory.sh <validate|plan|apply> [deployment=test] [tag=v1.43.7] [clone_from]}"
 DEPLOYMENT="${2:-test}"
 IMAGE_TAG="${3:-v1.43.7}"               # OpenFSC stock-tag (directory-ui, en default voor de manager)
 CLONE_FROM="${4:-}"
-# manager-migrate is onze ghcr-image en kan een eigen tag hebben (bv. een branch-tag van de build).
-MANAGER_TAG="${ZAD_MANAGER_TAG:-${IMAGE_TAG}}"
+MANAGER_TAG="${ZAD_MANAGER_TAG:-${IMAGE_TAG}}"   # manager-migrate (onze ghcr-image) kan een eigen tag hebben
 PROJECT="${ZAD_PROJECT:-mft-tp9}"
 BASE="${ZAD_BASE:-https://zad.rijksapp.nl}"
 BASE_DOMAIN="${ZAD_BASE_DOMAIN:-rig.prd1.gn2.quattro.rijksapps.nl}"
-PG_PASSWORD="${ZAD_PG_PASSWORD:-fsc-test-pw}"          # test-env; geen echte data
+PG_SSLMODE="${ZAD_PG_SSLMODE:-disable}"          # managed DB intra-cluster: plaintext (zoals berichtenbox-JDBC)
 
 case "${MODE}" in validate|plan|apply) ;; *) echo "mode = validate | plan | apply"; exit 1 ;; esac
 case "${DEPLOYMENT}" in ""|*[!a-z0-9-]*) echo "ongeldige deployment: '${DEPLOYMENT}'"; exit 1 ;; esac
@@ -38,14 +41,8 @@ case "${CLONE_FROM}" in *[!a-z0-9-]*) echo "ongeldige clone_from: '${CLONE_FROM}
 MANAGER_IMAGE="ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${MANAGER_TAG}"
 UI_IMAGE="docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG}"
 MANAGER_HOST="dirmgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
-DSN="postgres://fsc:${PG_PASSWORD}@dirdb:5432/fsc_directory?sslmode=disable"
 
-# --- env-blobs (KEY=value, newline-sep). TLS_*-paden = de bijlage-mounts (UI, ontwerp A). ---
-PG_ENV="$(printf '%s\n' \
-  "POSTGRES_DB=fsc_directory" \
-  "POSTGRES_USER=fsc" \
-  "POSTGRES_PASSWORD=${PG_PASSWORD}")"
-
+# --- env-blobs (KEY=value, newline-sep, plain). TLS_*-paden = de bijlage-mounts (UI, ontwerp A). ---
 MANAGER_ENV="$(printf '%s\n' \
   "LOG_TYPE=live" "LOG_LEVEL=info" "AUDITLOG_TYPE=stdout" \
   "GROUP_ID=moza-fbs-test" \
@@ -58,7 +55,6 @@ MANAGER_ENV="$(printf '%s\n' \
   "LISTEN_ADDRESS_INTERNAL=0.0.0.0:9443" \
   "LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED=0.0.0.0:9444" \
   "MONITORING_ADDRESS=0.0.0.0:8080" \
-  "STORAGE_POSTGRES_DSN=${DSN}" \
   "DISABLE_CRL_CHECKS=true" \
   "TLS_GROUP_ROOT_CERT=/etc/fsc/ca/root.pem" \
   "TLS_GROUP_CERT=/etc/fsc/out/directory/directory/cert.pem" \
@@ -74,6 +70,10 @@ MANAGER_ENV="$(printf '%s\n' \
   "TLS_INTERNAL_UNAUTHENTICATED_CERT=/etc/fsc/internal/directory/directory/cert.pem" \
   "TLS_INTERNAL_UNAUTHENTICATED_KEY=/etc/fsc/internal/directory/directory/key.pem")"
 
+# STORAGE_POSTGRES_DSN via alias: $DATABASE_*-substitutievars van de managed-Postgres-service.
+# Single-quotes -> $DATABASE_* blijft letterlijk (door ZAD ingevuld, niet door de shell).
+MANAGER_ALIASES='STORAGE_POSTGRES_DSN=postgres://$DATABASE_SERVER_USER:$DATABASE_PASSWORD@$DATABASE_SERVER_HOST:5432/$DATABASE_DB?sslmode='"${PG_SSLMODE}"
+
 UI_ENV="$(printf '%s\n' \
   "LOG_TYPE=live" "LOG_LEVEL=info" \
   "LISTEN_ADDRESS=0.0.0.0:8080" \
@@ -85,26 +85,27 @@ UI_ENV="$(printf '%s\n' \
   "TLS_GROUP_KEY=/etc/fsc/out/directory/directory/key.pem")"
 
 # component-body (AddComponentRequest) via jq -> correcte JSON-escaping.
-component_body() {  # $1=name $2=image $3=port $4=env_blob
-  jq -n --arg name "$1" --arg image "$2" --argjson port "$3" --arg env "$4" --arg dep "${DEPLOYMENT}" \
-    '{name:$name, image:$image, port:$port, env_vars:$env, deployment_names:[$dep]}'
+component_body() {  # $1=name $2=image $3=port $4=env  [$5=services_json=[]]  [$6=aliases=""]
+  jq -n --arg name "$1" --arg image "$2" --argjson port "$3" --arg env "$4" \
+        --argjson services "${5:-[]}" --arg aliases "${6:-}" --arg dep "${DEPLOYMENT}" \
+    '{name:$name, image:$image, port:$port, env_vars:$env, deployment_names:[$dep]}
+     + (if ($services|length) > 0 then {services:$services} else {} end)
+     + (if $aliases == "" then {} else {aliases:$aliases} end)'
 }
 
 DEPLOY_BODY="$(jq -n --arg d "${DEPLOYMENT}" --arg cf "${CLONE_FROM}" \
   '{deploymentName:$d, domain_format:"component-deployment-project", components:[]}
    + (if $cf=="" then {} else {cloneFrom:$cf, forceClone:true} end)')"
 
-PG_BODY="$(component_body dirdb "postgres:17" 5432 "${PG_ENV}")"
-MANAGER_BODY="$(component_body dirmgr "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}")"
+MANAGER_BODY="$(component_body dirmgr "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}" '["postgresql-database"]' "${MANAGER_ALIASES}")"
 UI_BODY="$(component_body dirui "${UI_IMAGE}" 8080 "${UI_ENV}")"
 
 # ---- plan: toon alleen ----
 if [ "${MODE}" = plan ]; then
   echo "### deployment (:upsert-deployment)"; echo "${DEPLOY_BODY}"
   if [ -z "${CLONE_FROM}" ]; then
-    echo "### component dirdb";  echo "${PG_BODY}"
-    echo "### component dirmgr";   echo "${MANAGER_BODY}"
-    echo "### component dirui";    echo "${UI_BODY}"
+    echo "### component dirmgr (manager + managed Postgres)"; echo "${MANAGER_BODY}"
+    echo "### component dirui";                               echo "${UI_BODY}"
   else
     echo "(cloneFrom=${CLONE_FROM} -> componenten geërfd; geen POST /components)"
   fi
@@ -152,9 +153,8 @@ post "deployment" "/:upsert-deployment" "${DEPLOY_BODY}"
 
 if [ -z "${CLONE_FROM}" ]; then
   echo "== componenten aanmaken =="
-  post "dirdb" "/components" "${PG_BODY}"
-  post "dirmgr"  "/components" "${MANAGER_BODY}"
-  post "dirui"       "/components" "${UI_BODY}"
+  post "dirmgr" "/components" "${MANAGER_BODY}"
+  post "dirui"  "/components" "${UI_BODY}"
 else
   echo "== cloneFrom=${CLONE_FROM}: componenten geërfd =="
 fi
