@@ -7,11 +7,11 @@
 
 ## Taakverdeling: API/CI vs UI
 
-- **Via `deploy.yml` / ZAD-API** (heeft het secret `ZAD_API_KEY_DIRECTORY`): deployment +
-  componenten + images (+ evt. `env_vars`). Endpoints v2: `POST /api/v2/projects/{project}/:upsert-deployment`,
-  `POST …/components`, `PUT …/deployments/{deployment}/image`.
-- **In de Operations Manager UI** (niet in de deploy-API): **bijlagen** (cert-mount) en
-  **"Publicatie op het web"** (TLS-modus). Plus env, als je die niet via de API zet.
+- **Via `deploy/zad/upsert-directory.sh` (ZAD-API, secret `ZAD_API_KEY_DIRECTORY`):** deployment +
+  componenten + images **+ env_vars**. `:upsert-deployment` maakt het deployment; `POST /components`
+  maakt elke component mét env + poort. Het script bevat de poorten + env (uit de lokale harness).
+- **Alleen in de Operations Manager UI** (niet in de deploy-API): **bijlagen** (cert-mount, ontwerp A)
+  en **"Publicatie op het web"** (passthrough-TLS, modus 2).
 
 ## Componenten (deployment `directory`, project `mft-tp9`)
 
@@ -95,22 +95,22 @@ gewone (edge) publicatie krijgen — die doet geen mTLS-mesh.
 
 ### 6. Deployen
 
-Eén bron — `deploy/zad/upsert-directory.sh` — voor zowel CLI als CI:
+Eén bron — `deploy/zad/upsert-directory.sh` (3 modi) — voor zowel CLI als CI:
 
-- **Nu, via CLI** (werkt direct, geen merge nodig):
+```bash
+read -rs ZAD_API_KEY; export ZAD_API_KEY              # plak de key niet inline
+./deploy/zad/upsert-directory.sh validate             # read-only auth/connectie-check
+./deploy/zad/upsert-directory.sh plan  test v1.43.7   # toont alle JSON-bodies, muteert NIET (review)
+./deploy/zad/upsert-directory.sh apply test v1.43.7   # upsert deployment + maakt componenten (env), pollt tasks
+# preview die de componenten van test erft (alleen images):
+./deploy/zad/upsert-directory.sh apply pr-123 v1.43.7 test
+```
 
-  ```bash
-  read -rs ZAD_API_KEY; export ZAD_API_KEY     # plak de key niet inline
-  ./deploy/zad/upsert-directory.sh validate              # read-only auth/connectie-check
-  ./deploy/zad/upsert-directory.sh apply test v1.43.7    # main -> test (of een PR-deployment-naam)
-  ```
-
-- **Later, via CI**: `zad-deploy-directory.yml` (workflow_dispatch: `mode`/`deployment`/`image_tag`)
-  roept hetzelfde script aan. Beschikbaar zodra de workflow op `main` staat (dispatch-knop vereist
-  de default branch).
-
-Doet `POST /:upsert-deployment` met de 3 component-referenties + `domain_format=component-deployment-project`.
-Zet **geen** env / bijlagen / web-publicatie (stappen 3–5, UI). Draai eerst `validate`.
+Het script maakt het deployment (`:upsert-deployment`, `domain_format=component-deployment-project`)
+en de 3 componenten met poorten + env (`POST /components`), en pollt elke task. `plan` toont eerst
+de exacte bodies. **Daarna nog handmatig (UI, stappen 3 + 5):** bijlagen (certs) + Publicatie op het
+web modus 2 op `directory-manager`. Via CI: `zad-deploy-directory.yml` (zelfde script; beschikbaar
+zodra 'ie op `main` staat). Env (stap 4) zit nu in het script — UI-env niet meer nodig.
 
 ### 7. Verifiëren
 

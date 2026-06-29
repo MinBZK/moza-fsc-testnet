@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "validate = read-only auth-check; apply = upsert het deployment"
+        description: "validate=auth-check; plan=toon bodies; apply=muteren + pollen"
         type: choice
-        options: [validate, apply]
+        options: [validate, plan, apply]
         default: validate
       deployment:
         description: "deployment-naam (main -> test; PR -> eigen naam)"
@@ -22,6 +22,10 @@ on:
         description: "manager-migrate / directory-ui tag"
         required: false
         default: "v1.43.7"
+      clone_from:
+        description: "optioneel: erf componenten van deze deployment (bv. test)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -46,4 +50,5 @@ jobs:
           MODE: ${{ inputs.mode }}
           DEPLOYMENT: ${{ inputs.deployment || 'test' }}
           IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
-        run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}"
+          CLONE_FROM: ${{ inputs.clone_from }}
+        run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}" "${CLONE_FROM}"
