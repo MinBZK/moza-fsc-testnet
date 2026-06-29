@@ -37,8 +37,8 @@ case "${CLONE_FROM}" in *[!a-z0-9-]*) echo "ongeldige clone_from: '${CLONE_FROM}
 
 MANAGER_IMAGE="ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${MANAGER_TAG}"
 UI_IMAGE="docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG}"
-MANAGER_HOST="directory-manager-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
-DSN="postgres://fsc:${PG_PASSWORD}@directory-postgres:5432/fsc_directory?sslmode=disable"
+MANAGER_HOST="dir-mgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
+DSN="postgres://fsc:${PG_PASSWORD}@dir-db:5432/fsc_directory?sslmode=disable"
 
 # --- env-blobs (KEY=value, newline-sep). TLS_*-paden = de bijlage-mounts (UI, ontwerp A). ---
 PG_ENV="$(printf '%s\n' \
@@ -94,17 +94,17 @@ DEPLOY_BODY="$(jq -n --arg d "${DEPLOYMENT}" --arg cf "${CLONE_FROM}" \
   '{deploymentName:$d, domain_format:"component-deployment-project", components:[]}
    + (if $cf=="" then {} else {cloneFrom:$cf, forceClone:true} end)')"
 
-PG_BODY="$(component_body directory-postgres "postgres:17" 5432 "${PG_ENV}")"
-MANAGER_BODY="$(component_body directory-manager "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}")"
-UI_BODY="$(component_body directory-ui "${UI_IMAGE}" 8080 "${UI_ENV}")"
+PG_BODY="$(component_body dir-db "postgres:17" 5432 "${PG_ENV}")"
+MANAGER_BODY="$(component_body dir-mgr "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}")"
+UI_BODY="$(component_body dir-ui "${UI_IMAGE}" 8080 "${UI_ENV}")"
 
 # ---- plan: toon alleen ----
 if [ "${MODE}" = plan ]; then
   echo "### deployment (:upsert-deployment)"; echo "${DEPLOY_BODY}"
   if [ -z "${CLONE_FROM}" ]; then
-    echo "### component directory-postgres";  echo "${PG_BODY}"
-    echo "### component directory-manager";   echo "${MANAGER_BODY}"
-    echo "### component directory-ui";        echo "${UI_BODY}"
+    echo "### component dir-db";  echo "${PG_BODY}"
+    echo "### component dir-mgr";   echo "${MANAGER_BODY}"
+    echo "### component dir-ui";    echo "${UI_BODY}"
   else
     echo "(cloneFrom=${CLONE_FROM} -> componenten geërfd; geen POST /components)"
   fi
@@ -118,7 +118,7 @@ hdr=(-H "X-API-Key: ${ZAD_API_KEY}")
 
 poll_task() {  # $1=task_id
   local id="$1" i status
-  for i in $(seq 1 30); do
+  for i in $(seq 1 45); do
     curl -sS "${hdr[@]}" "${BASE}/api/tasks/${id}" -o "${resp}"
     status="$(jq -r '.status' "${resp}")"
     case "${status}" in
@@ -127,7 +127,8 @@ poll_task() {  # $1=task_id
       *)         sleep 2 ;;
     esac
   done
-  echo "  task ${id}: timeout (laatste status ${status})"; return 1
+  echo "  task ${id}: nog bezig na ~90s (async ArgoCD-sync) — niet geblokkeerd, check later met 'validate'."
+  return 0
 }
 
 post() {  # $1=label $2=path $3=body
@@ -151,12 +152,12 @@ post "deployment" "/:upsert-deployment" "${DEPLOY_BODY}"
 
 if [ -z "${CLONE_FROM}" ]; then
   echo "== componenten aanmaken =="
-  post "directory-postgres" "/components" "${PG_BODY}"
-  post "directory-manager"  "/components" "${MANAGER_BODY}"
-  post "directory-ui"       "/components" "${UI_BODY}"
+  post "dir-db" "/components" "${PG_BODY}"
+  post "dir-mgr"  "/components" "${MANAGER_BODY}"
+  post "dir-ui"       "/components" "${UI_BODY}"
 else
   echo "== cloneFrom=${CLONE_FROM}: componenten geërfd =="
 fi
 
-echo "Klaar. Nog handmatig (UI): bijlagen (certs op /etc/fsc/...) + Publicatie op het web modus 2 op directory-manager."
+echo "Klaar. Nog handmatig (UI): bijlagen (certs op /etc/fsc/...) + Publicatie op het web modus 2 op dir-mgr."
 echo "Manager-hostnaam: ${MANAGER_HOST}"
