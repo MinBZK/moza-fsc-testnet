@@ -146,7 +146,9 @@ post() {  # $1=label $2=path $3=body
 echo "== validate =="
 code="$(curl -sS "${hdr[@]}" -o "${resp}" -w '%{http_code}' "${API}/deployments")"
 [ "${code}" = 200 ] || { echo "auth/connectie faalt (HTTP ${code})"; cat "${resp}"; exit 1; }
-echo "auth OK"
+echo "auth OK — deployments + componenten:"
+jq -r '.deployments[]? | "  - \(.name): \([.components[]?.reference] | join(", "))"' "${resp}" 2>/dev/null || true
+if [ "${MODE}" = validate ]; then echo "validate OK (read-only, niets gemuteerd)."; exit 0; fi
 
 echo "== upsert deployment '${DEPLOYMENT}' =="
 post "deployment" "/:upsert-deployment" "${DEPLOY_BODY}"
