@@ -1,0 +1,111 @@
+# Runbook: directory live op ZAD (#723)
+
+> Doel: de centrale **directory** (group-anker) draaiend krijgen op ZAD-project `mft-tp9`, zodat
+> peers kunnen announcen. Status: klaar om af te lopen; `TODO`-markers = door jou in ZAD te
+> bevestigen/invullen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
+> ZAD Operations Manager API (`https://zad.rijksapp.nl/openapi.json`, v2).
+
+## Taakverdeling: API/CI vs UI
+
+- **Via `deploy.yml` / ZAD-API** (heeft het secret `ZAD_API_KEY_DIRECTORY`): deployment +
+  componenten + images (+ evt. `env_vars`). Endpoints v2: `POST /api/v2/projects/{project}/:upsert-deployment`,
+  `POST …/components`, `PUT …/deployments/{deployment}/image`.
+- **In de Operations Manager UI** (niet in de deploy-API): **bijlagen** (cert-mount) en
+  **"Publicatie op het web"** (TLS-modus). Plus env, als je die niet via de API zet.
+
+## Componenten (deployment `directory`, project `mft-tp9`)
+
+| Component | Image | Rol |
+|-----------|-------|-----|
+| `directory-postgres` | `postgres:17` | system-of-record (persistent, gebackupt — niet preview-cloned) |
+| `directory-manager` | `ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:v1.43.7` | manager in directory-mode (migrate→serve) |
+| `directory-ui` | `docker.io/federatedserviceconnectivity/directory-ui:v1.43.7` | dienstencatalogus-UI |
+
+Dit is exact de `components`-lijst in `.github/workflows/deploy.yml`.
+
+## Hostnaam
+
+`domain_format = component-deployment-project` (ZAD-API `UpsertDeploymentRequest`) → per component
+een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
+
+- directory-manager → `directory-manager-directory-mft-tp9.<base_domain>`
+- `TODO`: bevestig `base_domain` in ZAD (verwacht `rig.prd1.gn2.quattro.rijksapps.nl`).
+- Deze hostnaam is de **SNI-hostnaam** voor `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` (zie env).
+
+## Stappen
+
+### 1. Image bouwen + pushen
+
+Draai `build-manager-migrate.yml` (Actions → workflow_dispatch, `image_tag=v1.43.7`), of merge een
+wrapper-wijziging naar `main`. Resultaat: `ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:v1.43.7`
+(en/of `…:v1.43.7-<branch>` voor previews). Controleer dat het package zichtbaar is voor het
+ZAD-pull-mechanisme (ghcr-package → repo-linked via de `org.opencontainers.image.source`-label).
+
+### 2. Certs + upload-set genereren (jouw host)
+
+```bash
+./pki/init-ca.sh        # eenmalig — de group-CA (trust-anchor); bewaar de key veilig
+./pki/issue.sh -f       # group- + internal-certs
+./pki/verify.sh         # groen?
+./pki/zad-bundle.sh directory   # -> pki/zad-upload/directory/ + MANIFEST.md
+```
+
+### 3. Bijlagen koppelen (UI) — cert-mount, ontwerp A
+
+Vink **"bijlagen"** aan op `directory-manager` en voeg elke file uit `MANIFEST.md` toe als
+**bestand** op exact zijn pod-pad:
+
+| Bijlage-bestand | Pad in de pod |
+|-----------------|----------------|
+| `ca/root.pem` | `/etc/fsc/ca/root.pem` |
+| `out/directory/directory/cert.pem` | `/etc/fsc/out/directory/directory/cert.pem` |
+| `out/directory/directory/key.pem` | `/etc/fsc/out/directory/directory/key.pem` |
+| `internal/directory/ca/root.pem` | `/etc/fsc/internal/directory/ca/root.pem` |
+| `internal/directory/directory/cert.pem` | `/etc/fsc/internal/directory/directory/cert.pem` |
+| `internal/directory/directory/key.pem` | `/etc/fsc/internal/directory/directory/key.pem` |
+
+`directory-ui` krijgt zijn subset (group-root + een lezer-cert/key) op dezelfde manier.
+**Geen `combined.pem` nodig** (modus 2 = pod serveert losse cert/key). Bijlagen zijn read-only +
+binary-safe (spike vraag 4).
+
+### 4. Env zetten (Operations Manager, of `env_vars` via API)
+
+- `directory-manager`: de waarden uit `peers/directory/manager.env.example`, met:
+  - `SELF_ADDRESS=https://directory-manager-directory-mft-tp9.<base_domain>:443`
+  - `DIRECTORY_MANAGER_ADDRESS=` idem (directory wijst naar zichzelf)
+  - `DISABLE_CRL_CHECKS` **niet** op `true` zetten op ZAD — `TODO(#722)`: óf een CRL-pad
+    configureren, óf bewust uitzetten (zie `peers/directory/manager.env.example`).
+- `directory-postgres`: `peers/directory/postgres.env.example` (`POSTGRES_DB=fsc_directory`,
+  `POSTGRES_USER=fsc`, `POSTGRES_PASSWORD` via secret — moet matchen met `STORAGE_POSTGRES_DSN`).
+- `directory-ui`: zie de `directory-ui`-env in `deploy/local/docker-compose.yaml` (adres-namen
+  naar de ZAD-hostnaam).
+
+### 5. "Publicatie op het web" → modus 2 (UI)
+
+Op `directory-manager`: **"Eigen certificaat op de pod (passthrough)"**. De ingress SNI-routet
+:443 → de pod (`LISTEN_ADDRESS_EXTERNAL=0.0.0.0:8443`), termineert niet. **Niet** modus 1/3
+(edge-/ingress-terminatie breekt de certificate-binding, #720). `directory-ui` mag wél een
+gewone (edge) publicatie krijgen — die doet geen mTLS-mesh.
+
+### 6. Deployen
+
+Draai `deploy.yml` (Actions → `deploy-fsc-testnet` → workflow_dispatch). Dat upsert het deployment
+met componenten + images op project `mft-tp9`, geauthenticeerd met `ZAD_API_KEY_DIRECTORY`.
+`TODO`: bevestig of `deploy.yml`/zad-actions de componenten **aanmaakt** (upsert) of dat ze in de UI
+vooraf moeten bestaan; en of `domain_format` daar gezet wordt of in de UI.
+
+### 7. Verifiëren
+
+- **Announce-self:** de directory zet zichzelf in `peers.peers`. Check (psql op directory-postgres):
+  `SELECT id, name, manager_address FROM peers.peers;` → rij `00000000000000000010` /
+  `directory` met `manager_address` op de ZAD-hostnaam (:443).
+- **directory-ui** bereikbaar op zijn hostnaam.
+- **mesh-TLS:** een tweede peer (of een lokale outway met de juiste trust) kan de
+  directory-manager op :443 bereiken (SNI-routing + cert-binding intact).
+
+## Openstaande TODO's
+
+- `base_domain` exact (stap "Hostnaam").
+- `deploy.yml` component-creatie + `domain_format`-plaatsing (stap 6).
+- CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS` (#722).
+- Per-peer secrets (postgres-wachtwoord) via ZAD-secret, niet in env-template.
