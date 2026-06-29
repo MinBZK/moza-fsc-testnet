@@ -28,9 +28,14 @@ Dit is exact de `components`-lijst in `.github/workflows/deploy.yml`.
 `domain_format = component-deployment-project` (ZAD-API `UpsertDeploymentRequest`) → per component
 een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 
-- directory-manager → `directory-manager-directory-mft-tp9.<base_domain>`
-- `TODO`: bevestig `base_domain` in ZAD (verwacht `rig.prd1.gn2.quattro.rijksapps.nl`).
-- Deze hostnaam is de **SNI-hostnaam** voor `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` (zie env).
+- `base_domain` = `rig.prd1.gn2.quattro.rijksapps.nl` (bevestigd via API, 2026-06-29).
+- Cluster = `odcn-production` (prod). Voorbeeld bestaande URL: `directory-test-mft-tp9.<base_domain>`.
+- De manager-hostnaam is de **SNI-hostnaam** voor `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` (zie env).
+
+> **Let op — bestaande staat (API, 2026-06-29):** project `mft-tp9` heeft al een deployment
+> `test` met één component `directory` (image leeg). De component/deployment-namen hieronder
+> (`directory` + `directory-postgres/-manager/-ui`) zijn nog niet definitief — zie de
+> structuur-keuze, want ze bepalen de hostnamen en mogen de bestaande `test` niet breken.
 
 ## Stappen
 
