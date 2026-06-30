@@ -4,9 +4,9 @@
 > peers kunnen announcen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
 > ZAD Operations Manager API (`https://zad.rijksapp.nl/openapi.json`, v2).
 >
-> **Status (2026-06-29):** eerste bring-up gestart op deployment `pr-723`; componenten
-> `dirmgr`/`dirui` aangemaakt via de API. **Geblokkeerd:** na het toevoegen + opslaan van de
-> bijlagen op `dirmgr` verdwenen de componenten uit het project (ZAD-bug → bij beheer belegd).
+> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723`). `migrate up` ok tegen de
+> managed Postgres, manager serveert, **self-announce geslaagd** (`EVENT_TYPE_CREATE_PEER`, OIN
+> `00000000000000000010`, SUCCEEDED). Cert-mount (ontwerp A) + managed DB bewezen op ODCN-prod.
 >
 > **Wijziging — managed PostgreSQL:** we draaien GEEN eigen `postgres:17` meer; we gebruiken ZAD's
 > managed Postgres (`postgresql-database`-service) voor betere resource-pooling. `dirdb` vervalt;
@@ -140,4 +140,8 @@ zodra 'ie op `main` staat). Env (stap 4) zit nu in het script — UI-env niet me
 - `base_domain` exact (stap "Hostnaam").
 - `deploy.yml` component-creatie + `domain_format`-plaatsing (stap 6).
 - CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS` (#722).
-- Per-peer secrets (postgres-wachtwoord) via ZAD-secret, niet in env-template.
+- **Health-probe** doet een standaard TCP-poort-check op `:8443` (mTLS) → manager logt
+  `TLS handshake error … EOF` (cosmetisch; pod healthy). Protocol-aware probe **aangevraagd bij ZAD**.
+- **Key-permissies**: bijlagen worden read-only gemount (niet 0600) → `invalid PKI key permissions`
+  (non-fataal). 0600-mount **aangevraagd als feature-request bij ZAD**.
+- `dirui` afmaken (3 bijlagen + edge-publicatie); directory naar `test` (centrale singleton).
