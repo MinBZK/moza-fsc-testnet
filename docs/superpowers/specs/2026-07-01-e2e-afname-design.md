@@ -96,9 +96,10 @@ docker-host bij de eerste run:
 2. **Grant-hash-suggestie-formaat**: `smoke-e2e.sh` grept `$1$<n>$<base64url>` (in body én headers).
    Wijkt het formaat af, pas de regex aan (dump de outway-respons op de FAIL-tak).
 3. **txlog-tabel/-kolommen**: schema-agnostisch opgezocht op kolom `transaction_id`; de correlatie
-   gebruikt ook een `direction`-kolom (predicaat `LIKE '%out%'`/`'%in%'`, tolerant voor de encoding).
-   Gebruikt fsc-logging andere kolomnamen, dan faalt de query luid (FAIL-dump toont het schema) —
-   nooit stil groen.
+   gebruikt ook een `direction`-kolom met een **exacte** encoding-lijst
+   (`in|incoming|inbound|direction_in` resp. de out-varianten) — geen substring-LIKE (`%in%` zou
+   `outgoing` matchen). Gebruikt fsc-logging een andere kolom/encoding, dan faalt de query luid
+   (FAIL-dump toont het schema) — nooit stil groen.
 4. **Outway-egress-env**: `MANAGER_INTERNAL_ADDRESS` (authenticated :9443) vervangt de #725-
    unauthenticated variant; bevestig dat de outway registreert + routeert (outway-logs).
 5. **Inway-401-body**: `ERROR_CODE_ACCESS_TOKEN_MISSING` komt uit de FSC-standaard-errortabel; de
