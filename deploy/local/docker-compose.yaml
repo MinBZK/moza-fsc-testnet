@@ -233,10 +233,14 @@ services:
       CSRF_PROTECTION_ENABLED: "false"
       AUDITLOG_TYPE: stdout
       TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
-      TLS_CERT: /pki/internal/example-provider/manager/cert.pem
-      TLS_KEY: /pki/internal/example-provider/manager/key.pem
+      TLS_CERT: /pki/internal/example-provider/controller/cert.pem
+      TLS_KEY: /pki/internal/example-provider/controller/key.pem
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        aliases:
+          - controller.example-provider.fsc-test.local
     depends_on:
       migrate-controller:
         condition: service_completed_successfully
