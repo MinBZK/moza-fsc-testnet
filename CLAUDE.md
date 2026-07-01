@@ -94,7 +94,10 @@ contracts/   grant → sign → accept bootstrap
 
 - **Secrets nooit committen.** Sleutels/certs/`.env` blijven buiten git (zie `.gitignore`).
   Alleen scripts en `.example`-templates in de repo.
-- Toekomstig werk markeren met `TODO(#nnn)` verwijzend naar het GitHub-issue.
+- Toekomstig werk mag tijdens een PR gemarkeerd met `TODO(#nnn)` verwijzend naar het
+  GitHub-issue, **maar de ticketreferentie moet vóór/bij merge weer verwijderd zijn**: een los
+  ticketnummer in een comment is indirecte documentatie. Laat de comment zonder het nummer
+  zelf-verklarend achter (wat + waarom), of haal 'm helemaal weg als het werk klaar is.
 - **Git:** nooit direct naar `main` pushen — feature branch + PR. Branch-prefix `feature/`,
   `fix/`, `chore/`. Geen reviewer toevoegen bij aanmaken PR. `main` is **branch-protected**
   (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
