@@ -18,6 +18,12 @@ x-txlog-common-env: &txlog-common-env
   LOG_LEVEL: debug
   LISTEN_ADDRESS: 0.0.0.0:9443
   MONITORING_ADDRESS: 0.0.0.0:8081
+  # Zowel de losse POSTGRES_*-vars als de samengestelde STORAGE_POSTGRES_DSN zetten (de chart doet
+  # beide) — zo migreert/serveert txlog ongeacht welke vorm het image leest. DATABASE + DSN per peer.
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
   PGSSLMODE: disable
   PGCONNECT_TIMEOUT: "10"
 
@@ -465,6 +471,9 @@ services:
       # laat de outway de bruikbare grant-hash teruggeven bij een call zónder geldige hash
       # (zo ontdekt smoke-e2e.sh de hash).
       MANAGER_INTERNAL_ADDRESS: https://manager.example-consumer.fsc-test.local:9443
+      # Behouden als boot-presence-hedge: #725 gebruikte deze en de outway-image kan 'm nog
+      # presence-checken. De egress-config gebruikt de authenticated MANAGER_INTERNAL_ADDRESS.
+      MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-consumer.fsc-test.local:9444
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-consumer.fsc-test.local:9443
       GRANT_LINKS_CACHE_TTL: 30s
       ENABLE_GRANT_HASH_SUGGESTION: "true"
@@ -496,6 +505,8 @@ services:
     image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
     command: [/usr/local/bin/txlog-api, migrate, up]
     environment:
+      <<: *txlog-common-env
+      POSTGRES_DATABASE: fsc_txlog_example_provider
       STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_provider?sslmode=disable
     depends_on:
       postgres:
@@ -509,6 +520,7 @@ services:
     restart: on-failure                            # boot-race met postgres/migrate
     environment:
       <<: *txlog-common-env
+      POSTGRES_DATABASE: fsc_txlog_example_provider
       STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_provider?sslmode=disable
       TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
       TLS_CERT: /pki/internal/example-provider/txlog/cert.pem
@@ -527,6 +539,8 @@ services:
     image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
     command: [/usr/local/bin/txlog-api, migrate, up]
     environment:
+      <<: *txlog-common-env
+      POSTGRES_DATABASE: fsc_txlog_example_consumer
       STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable
     depends_on:
       postgres:
@@ -540,6 +554,7 @@ services:
     restart: on-failure
     environment:
       <<: *txlog-common-env
+      POSTGRES_DATABASE: fsc_txlog_example_consumer
       STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable
       TLS_ROOT_CERT: /pki/internal/example-consumer/ca/root.pem
       TLS_CERT: /pki/internal/example-consumer/txlog/cert.pem
