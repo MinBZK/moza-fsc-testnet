@@ -1,8 +1,9 @@
 # Lokale harness (#723) — directory + announce-proof
 
-Runnable shift-left van de ZAD-deploy: directory + example-provider-peer + SNI-router op
-:443. Bewijst dat een peer zich aanmeldt (announce) bij de directory. Bouwt voort op
-`docs/spikes/manager-443-sni/`.
+Runnable shift-left van de ZAD-deploy: directory + example-provider-peer (aanbieder) +
+example-consumer-peer (afnemer) + SNI-router op :443. Bewijst dat peers zich aanmelden
+(announce) bij de directory en dat de consumer de gepubliceerde dienst vindt (discovery).
+Bouwt voort op `docs/spikes/manager-443-sni/`.
 
 > **Geen wachten op #722.** De test-PKI-tooling (#722) zit al in deze branch
 > (`pki/`). Je genereert de certs lokaal met `./pki/issue.sh` (stap 2 hieronder).
@@ -65,10 +66,12 @@ Na stap 4 draaien ook:
 
 - **directory-ui** (catalogus): `http://localhost:8080`, geen login. De aangemelde
   example-provider-peer is hier zichtbaar.
-- **controller** (beheer-UI): `http://localhost:8090`. Draait lokaal **zonder login**
-  (`AUTHN_TYPE=none`, een door OpenFSC ondersteunde modus). De management — dienst
-  publiceren, toegang aanvragen, contract grant→sign→accept — werkt zonder loginscherm,
-  dus dit volstaat om dienst-koppeling lokaal te testen.
+- **controller-example-provider** (beheer-UI provider): `http://localhost:8090`. Draait
+  lokaal **zonder login** (`AUTHN_TYPE=none`, een door OpenFSC ondersteunde modus). De
+  management — dienst publiceren, toegang aanvragen, contract grant→sign→accept — werkt
+  zonder loginscherm, dus dit volstaat om dienst-koppeling lokaal te testen.
+- **controller-example-consumer** (beheer-UI consumer): `http://localhost:8091`. Idem
+  zonder login; idle in #725 (grant-admin voor afnemer-toegang begint in #727).
 - **keycloak**: standaard **uit** (achter een compose-profile). Alleen nodig voor de
   optionele OIDC-login hieronder; start met `docker compose --profile oidc up -d`. Dan op
   `http://localhost:8081`, admin `keycloak-admin` / `keycloak` (dev-defaults — **niet voor
@@ -107,6 +110,27 @@ en publiceert 'm met één `servicePublication`-contract (manager Internal-API `
 de manager signt server-side en de directory auto-accept (`AUTO_SIGN_GRANTS`). De dienst
 is daarna zichtbaar in de directory-ui (`http://localhost:8080`).
 
+## Consumer-onboarding (Fase E, #725) — outway + discovery
+
+Na stap 4 draait ook de afnemende peer `example-consumer` (synthetische OIN
+`00000000000000000020`): `manager-example-consumer` + `outway-example-consumer` +
+`controller-example-consumer` + eigen DB's. De consumer-manager announce't bij de directory
+(net als de provider, via de `:443`-SNI-mesh) en kan de gepubliceerde `example-service`
+terugvinden.
+
+- **outway-example-consumer**: egress-proxy. In #725 **boot-t** hij enkel (group-cert geladen,
+  gezond); routeren vereist een contract (#727) en het data-pad (#728).
+- De consumer-**controller** is idle in #725 — zie hierboven.
+
+Bewijs de consumer-kant (draai eerst `smoke-publish.sh` zodat er een dienst te vinden is):
+
+```bash
+./deploy/local/smoke-discover.sh   # verwacht: "OK: announce" + "OK: discovery" + "SMOKE-DISCOVER GROEN." + exit 0
+```
+
+`smoke-discover.sh` pollt de directory-DB tot (a) de consumer-OIN in `peers.peers` staat
+(announce) en (b) `example-service` in de directory-catalogus verschijnt (discovery).
+
 ## Troubleshooting
 
 - **`verify.sh` rood / certs ontbreken** → stap 2 niet (volledig) gedraaid; draai
@@ -119,7 +143,7 @@ is daarna zichtbaar in de directory-ui (`http://localhost:8080`).
   `docker compose -f deploy/local/docker-compose.yaml up -d --force-recreate`.
 - **`WARN invalid internal PKI key permissions`** → de keys staan te open. Met de
   UID-match + `0600` blijft deze WARN weg; hij is hoe dan ook niet-fataal.
-- **Poort bezet** (443, 8080, 8081, 8090) → stop de conflicterende dienst of pas de
+- **Poort bezet** (443, 8080, 8081, 8090, 8091) → stop de conflicterende dienst of pas de
   `ports`/`bind` in `docker-compose.yaml` / `haproxy.cfg` aan.
 - **Smoke faalt** → `docker compose -f deploy/local/docker-compose.yaml logs
   manager-directory manager-example-provider` voor de mesh-logs.
@@ -140,8 +164,9 @@ De harness mount onze test-CA read-only op `/pki`. Per endpoint twee ketens:
 | `pki/out/<peer>/<endpoint>/{cert,key}.pem` | group-identity (hergebruikt voor token+contract) | `TLS_GROUP_CERT/KEY`, `TLS_GROUP_TOKEN_*`, `TLS_GROUP_CONTRACT_*` |
 | `pki/internal/<peer>/<endpoint>/{cert,key}.pem` | internal mTLS | `TLS_CERT/KEY`, `TLS_INTERNAL_UNAUTHENTICATED_*` |
 
-`<peer>` ∈ {`directory`, `example-provider`}; `<endpoint>` = de component (`manager` voor de
-mesh, `directory` voor de directory-component). Internal-root is **per peer**. De mesh
+`<peer>` ∈ {`directory`, `example-provider`, `example-consumer`}; `<endpoint>` = de component
+(`manager` voor de mesh, `directory` voor de directory-component, `outway` voor de consumer-egress).
+Internal-root is **per peer**. De mesh
 verifieert de hostname niet (auth op OIN), maar houd ze consistent met `SELF_ADDRESS`/SNI.
 
 > Token+contract hergebruiken de group-identity-cert — bevestigd conform OpenFSC
