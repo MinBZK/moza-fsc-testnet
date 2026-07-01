@@ -55,8 +55,8 @@ In #727 legden we het contract. Nu moet blijken dat een **echte aanroep** end-to
   - **Outway-egress-config** (uit de open-fsc-outway-chart): `MANAGER_INTERNAL_ADDRESS` (:9443,
     authenticated), `CONTROLLER_REGISTRATION_API_ADDRESS`, `GRANT_LINKS_CACHE_TTL=30s`,
     `ENABLE_GRANT_HASH_SUGGESTION=true`, en app-ingress als **plain HTTP `:8080`**
-    (`https.enabled=false`). De `MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS` (#725, boot-only)
-    vervalt — de chart gebruikt de authenticated variant.
+    (`https.enabled=false`). De egress-config gebruikt de authenticated `MANAGER_INTERNAL_ADDRESS`;
+    de `MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS` (#725) blíjft staan als boot-presence-hedge.
 - **`haproxy.cfg` + router-alias**: nieuwe `:443`-SNI-passthrough-route
   `inway.example-provider.fsc-test.local → inway-example-provider:8443`. De inway kan als non-root
   geen `:443` binden; de outway dialt zijn geregistreerde `SELF_ADDRESS` (`…:443`). De inway-alias
@@ -100,8 +100,10 @@ docker-host bij de eerste run:
    (`in|incoming|inbound|direction_in` resp. de out-varianten) — geen substring-LIKE (`%in%` zou
    `outgoing` matchen). Gebruikt fsc-logging een andere kolom/encoding, dan faalt de query luid
    (FAIL-dump toont het schema) — nooit stil groen.
-4. **Outway-egress-env**: `MANAGER_INTERNAL_ADDRESS` (authenticated :9443) vervangt de #725-
-   unauthenticated variant; bevestig dat de outway registreert + routeert (outway-logs).
+4. **Outway-egress-env**: de egress gebruikt `MANAGER_INTERNAL_ADDRESS` (authenticated :9443); de
+   #725-unauthenticated variant blijft als boot-hedge staan. Bevestig dat de outway registreert +
+   routeert (outway-logs).
 5. **Inway-401-body**: `ERROR_CODE_ACCESS_TOKEN_MISSING` komt uit de FSC-standaard-errortabel; de
-   exacte header/body van v1.43.7 kan iets afwijken (de smoke matcht op HTTP 401 óf de errorcode).
+   exacte header/body van v1.43.7 kan iets afwijken. De smoke eist HTTP 401 **én** de errorcode
+   (AND — een kale 401 telt niet); wijkt de errorcode-string af, pas 'm aan (FAIL-dump toont 'm).
 </content>
