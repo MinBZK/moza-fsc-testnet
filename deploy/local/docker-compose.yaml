@@ -34,6 +34,7 @@ services:
         aliases:
           - directory.fsc-test.local
           - example-provider.fsc-test.local
+          - example-consumer.fsc-test.local
     depends_on:
       manager-directory:
         condition: service_started
@@ -310,6 +311,153 @@ services:
       migrate-controller-example-provider:
         condition: service_completed_successfully
       manager-example-provider:
+        condition: service_started
+
+  migrate-example-consumer:
+    image: *manager-image
+    command:
+      - /usr/local/bin/manager
+      - migrate
+      - up
+      - --postgres-dsn
+      - postgres://postgres:postgres@postgres:5432/fsc_example_consumer?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  manager-example-consumer:
+    image: *manager-image
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-keys (zie manager-directory)
+    command:
+      - /usr/local/bin/manager
+      - serve
+    environment:
+      <<: *manager-common-env
+      SELF_ADDRESS: https://example-consumer.fsc-test.local:443
+      # presence-check (serve.go); niet gedialed bij announce
+      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
+      LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
+      LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
+      MONITORING_ADDRESS: 0.0.0.0:8080
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_example_consumer?sslmode=disable
+      TLS_GROUP_CERT: &ec-grp /pki/out/example-consumer/manager/cert.pem
+      TLS_GROUP_KEY: &ec-grp-key /pki/out/example-consumer/manager/key.pem
+      TLS_GROUP_TOKEN_CERT: *ec-grp
+      TLS_GROUP_TOKEN_KEY: *ec-grp-key
+      TLS_GROUP_CONTRACT_CERT: *ec-grp
+      TLS_GROUP_CONTRACT_KEY: *ec-grp-key
+      TLS_ROOT_CERT: &ec-introot /pki/internal/example-consumer/ca/root.pem
+      TLS_CERT: &ec-int /pki/internal/example-consumer/manager/cert.pem
+      TLS_KEY: &ec-int-key /pki/internal/example-consumer/manager/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: *ec-introot
+      TLS_INTERNAL_UNAUTHENTICATED_CERT: *ec-int
+      TLS_INTERNAL_UNAUTHENTICATED_KEY: *ec-int-key
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        # Alias = de internal-cert-hostnaam, zodat controller/outway TLS naar :9443/:9444 valideren.
+        aliases:
+          - manager.example-consumer.fsc-test.local
+    depends_on:
+      migrate-example-consumer:
+        condition: service_completed_successfully
+      manager-directory:
+        condition: service_started
+
+  migrate-controller-example-consumer:
+    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v1.43.7}
+    command:
+      - /usr/local/bin/controller
+      - migrate
+      - up
+      - --postgres-dsn
+      - postgres://postgres:postgres@postgres:5432/fsc_controller_example_consumer?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  controller-example-consumer:
+    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v1.43.7}
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-internal-key
+    restart: on-failure                           # herstart bij transiënte boot-fout (DB/manager nog niet klaar)
+    ports:
+      - "127.0.0.1:8091:8080"                     # consumer-controller-UI (naast provider 8090)
+    environment:
+      LOG_TYPE: local
+      LOG_LEVEL: info
+      LISTEN_ADDRESS_UI: 0.0.0.0:8080
+      LISTEN_ADDRESS_REGISTRATION_API: 0.0.0.0:9443
+      LISTEN_ADDRESS_ADMINISTRATION_API: 0.0.0.0:9444
+      MONITORING_ADDRESS: 0.0.0.0:8081
+      MANAGER_ADDRESS_INTERNAL: https://manager.example-consumer.fsc-test.local:9443   # = internal-cert-SAN
+      GROUP_ID: moza-fbs-test
+      DIRECTORY_PEER_ID: "00000000000000000010"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DATABASE: fsc_controller_example_consumer
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGSSLMODE: disable
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_controller_example_consumer?sslmode=disable
+      # Lokaal ZONDER login (AUTHN_TYPE=none); grant-admin (afnemer-toegang) begint pas in #727.
+      AUTHN_TYPE: none
+      AUTHZ_TYPE: rbac
+      CSRF_PROTECTION_ENABLED: "false"
+      AUDITLOG_TYPE: stdout
+      TLS_ROOT_CERT: /pki/internal/example-consumer/ca/root.pem
+      TLS_CERT: /pki/internal/example-consumer/controller/cert.pem
+      TLS_KEY: /pki/internal/example-consumer/controller/key.pem
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        aliases:
+          - controller.example-consumer.fsc-test.local
+    depends_on:
+      migrate-controller-example-consumer:
+        condition: service_completed_successfully
+      manager-example-consumer:
+        condition: service_started
+
+  outway-example-consumer:
+    image: docker.io/federatedserviceconnectivity/outway:${IMAGE_TAG:-v1.43.7}
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-keys
+    restart: on-failure                            # boot-race met de eigen manager
+    command:
+      - /usr/local/bin/outway
+      - serve
+    environment:
+      LOG_TYPE: local
+      LOG_LEVEL: debug
+      GROUP_ID: moza-fbs-test
+      NAME: example-consumer-outway
+      SELF_ADDRESS: https://outway.example-consumer.fsc-test.local:443
+      LISTEN_ADDRESS: 0.0.0.0:8443
+      MONITORING_ADDRESS: 0.0.0.0:8081
+      DISABLE_CRL_CHECKS: "true"
+      # Leest zijn contract-/service-config van de eigen manager (internal-unauthenticated):
+      MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-consumer.fsc-test.local:9444
+      # Presence-check (placeholder); outway mag crashen als de waarde bij egress gedialed
+      # wordt (dan txlog-api toevoegen, #728). In #725 boot-t de outway enkel:
+      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      TLS_ROOT_CERT: /pki/internal/example-consumer/ca/root.pem
+      TLS_CERT: /pki/internal/example-consumer/outway/cert.pem
+      TLS_KEY: /pki/internal/example-consumer/outway/key.pem
+      TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
+      TLS_GROUP_CERT: /pki/out/example-consumer/outway/cert.pem
+      TLS_GROUP_KEY: /pki/out/example-consumer/outway/key.pem
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        aliases:
+          - outway.example-consumer.fsc-test.local
+    depends_on:
+      manager-example-consumer:
         condition: service_started
 
 networks:
