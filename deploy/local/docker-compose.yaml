@@ -133,6 +133,68 @@ services:
       manager-directory:
         condition: service_started
 
+  stub-upstream:
+    # Neutrale HTTP-echo die de business-app vervangt (Spec A). Wordt de endpoint_url
+    # van example-service; in #724 niet gedialed (data-pad = #728).
+    image: docker.io/hashicorp/http-echo:1.0
+    command: ["-listen=:8080", "-text=hello from example-provider stub-upstream (#724)"]
+
+  inway-example-provider:
+    image: docker.io/federatedserviceconnectivity/inway:${IMAGE_TAG:-v1.43.7}
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-keys
+    restart: on-failure                            # boot-race met controller/manager
+    command:
+      - /usr/local/bin/inway
+      - serve
+    environment:
+      LOG_TYPE: local
+      LOG_LEVEL: debug
+      GROUP_ID: moza-fbs-test
+      NAME: example-provider-inway                 # = inway_address in CreateService
+      SELF_ADDRESS: https://inway.example-provider.fsc-test.local:443
+      LISTEN_ADDRESS: 0.0.0.0:8443
+      MONITORING_ADDRESS: 0.0.0.0:8081
+      DISABLE_CRL_CHECKS: "true"
+      # Registreert zich bij de controller (eigen hostnaam uit Task 1):
+      CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
+      # Eigen manager, internal-unauthenticated poort:
+      MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-provider.fsc-test.local:9444
+      # Presence-check (chart eist niet-leeg); zie runtime-onzekerheid 2:
+      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
+      TLS_CERT: /pki/internal/example-provider/inway/cert.pem
+      TLS_KEY: /pki/internal/example-provider/inway/key.pem
+      TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
+      TLS_GROUP_CERT: /pki/out/example-provider/inway/cert.pem
+      TLS_GROUP_KEY: /pki/out/example-provider/inway/key.pem
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        aliases:
+          - inway.example-provider.fsc-test.local
+    depends_on:
+      controller:
+        condition: service_started
+      manager-example-provider:
+        condition: service_started
+      stub-upstream:
+        condition: service_started
+
+  toolbox:
+    # Curl-client BINNEN het netwerk voor de mTLS-onboarding-calls (Task 3).
+    # Draait als host-UID zodat het de 0600-internal-key leest.
+    image: docker.io/curlimages/curl:8.11.1
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    entrypoint: ["sleep", "infinity"]
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    depends_on:
+      manager-example-provider:
+        condition: service_started
+      controller:
+        condition: service_started
+
   directory-ui:
     image: docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG:-v1.43.7}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-group-key
