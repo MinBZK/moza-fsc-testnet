@@ -10,6 +10,17 @@ x-manager-common-env: &manager-common-env
   DISABLE_CRL_CHECKS: "true"            # lokaal geen CRL-distributiepunt (zie README)
   TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
 
+# #728: gedeelde txlog-api-env (image `txlog-api`; eigen DB `open_fsc_tx_log`-analoog per peer).
+# txlog spreekt mTLS op de INTERNAL PKI (niet de group): inway/outway/manager presenteren hun
+# internal-cert; txlog trust de per-peer internal-CA. Geen GROUP_ID (group-agnostische opslag).
+x-txlog-common-env: &txlog-common-env
+  LOG_TYPE: local
+  LOG_LEVEL: debug
+  LISTEN_ADDRESS: 0.0.0.0:9443
+  MONITORING_ADDRESS: 0.0.0.0:8081
+  PGSSLMODE: disable
+  PGCONNECT_TIMEOUT: "10"
+
 services:
   postgres:
     image: postgres:17
@@ -35,6 +46,10 @@ services:
           - directory.fsc-test.local
           - example-provider.fsc-test.local
           - example-consumer.fsc-test.local
+          # #728: de inway-data-SNI hoort op de ROUTER (:443-passthrough), niet op de
+          # inway-container zelf (die luistert op :8443). Anders round-robint docker-DNS
+          # tussen router en inway en valt de helft van de calls op een dode :443.
+          - inway.example-provider.fsc-test.local
     depends_on:
       manager-directory:
         condition: service_started
@@ -102,8 +117,8 @@ services:
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://example-provider.fsc-test.local:443
-      # presence-check (serve.go); niet gedialed bij announce
-      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      # #728: echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
+      TX_LOG_API_ADDRESS: https://txlog.example-provider.fsc-test.local:9443
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
@@ -162,9 +177,9 @@ services:
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
       # Eigen manager, internal-unauthenticated poort:
       MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-provider.fsc-test.local:9444
-      # Presence-check (chart eist niet-leeg); placeholder -- inway mag crashen als de
-      # waarde gedialed wordt (dan txlog-api toevoegen, zie #728):
-      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      # #728: echte txlog-api (INTERNAL-PKI mTLS). Bij een inkomende data-call logt de inway
+      # hier de transactie (direction: in) met dezelfde Fsc-Transaction-Id als de outway.
+      TX_LOG_API_ADDRESS: https://txlog.example-provider.fsc-test.local:9443
       TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
       TLS_CERT: /pki/internal/example-provider/inway/cert.pem
       TLS_KEY: /pki/internal/example-provider/inway/key.pem
@@ -173,16 +188,17 @@ services:
       TLS_GROUP_KEY: /pki/out/example-provider/inway/key.pem
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
-    networks:
-      default:
-        aliases:
-          - inway.example-provider.fsc-test.local
+    # NB: géén network-alias inway.example-provider.fsc-test.local hier — die hoort op de
+    # router (:443-SNI-passthrough, zie #728). De router-backend bereikt deze container via
+    # de compose-servicenaam `inway-example-provider:8443`.
     depends_on:
       controller-example-provider:
         condition: service_started
       manager-example-provider:
         condition: service_started
       stub-upstream:
+        condition: service_started
+      txlog-example-provider:
         condition: service_started
 
   toolbox:
@@ -335,8 +351,8 @@ services:
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://example-consumer.fsc-test.local:443
-      # presence-check (serve.go); niet gedialed bij announce
-      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      # #728: echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
+      TX_LOG_API_ADDRESS: https://txlog.example-consumer.fsc-test.local:9443
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
@@ -438,14 +454,23 @@ services:
       # Outway = niet-adresseerbare egress-client: identificeert zich naar de provider via
       # de cert-thumbprint (FSC grant outway.identification.public_key_thumbprint), niet via
       # een SELF_ADDRESS zoals de inway. LISTEN_ADDRESS = lokale proxy-poort voor de app.
-      LISTEN_ADDRESS: 0.0.0.0:8443
+      # #728: plain-HTTP app-ingress op :8080 (https.enabled=false in de chart), zodat de app
+      # (of smoke-e2e via toolbox) de outway aanroept met een `Fsc-Grant-Hash`-header.
+      LISTEN_ADDRESS: 0.0.0.0:8080
       MONITORING_ADDRESS: 0.0.0.0:8081
       DISABLE_CRL_CHECKS: "true"
-      # Leest zijn contract-/service-config van de eigen manager (internal-unauthenticated):
-      MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-consumer.fsc-test.local:9444
-      # Presence-check (placeholder); outway mag crashen als de waarde bij egress gedialed
-      # wordt (dan txlog-api toevoegen, #728). In #725 boot-t de outway enkel:
-      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      # #728 egress-config (uit de open-fsc-outway-chart): resolvet grant-hash -> service ->
+      # inway-adres via de EIGEN manager (authenticated internal :9443) + registreert bij de
+      # eigen controller. GRANT_LINKS_CACHE_TTL = Go-duration. ENABLE_GRANT_HASH_SUGGESTION
+      # laat de outway de bruikbare grant-hash teruggeven bij een call zónder geldige hash
+      # (zo ontdekt smoke-e2e.sh de hash).
+      MANAGER_INTERNAL_ADDRESS: https://manager.example-consumer.fsc-test.local:9443
+      CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-consumer.fsc-test.local:9443
+      GRANT_LINKS_CACHE_TTL: 30s
+      ENABLE_GRANT_HASH_SUGGESTION: "true"
+      # #728: echte txlog-api (INTERNAL-PKI mTLS). Bij egress logt de outway hier de transactie
+      # (direction: out) met de door hem gegenereerde Fsc-Transaction-Id.
+      TX_LOG_API_ADDRESS: https://txlog.example-consumer.fsc-test.local:9443
       TLS_ROOT_CERT: /pki/internal/example-consumer/ca/root.pem
       TLS_CERT: /pki/internal/example-consumer/outway/cert.pem
       TLS_KEY: /pki/internal/example-consumer/outway/key.pem
@@ -461,6 +486,73 @@ services:
     depends_on:
       manager-example-consumer:
         condition: service_started
+      controller-example-consumer:
+        condition: service_started
+      txlog-example-consumer:
+        condition: service_started
+
+  # ---- #728: transaction-log API's (per peer) -------------------------------------------------
+  migrate-txlog-example-provider:
+    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
+    command: [/usr/local/bin/txlog-api, migrate, up]
+    environment:
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_provider?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  txlog-example-provider:
+    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest de 0600-internal-key
+    command: [/usr/local/bin/txlog-api, serve]
+    restart: on-failure                            # boot-race met postgres/migrate
+    environment:
+      <<: *txlog-common-env
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_provider?sslmode=disable
+      TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
+      TLS_CERT: /pki/internal/example-provider/txlog/cert.pem
+      TLS_KEY: /pki/internal/example-provider/txlog/key.pem
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        aliases:
+          - txlog.example-provider.fsc-test.local
+    depends_on:
+      migrate-txlog-example-provider:
+        condition: service_completed_successfully
+
+  migrate-txlog-example-consumer:
+    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
+    command: [/usr/local/bin/txlog-api, migrate, up]
+    environment:
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  txlog-example-consumer:
+    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest de 0600-internal-key
+    command: [/usr/local/bin/txlog-api, serve]
+    restart: on-failure
+    environment:
+      <<: *txlog-common-env
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable
+      TLS_ROOT_CERT: /pki/internal/example-consumer/ca/root.pem
+      TLS_CERT: /pki/internal/example-consumer/txlog/cert.pem
+      TLS_KEY: /pki/internal/example-consumer/txlog/key.pem
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        aliases:
+          - txlog.example-consumer.fsc-test.local
+    depends_on:
+      migrate-txlog-example-consumer:
+        condition: service_completed_successfully
 
 networks:
   default:

@@ -92,7 +92,7 @@ run smoke-announce.sh    # #723/#724 — provider announce
 run smoke-publish.sh     # #724     — dienst publiceren + vindbaar
 run smoke-discover.sh    # #725     — consumer announce + discovery
 run smoke-contract.sh    # #727     — wederzijds ondertekend serviceConnection-contract
-# TODO(#728): run smoke-e2e.sh    — echte data-call + token + transactie-logging
+run smoke-e2e.sh         # #728     — echte data-call + token-afdwinging + tx-log-correlatie
 
 echo; echo "==================================================="
 echo "ALLE SMOKES GROEN."
