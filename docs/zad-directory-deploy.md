@@ -8,11 +8,11 @@
 > managed Postgres, manager serveert, **self-announce geslaagd** (`EVENT_TYPE_CREATE_PEER`, OIN
 > `00000000000000000010`, SUCCEEDED). Cert-mount (ontwerp A) + managed DB bewezen op ODCN-prod.
 >
-> **Wijziging — managed PostgreSQL:** we draaien GEEN eigen `postgres:17` meer; we gebruiken ZAD's
-> managed Postgres (`postgresql-database`-service) voor betere resource-pooling. `dirdb` vervalt;
-> de manager krijgt de service + bouwt `STORAGE_POSTGRES_DSN` uit de connection-substitutievars
-> (`$HOST`/`$PORT`/`$DB_NAME` + credentials — exacte vars TODO bij beheer). Script + onderstaande
-> stappen worden hierop aangepast zodra die conventie bekend is.
+> **Managed PostgreSQL (toegepast):** we draaien GEEN eigen `postgres:17`-component; we gebruiken
+> ZAD's managed Postgres (`postgresql-database`-service) voor betere resource-pooling. De manager
+> krijgt de service + bouwt `STORAGE_POSTGRES_DSN` uit de connection-substitutievars
+> (`$DATABASE_SERVER_USER`/`$DATABASE_PASSWORD`/`$DATABASE_SERVER_HOST`/`$DATABASE_DB`, poort 5432),
+> via een `aliases`-regel — zie `deploy/zad/upsert-directory.sh` en `peers/directory/manager.env.example`.
 
 ## Taakverdeling: API/CI vs UI
 
@@ -47,10 +47,10 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 - De manager-hostnaam is de **SNI-hostnaam** voor `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` (zie env).
 
 > **Deploymodel:** een PR krijgt een eigen deployment; wat naar `main` gaat landt in deployment
-> **`test`**. De directory = 3 componenten (`directory-postgres/-manager/-ui`); een upsert van
-> `test` vervangt de bestaande placeholder-component `directory` (image leeg). Manager-hostnaam
-> dan: `directory-manager-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR-preview gebruikt
-> zijn eigen deployment-naam i.p.v. `test`.
+> **`test`**. De directory = 2 componenten (`dirmgr` + `dirui`) op ZAD's managed Postgres; een
+> upsert van `test` vervangt de bestaande placeholder-component `directory` (image leeg).
+> Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR-preview
+> gebruikt zijn eigen deployment-naam i.p.v. `test`.
 
 ## Stappen
 
@@ -72,7 +72,7 @@ ZAD-pull-mechanisme (ghcr-package → repo-linked via de `org.opencontainers.ima
 
 ### 3. Bijlagen koppelen (UI) — cert-mount, ontwerp A
 
-Vink **"bijlagen"** aan op `directory-manager` en voeg elke file uit `MANIFEST.md` toe als
+Vink **"bijlagen"** aan op `dirmgr` en voeg elke file uit `MANIFEST.md` toe als
 **bestand** op exact zijn pod-pad:
 
 | Bijlage-bestand | Pad in de pod |
@@ -84,27 +84,29 @@ Vink **"bijlagen"** aan op `directory-manager` en voeg elke file uit `MANIFEST.m
 | `internal/directory/directory/cert.pem` | `/etc/fsc/internal/directory/directory/cert.pem` |
 | `internal/directory/directory/key.pem` | `/etc/fsc/internal/directory/directory/key.pem` |
 
-`directory-ui` krijgt zijn subset (group-root + een lezer-cert/key) op dezelfde manier.
+`dirui` krijgt zijn subset (group-root + een lezer-cert/key) op dezelfde manier.
 **Geen `combined.pem` nodig** (modus 2 = pod serveert losse cert/key). Bijlagen zijn read-only +
 binary-safe (spike vraag 4).
 
-### 4. Env zetten (Operations Manager, of `env_vars` via API)
+### 4. Env zetten (nu in `upsert-directory.sh`; hieronder ter referentie)
 
-- `directory-manager`: de waarden uit `peers/directory/manager.env.example`, met:
-  - `SELF_ADDRESS=https://directory-manager-test-mft-tp9.<base_domain>:443` (of de PR-deployment)
+`upsert-directory.sh` zet de env al mee (`POST /components`). Waarden ter referentie:
+
+- `dirmgr`: de waarden uit `peers/directory/manager.env.example`, met:
+  - `SELF_ADDRESS=https://dirmgr-test-mft-tp9.<base_domain>` (of de PR-deployment)
   - `DIRECTORY_MANAGER_ADDRESS=` idem (directory wijst naar zichzelf)
-  - `DISABLE_CRL_CHECKS` **niet** op `true` zetten op ZAD — `TODO(#722)`: óf een CRL-pad
-    configureren, óf bewust uitzetten (zie `peers/directory/manager.env.example`).
-- `directory-postgres`: `peers/directory/postgres.env.example` (`POSTGRES_DB=fsc_directory`,
-  `POSTGRES_USER=fsc`, `POSTGRES_PASSWORD` via secret — moet matchen met `STORAGE_POSTGRES_DSN`).
-- `directory-ui`: zie de `directory-ui`-env in `deploy/local/docker-compose.yaml` (adres-namen
-  naar de ZAD-hostnaam).
+  - `STORAGE_POSTGRES_DSN` uit de managed-Postgres-substitutievars (`$DATABASE_*`) — geen eigen
+    postgres-component.
+  - `DISABLE_CRL_CHECKS=true` als **interim** (lege CRL, geen distributiepunt). `TODO(#722)`:
+    CRL-pad mounten + `DISABLE_CRL_CHECKS` weghalen vóór go-live (zie `manager.env.example`).
+- `dirui`: zie de `directory-ui`-env in `deploy/local/docker-compose.yaml` (adres-namen naar de
+  ZAD-hostnaam).
 
 ### 5. "Publicatie op het web" → modus 2 (UI)
 
-Op `directory-manager`: **"Eigen certificaat op de pod (passthrough)"**. De ingress SNI-routet
+Op `dirmgr`: **"Eigen certificaat op de pod (passthrough)"**. De ingress SNI-routet
 :443 → de pod (`LISTEN_ADDRESS_EXTERNAL=0.0.0.0:8443`), termineert niet. **Niet** modus 1/3
-(edge-/ingress-terminatie breekt de certificate-binding, #720). `directory-ui` mag wél een
+(edge-/ingress-terminatie breekt de certificate-binding, #720). `dirui` mag wél een
 gewone (edge) publicatie krijgen — die doet geen mTLS-mesh.
 
 ### 6. Deployen
@@ -121,14 +123,14 @@ read -rs ZAD_API_KEY; export ZAD_API_KEY              # plak de key niet inline
 ```
 
 Het script maakt het deployment (`:upsert-deployment`, `domain_format=component-deployment-project`)
-en de 3 componenten met poorten + env (`POST /components`), en pollt elke task. `plan` toont eerst
+en de 2 componenten (`dirmgr` + `dirui`) met poorten + env (`POST /components`), en pollt elke task. `plan` toont eerst
 de exacte bodies. **Daarna nog handmatig (UI, stappen 3 + 5):** bijlagen (certs) + Publicatie op het
 web modus 2 op `directory-manager`. Via CI: `zad-deploy-directory.yml` (zelfde script; beschikbaar
 zodra 'ie op `main` staat). Env (stap 4) zit nu in het script — UI-env niet meer nodig.
 
 ### 7. Verifiëren
 
-- **Announce-self:** de directory zet zichzelf in `peers.peers`. Check (psql op directory-postgres):
+- **Announce-self:** de directory zet zichzelf in `peers.peers`. Check (psql op de managed Postgres):
   `SELECT id, name, manager_address FROM peers.peers;` → rij `00000000000000000010` /
   `directory` met `manager_address` op de ZAD-hostnaam (:443).
 - **directory-ui** bereikbaar op zijn hostnaam.
@@ -137,9 +139,7 @@ zodra 'ie op `main` staat). Env (stap 4) zit nu in het script — UI-env niet me
 
 ## Openstaande TODO's
 
-- `base_domain` exact (stap "Hostnaam").
-- `deploy.yml` component-creatie + `domain_format`-plaatsing (stap 6).
-- CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS` (#722).
+- CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS=true` (#722) — **gate vóór go-live**.
 - **Health-probe** doet een standaard TCP-poort-check op `:8443` (mTLS) → manager logt
   `TLS handshake error … EOF` (cosmetisch; pod healthy). Protocol-aware probe **aangevraagd bij ZAD**.
 - **Key-permissies**: bijlagen worden read-only gemount (niet 0600) → `invalid PKI key permissions`

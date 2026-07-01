@@ -129,7 +129,8 @@ De env-var-templates (`.env.example`) worden in alle gevallen door het app-team
 - **DB-migraties → opgelost (wrapper-image, #723).** ZAD staat geen args/init-containers
   toe, dus migreren zit nu in de image-entrypoint: `deploy/zad/manager-migrate/`
   (`migrate up && serve` in één dunne laag boven de stock-manager — geen broncode-fork).
-  De directory-job in `deploy.yml` gebruikt deze `manager-migrate`-image.
+  De directory-deploy (`deploy/zad/upsert-directory.sh` / `zad-deploy-directory.yml`) gebruikt
+  deze `manager-migrate`-image.
 - **Env is een handmatige stap.** Operations Manager-config is niet via de
   deploy-action te zetten; documenteer per component welke env nodig is. Templates:
   `peers/directory/manager.env.example`.
