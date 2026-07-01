@@ -22,9 +22,18 @@ MANAGER=https://manager.example-provider.fsc-test.local:9443
 tb() { "${COMPOSE[@]}" exec -T toolbox curl -s --fail-with-body \
          --cert "$CERT" --key "$KEY" --cacert "$CA" "$@"; }
 
-echo "publish: inway-adres ophalen..."
-INWAY_ADDR=$(tb "$CONTROLLER/v1/inways" | grep -o '"[^"]*example-provider-inway[^"]*"' | head -1 | tr -d '"' || true)
-[ -n "$INWAY_ADDR" ] || { echo "FAIL: geen geregistreerde inway op de controller." >&2; exit 1; }
+echo "publish: wachten op inway-registratie bij de controller..."
+# inway->controller-registratie is asynchroon na boot; poll (spiegelt smoke-announce.sh)
+# i.p.v. één harde fetch, anders racet een koude start de eerste publish-run.
+INWAY_ADDR=""
+elapsed=0
+while [ "$elapsed" -lt 60 ]; do
+  INWAY_ADDR=$(tb "$CONTROLLER/v1/inways" | grep -o '"[^"]*example-provider-inway[^"]*"' | head -1 | tr -d '"' || true)
+  [ -n "$INWAY_ADDR" ] && break
+  sleep 5; elapsed=$((elapsed + 5))
+  echo "  ...inway nog niet geregistreerd (${elapsed}s)"
+done
+[ -n "$INWAY_ADDR" ] || { echo "FAIL: geen geregistreerde inway op de controller binnen 60s." >&2; exit 1; }
 echo "  inway_address=$INWAY_ADDR"
 
 echo "publish: example-service aanmaken (idempotent)..."
