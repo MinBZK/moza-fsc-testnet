@@ -17,9 +17,10 @@ jobs:
     #   de wrapper draait alleen `migrate up` (geen CREATE DATABASE).
     steps:
       - name: Deploy directory (group-anker) naar ZAD
-        # Versie-gepind (toegestaan); TODO(#729): naar SHA-pin voor Scorecard
-        # Pinned-Dependencies zodra zad-actions een release-SHA publiceert.
-        uses: RijksICTGilde/zad-actions/deploy@v1
+        # SHA-gepind (#729) voor Scorecard Pinned-Dependencies; comment = de tag-ref.
+        # NB: dit is de legacy zad-actions-deploy; de actieve deploy loopt via de v2-API
+        # (zad-deploy-directory.yml + deploy/zad/upsert-directory.sh), cleanup via zad-cleanup.yml.
+        uses: RijksICTGilde/zad-actions/deploy@56ae5cc772e7fa6663b2dee45d24c881bb675a3e # v1
         with:
           api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}

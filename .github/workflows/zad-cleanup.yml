@@ -1,0 +1,51 @@
+# ZAD-cleanup (#729): ruimt een deployment op via de v2 Operations Manager API (DELETE .../{deployment}).
+# Roept deploy/zad/cleanup.sh aan (zelfde bron als de CLI) — het tegenovergestelde van
+# zad-deploy-directory.yml. `validate` is read-only, `plan` toont, `apply` verwijdert + pollt.
+#
+# Dit ruimt dít repo's onderdeel op: de centrale DIRECTORY (project uit vars.ZAD_PROJECT_ID_DIRECTORY,
+# key uit secrets.ZAD_API_KEY_DIRECTORY). Een PEER-deployment ruim je op bij de app-repo — dat repo
+# vendort deze `deploy/zad/cleanup.sh` en draait 'm met het eigen project + de eigen key (het
+# script is volledig env-gedreven). Zie docs/zad-cleanup.md + docs/zad-projecten.md (deploy bij de app).
+name: zad-cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "validate=auth-check; plan=toon; apply=verwijderen + pollen"
+        type: choice
+        options: [validate, plan, apply]
+        default: validate
+      deployment:
+        description: "deployment-naam om op te ruimen (leeg bij validate; bv. een pr-preview)"
+        required: false
+        default: ""
+      allow_protected:
+        description: "sta het verwijderen van beschermde namen (test/main/...) toe"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zad-cleanup-${{ inputs.deployment }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Cleanup directory via ZAD v2-API
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          ALLOW_PROTECTED: ${{ inputs.allow_protected && '1' || '0' }}
+          MODE: ${{ inputs.mode }}
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: ./deploy/zad/cleanup.sh "${MODE}" "${DEPLOYMENT}"
