@@ -1,0 +1,25 @@
+# Helm-values voor de neutrale voorbeeld-consumer-peer (#725).
+# Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
+#
+# example-consumer = neutraal voorbeeld dat de generieke consumer-onboarding bewijst.
+# GEEN echte organisatie. Houd de OIN 1:1 in lockstep met
+# pki/peers/example-consumer/<endpoint>/csr.json -> veld `serialnumber`.
+peer:
+  oin: "00000000000000000020"                     # synthetische voorbeeld-OIN -> wordt Peer ID
+  name: "example-consumer"                          # -> subject.organization in het cert
+manager:
+  managementAddress: "example-consumer-manager:8443"
+  postgresDsn: "postgres://fsc:fsc@example-consumer-postgres:5432/fsc?sslmode=disable"
+outway:
+  name: "example-consumer-outway"
+  selfAddress: "example-consumer-outway:443"       # eigen SNI-hostnaam (passthrough-Route)
+  managerAddress: "example-consumer-manager:9444"  # interne-unauthenticated manager-poort
+
+# TODO(#725): dit skelet toont alleen de hoofd-adressen. Een werkende OpenFSC-deploy
+# vereist daarnaast (zie open-fsc helm/charts), uitgewerkt in vervolgplannen:
+#   - certificaten: certificates.group.* + certificates.internal.* +
+#     certificates.internalUnauthenticated.* (inter-component mTLS, manager<->outway);
+#   - interne manager-poorten 9443 (authenticated) en 9444 (unauthenticated);
+#   - transaction-log: txlog-api-adres voor manager én outway (verplichte logging-extensie).
+# De outway routeert pas met een contract (#727) en data-pad (#728).
+# Echte secrets/certs worden via ZAD `attachments` gemount, nooit hier ingevuld.
