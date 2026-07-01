@@ -16,3 +16,6 @@ group/group-config.yaml
 *.iml
 .vscode/
 .superpowers/
+
+# Claude Code agent-lokale werkmap (worktrees, sessie-state) — nooit committen.
+.claude/
