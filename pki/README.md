@@ -36,9 +36,10 @@ Voor ZAD (zie `docs/spikes/zad-attachments.md`):
   gecombineerde cert+key-PEM is **niet** vereist (`docs/spikes/zad-attachments.md`, vraag 5).
   `combine-pem.sh` blijft een losse optie (`combined.pem` per group-endpoint) voor het geval een
   upload toch één bestand vraagt; standaard niet nodig.
-- `zad-bundle.sh <peer>` verzamelt de hele upload-set (group-root, per-endpoint cert/key,
-  internal-CA + internal cert/key) in `pki/zad-upload/<peer>/` met een `MANIFEST.md`
-  dat per bestand het beoogde pod-pad (attachment) + de `TLS_*`-env-var noemt.
+- `zad-bundle.sh <peer>` verzamelt de hele upload-set (group-root + group-CRL, per-endpoint
+  cert/key, internal-CA + internal cert/key) in `pki/zad-upload/<peer>/` met een `MANIFEST.md`
+  dat per bestand het beoogde pod-pad (attachment) + de `TLS_*`-env-var noemt. Draai eerst
+  `gen-crl.sh` zodat de CRL mee gaat (nodig om de `DISABLE_CRL_CHECKS`-gate te sluiten, #722).
 
 Beide outputs zijn gitignored (bevatten privésleutels).
 
