@@ -2,6 +2,11 @@
 name: deploy-fsc-testnet
 on:
   workflow_dispatch:
+
+# Least-privilege: deze placeholder heeft geen token-rechten nodig. TODO(#729):
+# verhoog per job naar het minimum dat zad-actions vereist.
+permissions: {}
+
 jobs:
   # TODO(#729): per peer + directory een job (geïsoleerde ZAD-projecten), parallel,
   # SHA-pinned zad-actions, conform het FBS-deploy.yml-patroon.
