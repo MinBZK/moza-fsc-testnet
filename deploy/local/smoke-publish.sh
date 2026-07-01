@@ -9,7 +9,7 @@ COMPOSE=(docker compose -f "$HERE/docker-compose.yaml")
 SERVICE_NAME="example-service"
 PROVIDER_OIN="00000000000000000030"
 DIR_OIN="00000000000000000010"
-TIMEOUT=120; INTERVAL=5
+TIMEOUT=10; INTERVAL=2
 
 CERT=/pki/internal/example-provider/manager/cert.pem
 KEY=/pki/internal/example-provider/manager/key.pem
