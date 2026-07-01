@@ -54,7 +54,7 @@ while [ "$elapsed" -lt "$DISCOVER_TIMEOUT" ]; do
   SUGG=$(tbx -i "$OUTWAY/" -H 'Fsc-Grant-Hash: discover' || true)
   # shellcheck disable=SC2016  # de `$1$<n>$...` is het letterlijke grant-hash-formaat, geen var.
   # head -n1: aanname = de consumer heeft precies één contract/grant (example-service). Bij meerdere
-  # zou een verkeerde gekozen kunnen worden -> stap 2 faalt dan op de 200/stub-check (geen false green).
+  # zou een verkeerde gekozen kunnen worden -> stap 3 faalt dan op de 200/stub-check (geen false green).
   GH=$(printf '%s' "$SUGG" | grep -oE '\$1\$[0-9]+\$[A-Za-z0-9_/+=-]{20,}' | head -n1 || true)
   [ -n "$GH" ] && break
   sleep "$INTERVAL"; elapsed=$((elapsed + INTERVAL))
