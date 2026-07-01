@@ -9,7 +9,7 @@ COMPOSE=(docker compose -f "$(dirname "$0")/docker-compose.yaml")
 SERVICE_NAME="example-service"
 PROVIDER_OIN="00000000000000000030"
 DIR_OIN="00000000000000000010"
-GROUP_ID="moza-fbs-test"                 # zie runtime-onzekerheid 5
+GROUP_ID="moza-fbs-test"                 # = GROUP_ID env-var op de manager; als de manager een directory-adres verwacht, gebruik DIRECTORY_MANAGER_ADDRESS
 STUB_URL="http://stub-upstream:8080"
 
 CERT=/pki/internal/example-provider/manager/cert.pem
@@ -18,9 +18,14 @@ CA=/pki/internal/example-provider/ca/root.pem
 CONTROLLER=https://controller.example-provider.fsc-test.local:9444
 MANAGER=https://manager.example-provider.fsc-test.local:9443
 
-# curl binnen de toolbox, met de internal client-cert.
+# Vang curl-/toolbox-stderr op i.p.v. weg te gooien: een mTLS-/netwerk-/dode-container-fout
+# mag niet als "nog niet klaar" maskeren (spiegelt smoke-announce.sh). Surface 'm in de loop.
+ERRLOG=$(mktemp)
+trap 'rm -f "$ERRLOG"' EXIT
+
+# curl binnen de toolbox, met de internal client-cert. Stderr -> ERRLOG.
 tb() { "${COMPOSE[@]}" exec -T toolbox curl -s --fail-with-body \
-         --cert "$CERT" --key "$KEY" --cacert "$CA" "$@"; }
+         --cert "$CERT" --key "$KEY" --cacert "$CA" "$@" 2>"$ERRLOG"; }
 
 echo "publish: wachten op inway-registratie bij de controller..."
 # inway->controller-registratie is asynchroon na boot; poll (spiegelt smoke-announce.sh)
@@ -31,6 +36,8 @@ while [ "$elapsed" -lt 60 ]; do
   # CreateService verwacht het inway-ADRES (https://...:443, = SELF_ADDRESS), niet de naam.
   INWAY_ADDR=$(tb "$CONTROLLER/v1/inways" | grep -o 'https://inway\.example-provider\.fsc-test\.local:443' | head -1 || true)
   [ -n "$INWAY_ADDR" ] && break
+  # Persistente fout (verkeerd cert-pad, dode toolbox, DNS) mag niet als "traag boot" maskeren.
+  [ -s "$ERRLOG" ] && { echo "  WARN: controller-fout: $(tail -n1 "$ERRLOG")" >&2; : >"$ERRLOG"; }
   sleep 5; elapsed=$((elapsed + 5))
   echo "  ...inway nog niet geregistreerd (${elapsed}s)"
 done
@@ -50,10 +57,11 @@ echo "publish: servicePublication-contract indienen (idempotent)..."
 if tb "$MANAGER/v1/services/publications" | grep -q "\"$SERVICE_NAME\""; then
   echo "  al gepubliceerd, skip contract."
 else
-  IV=$("${COMPOSE[@]}" exec -T toolbox cat /proc/sys/kernel/random/uuid)   # 36 tekens; zie onzekerheid 4
-  NBF=$("${COMPOSE[@]}" exec -T toolbox date -u +%s)
-  NAF=$((NBF + 315360000))                                                 # +10 jaar
-  tb -X POST "$MANAGER/v1/contracts" -H 'Content-Type: application/json' -d "{
+  # UUID + timestamp zijn host-lokaal (geen container-context nodig) -> host-builtins i.p.v. toolbox-exec.
+  IV=$(cat /proc/sys/kernel/random/uuid)   # UUID v4 (36 tekens); als de manager 400 geeft op het iv-formaat, genereer UUID v7
+  NBF=$(date -u +%s)
+  NAF=$((NBF + 315360000))                 # +10 jaar
+  RESP=$(tb -X POST "$MANAGER/v1/contracts" -H 'Content-Type: application/json' -d "{
     \"contract_content\": {
       \"iv\": \"$IV\",
       \"group_id\": \"$GROUP_ID\",
@@ -66,7 +74,10 @@ else
         \"service\": { \"peer_id\": \"$PROVIDER_OIN\", \"name\": \"$SERVICE_NAME\", \"protocol\": \"PROTOCOL_TCP_HTTP_1.1\" }
       } ]
     }
-  }"
-  echo "  contract ingediend (manager signt; directory auto-accept)."
+  }")
+  # --fail-with-body vangt HTTP-4xx/5xx; een 2xx zónder content_hash duidt op een geweigerd formaat.
+  printf '%s' "$RESP" | grep -q '"content_hash"' \
+    || { echo "FAIL: contract-respons zonder content_hash (mogelijk geweigerd iv/group_id-formaat): $RESP" >&2; exit 1; }
+  echo "  contract ingediend (manager signt; directory auto-accept): $RESP"
 fi
 echo "publish: klaar."
