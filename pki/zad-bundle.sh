@@ -19,7 +19,7 @@ MANIFEST="${OUT}/MANIFEST.md"
 env_for() {
   case "$1" in
     ca/root.pem)            echo "TLS_GROUP_ROOT_CERT" ;;
-    ca/intermediate.crl)    echo "group-config crl: (revocatie; sluit DISABLE_CRL_CHECKS-gate, #722)" ;;
+    ca/intermediate.crl)    echo "group-config crl: (revocatielijst)" ;;
     out/*/cert.pem)         echo "TLS_GROUP_CERT (+ TLS_GROUP_TOKEN_CERT, TLS_GROUP_CONTRACT_CERT)" ;;
     out/*/key.pem)          echo "TLS_GROUP_KEY (+ TLS_GROUP_TOKEN_KEY, TLS_GROUP_CONTRACT_KEY)" ;;
     internal/*/ca/root.pem) echo "TLS_ROOT_CERT (+ TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT)" ;;
@@ -60,7 +60,7 @@ copy_one() {                               # $1 = relatief pad onder pki/  [$2=r
 
 # 1. group-trust-anchor (gedeeld door alle peers) — verplicht
 copy_one "ca/root.pem" required
-# CRL (gen-crl.sh) hoort bij het trust-anchor: mount 'm zodat de DISABLE_CRL_CHECKS-gate dicht kan (#722).
+# CRL (gen-crl.sh) hoort bij het trust-anchor: mount 'm zodat CRL-checks aangezet kunnen worden.
 copy_one "ca/intermediate.crl" required
 
 # 2. group-endpoints: losse cert + key (modus 2 serveert deze los; geen combined.pem)
