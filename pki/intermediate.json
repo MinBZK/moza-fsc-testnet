@@ -1,0 +1,6 @@
+{
+  "CN": "MOZa FSC Testnet Intermediate CA",
+  "key": { "algo": "rsa", "size": 4096 },
+  "names": [{ "O": "MOZa FSC Testnet", "C": "NL" }],
+  "ca": { "expiry": "131376h" }
+}

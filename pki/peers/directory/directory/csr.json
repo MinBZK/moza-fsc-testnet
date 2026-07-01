@@ -1,0 +1,7 @@
+{
+  "CN": "directory.fsc-test.local",
+  "key": { "algo": "rsa", "size": 4096 },
+  "hosts": ["directory.fsc-test.local"],
+  "serialnumber": "00000000000000000010",
+  "names": [{ "O": "directory", "C": "NL" }]
+}

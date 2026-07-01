@@ -4,6 +4,9 @@
 *.crt
 *.crl
 secrets/
+pki/ca/
+pki/out/
+pki/internal/
 peers/**/values.yaml
 group/group-config.yaml
 
@@ -11,3 +14,4 @@ group/group-config.yaml
 .idea/
 *.iml
 .vscode/
+.superpowers/

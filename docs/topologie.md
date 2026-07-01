@@ -7,7 +7,7 @@
                          └────────────▲─────────────┘
                        announce       │       announce
               ┌─────────────────┐     │     ┌─────────────────┐
-              │  magazijn-org    │    │    │  uitvraag-org    │
+              │ magazijn-a / -b  │    │    │  uitvraag-org    │
               │  manager :8443   │◀───┴───▶│  manager :8443   │   (management-mesh, mTLS)
               │  inway   :443    │         │  outway          │
               │   └▶ berichten-  │         │   └▶ berichten-  │
@@ -18,10 +18,15 @@
 ```
 
 - Elke peer = eigen **ZAD-project** (project-isolatie, zoals bestaande FBS-deploy.yml).
-- Data-pad: `berichtenuitvraag` → lokale **outway** → **inway** magazijn-org → `berichtenmagazijn`.
+- Data-pad: `berichtenuitvraag` → lokale **outway** → **inway** magazijn (A of B) → `berichtenmagazijn`.
+- Twee magazijn-peers: **magazijn-a** (OIN `00000001003214345000`) en **magazijn-b** (`00000001823288444000`),
+  elk eigen ZAD-project. OIN's overgenomen uit moza-poc-fbs-berichtenbox.
 - FBS-integratie is **config-only**: de `Magazijnregister`-URL (`magazijnen."<OIN>".url`) wijst
   naar de lokale outway i.p.v. direct op het magazijn (#726).
 - Management-pad (8443): managers wisselen contracten/peers/tokens uit.
+- Beheer-pad (HTTP-UI): elke peer draait een **controller** (dienst publiceren, afnemer-toegang
+  aanvragen, contracten beheren); de directory host **directory-ui** (gedeelde dienstencatalogus).
+  Via edge-Route, geen 8443-mesh — zie `docs/ontwerpkeuzes.md` (#723/#727).
 
 ## Schaal-aandachtspunt (8443-IP-schaarste, #720/#723)
 
