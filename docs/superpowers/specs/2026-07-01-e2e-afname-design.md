@@ -64,8 +64,12 @@ In #727 legden we het contract. Nu moet blijken dat een **echte aanroep** end-to
   op een dode `:443`).
 - **`postgres-init.sql`**: + `fsc_txlog_example_{provider,consumer}`.
 - **`smoke-e2e.sh`** (nieuw): bewijst (1) data-call 200 + stub-echo, (2) directe inway-call zónder
-  token = 401 `ERROR_CODE_ACCESS_TOKEN_MISSING`, (3) één `transaction_id` in beide txlog-DB's.
-  Ontdekt de grant-hash via de outway-suggestie (pollt tot de outway het #727-contract kent).
+  token = 401 **én** `ERROR_CODE_ACCESS_TOKEN_MISSING` (AND, niet OR — een kale 401 mag geen
+  afdwinging voorwenden), (3) de transactie van díe call correleert: de **nieuwe** out-id in de
+  consumer-txlog (t.o.v. een baseline vóór de call) staat óók als **in**-id in de provider-txlog.
+  Baseline-diff + `direction`-predicaat voorkomen een false-green op een gedeelde id uit een
+  eerdere run of uit de token-/mesh-uitwisseling. Ontdekt de grant-hash via de outway-suggestie
+  (pollt tot de outway het #727-contract kent; grept body én headers).
 - **`run-smokes.sh`**: `smoke-e2e.sh` toegevoegd aan de keten.
 
 ## Error handling
@@ -89,10 +93,12 @@ docker-host bij de eerste run:
 
 1. **txlog serve-subcommando**: `txlog-api serve` (gespiegeld op `manager serve`). Als het image
    een ander default-commando heeft: `docker run --rm …/txlog-api:v1.43.7 --help`.
-2. **Grant-hash-suggestie-formaat**: `smoke-e2e.sh` grept `$1$<n>$<base64url>`. Wijkt het formaat
-   af, pas de regex aan (dump de outway-respons op de FAIL-tak).
-3. **txlog-tabel/-kolom**: schema-agnostisch opgezocht op kolom `transaction_id`; als fsc-logging
-   een andere kolomnaam gebruikt, past de query zich niet automatisch aan → check de FAIL-dump.
+2. **Grant-hash-suggestie-formaat**: `smoke-e2e.sh` grept `$1$<n>$<base64url>` (in body én headers).
+   Wijkt het formaat af, pas de regex aan (dump de outway-respons op de FAIL-tak).
+3. **txlog-tabel/-kolommen**: schema-agnostisch opgezocht op kolom `transaction_id`; de correlatie
+   gebruikt ook een `direction`-kolom (predicaat `LIKE '%out%'`/`'%in%'`, tolerant voor de encoding).
+   Gebruikt fsc-logging andere kolomnamen, dan faalt de query luid (FAIL-dump toont het schema) —
+   nooit stil groen.
 4. **Outway-egress-env**: `MANAGER_INTERNAL_ADDRESS` (authenticated :9443) vervangt de #725-
    unauthenticated variant; bevestig dat de outway registreert + routeert (outway-logs).
 5. **Inway-401-body**: `ERROR_CODE_ACCESS_TOKEN_MISSING` komt uit de FSC-standaard-errortabel; de

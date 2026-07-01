@@ -35,8 +35,9 @@ ERRLOG=$(mktemp); trap 'rm -f "$ERRLOG"' EXIT
 
 # curl in de toolbox (plain HTTP naar de outway; geen cert nodig voor de app->outway-hop).
 tbx() { "${COMPOSE[@]}" exec -T toolbox curl -s "$@" 2>"$ERRLOG"; }
-# psql tegen een txlog-DB.
+# psql tegen een txlog-DB (stderr -> ERRLOG zodat een DB-fout niet als "geen rijen" maskeert).
 psqltx() { "${COMPOSE[@]}" exec -T postgres psql -U postgres -d "$1" -tA -c "$2" 2>>"$ERRLOG"; }
+surface_err() { [ -s "$ERRLOG" ] && { echo "  -> laatste fout: $(tail -n1 "$ERRLOG")" >&2; }; return 0; }
 
 # --- 0. Contract garanderen (idempotent) ------------------------------------------------------
 echo "smoke-e2e: contract garanderen (bootstrap, idempotent)..."
@@ -45,11 +46,14 @@ bash "${REPO_ROOT}/contracts/bootstrap.sh"
 # --- 1. Grant-hash ontdekken via de outway-suggestie (pollt tot de outway het contract kent) --
 # Zonder geldige Fsc-Grant-Hash geeft de outway (met ENABLE_GRANT_HASH_SUGGESTION) de bruikbare
 # grant-hash(es) terug. Grant-hash-formaat: `$1$<n>$<base64url>` (zie open-fsc walkthrough).
+# `-i` neemt de headers mee, mocht de outway de suggestie in een header i.p.v. de body zetten.
 echo "smoke-e2e: grant-hash ontdekken via de outway (max ${DISCOVER_TIMEOUT}s; grant-links-cache-TTL=30s)..."
 GH=""; elapsed=0
 while [ "$elapsed" -lt "$DISCOVER_TIMEOUT" ]; do
-  SUGG=$(tbx "$OUTWAY/" -H 'Fsc-Grant-Hash: discover' || true)
+  SUGG=$(tbx -i "$OUTWAY/" -H 'Fsc-Grant-Hash: discover' || true)
   # shellcheck disable=SC2016  # de `$1$<n>$...` is het letterlijke grant-hash-formaat, geen var.
+  # head -n1: aanname = de consumer heeft precies één contract/grant (example-service). Bij meerdere
+  # zou een verkeerde gekozen kunnen worden -> stap 2 faalt dan op de 200/stub-check (geen false green).
   GH=$(printf '%s' "$SUGG" | grep -oE '\$1\$[0-9]+\$[A-Za-z0-9_/+=-]{20,}' | head -n1 || true)
   [ -n "$GH" ] && break
   sleep "$INTERVAL"; elapsed=$((elapsed + INTERVAL))
@@ -58,13 +62,36 @@ done
 if [ -z "$GH" ]; then
   echo "FAIL: geen grant-hash uit de outway-suggestie binnen ${DISCOVER_TIMEOUT}s." >&2
   echo "  Laatste outway-respons:" >&2; printf '%s\n' "${SUGG:-<leeg>}" >&2
-  [ -s "$ERRLOG" ] && { echo "  curl-fout: $(tail -n1 "$ERRLOG")" >&2; }
+  surface_err
   "${COMPOSE[@]}" logs --tail=50 outway-example-consumer manager-example-consumer >&2 || true
   exit 1
 fi
 echo "  grant-hash = $GH"
 
-# --- 2. Positieve data-call: consumer -> outway -> inway -> stub -> terug ----------------------
+# --- 2. txlog-tabellen resolven + baseline (vóór de call) -------------------------------------
+# Schema-agnostisch: de tabel met een `transaction_id`-kolom (zoals smoke-discover de services-tabel).
+# We nemen een baseline van bestaande out-transacties in de consumer-txlog, zodat we in stap 4
+# alléén de transactie van DEZE call correleren (de txlog-volumes zijn persistent -> anders
+# false-green op een gedeelde id uit een eerdere run).
+find_tx_table() {  # $1=db ; echoot "schema.table" met een transaction_id-kolom
+  psqltx "$1" "SELECT format('%I.%I', table_schema, table_name)
+               FROM information_schema.columns
+               WHERE column_name = 'transaction_id' AND table_schema NOT IN ('pg_catalog','information_schema')
+               ORDER BY table_schema LIMIT 1;" | head -n1
+}
+# Out-/in-predicaat is tolerant voor de encoding (`out`/`OUT`/`DIRECTION_OUT`): 'out' en 'in' zijn
+# elkaars complement (geen 'in' in 'out' en v.v.), dus de LIKE's zijn wederzijds uitsluitend.
+OUT_PRED="lower(direction) LIKE '%out%'"
+IN_PRED="lower(direction) LIKE '%in%'"
+CTBL=$(find_tx_table "$TXDB_CONSUMER" || true)
+PTBL=$(find_tx_table "$TXDB_PROVIDER" || true)
+if [ -z "$CTBL" ] || [ -z "$PTBL" ]; then
+  echo "FAIL: geen transaction_id-tabel gevonden (consumer='${CTBL:-?}', provider='${PTBL:-?}')." >&2
+  surface_err; exit 1
+fi
+BASELINE=$(psqltx "$TXDB_CONSUMER" "SELECT transaction_id FROM ${CTBL} WHERE ${OUT_PRED};" | sort -u || true)
+
+# --- 3. Positieve data-call: consumer -> outway -> inway -> stub -> terug ----------------------
 echo "smoke-e2e: data-call via de outway (verwacht 200 + stub-echo)..."
 BODY=$(tbx -o - -w '\n%{http_code}' "$OUTWAY/" -H "Fsc-Grant-Hash: $GH" || true)
 CODE=$(printf '%s' "$BODY" | tail -n1)
@@ -73,64 +100,56 @@ if [ "$CODE" = "200" ] && printf '%s' "$PAYLOAD" | grep -qF "$STUB_MARKER"; then
   echo "OK: data-call geslaagd (200) en stub-echo ontvangen: $(printf '%s' "$PAYLOAD" | head -n1)"
 else
   echo "FAIL: data-call niet geslaagd (HTTP ${CODE:-<geen>}); verwacht 200 + \"$STUB_MARKER\"." >&2
-  printf '  respons: %s\n' "$PAYLOAD" >&2
-  [ -s "$ERRLOG" ] && echo "  curl-fout: $(tail -n1 "$ERRLOG")" >&2
+  printf '  respons: %s\n' "$PAYLOAD" >&2; surface_err
   "${COMPOSE[@]}" logs --tail=60 outway-example-consumer inway-example-provider stub-upstream >&2 || true
   exit 1
 fi
 
-# --- 3. Token-afdwinging: directe inway-call ZONDER token -> 401 -------------------------------
+# --- 4. Token-afdwinging: directe inway-call ZONDER token -> 401 -------------------------------
 # We omzeilen de outway en spreken de inway direct aan (group-mTLS, maar géén Fsc-Authorization).
-# De inway hoort dit te weigeren met 401 ERROR_CODE_ACCESS_TOKEN_MISSING.
-echo "smoke-e2e: token-afdwinging (directe inway-call zonder token, verwacht 401)..."
-NEG=$("${COMPOSE[@]}" exec -T toolbox curl -s -o /dev/null -D - -w '%{http_code}' \
+# De inway hoort dit te weigeren met 401 ERROR_CODE_ACCESS_TOKEN_MISSING. `-i` -> we greppen zowel
+# de Fsc-Error-Code-header als de body; eis 401 ÉN de marker (niet OR — een kale 401 uit een andere
+# oorzaak mag geen token-afdwinging voorwenden).
+echo "smoke-e2e: token-afdwinging (directe inway-call zonder token, verwacht 401 + ACCESS_TOKEN_MISSING)..."
+NEG=$("${COMPOSE[@]}" exec -T toolbox curl -s -i -w '\n%{http_code}' \
         --cert "$GCERT" --key "$GKEY" --cacert "$GROOT" "$INWAY/" 2>"$ERRLOG" || true)
 NCODE=$(printf '%s' "$NEG" | tail -n1)
-if [ "$NCODE" = "401" ] || printf '%s' "$NEG" | grep -qi 'ERROR_CODE_ACCESS_TOKEN_MISSING'; then
-  echo "OK: inway weigert zonder token (HTTP ${NCODE}; ERROR_CODE_ACCESS_TOKEN_MISSING)."
+if [ "$NCODE" = "401" ] && printf '%s' "$NEG" | grep -qi 'ACCESS_TOKEN_MISSING'; then
+  echo "OK: inway weigert zonder token (HTTP 401 + ERROR_CODE_ACCESS_TOKEN_MISSING)."
 else
-  echo "FAIL: inway weigerde niet zoals verwacht (HTTP ${NCODE:-<geen>}, geen ACCESS_TOKEN_MISSING)." >&2
-  printf '%s\n' "$NEG" >&2
-  [ -s "$ERRLOG" ] && echo "  curl-fout: $(tail -n1 "$ERRLOG")" >&2
+  echo "FAIL: verwacht 401 MÉT ERROR_CODE_ACCESS_TOKEN_MISSING (kreeg HTTP ${NCODE:-<geen>})." >&2
+  printf '%s\n' "$NEG" >&2; surface_err
   exit 1
 fi
 
-# --- 4. Verantwoording: één Fsc-Transaction-Id bij zowel outway (out) als inway (in) -----------
-# De outway logt de transactie (direction out) in de consumer-txlog; de inway (direction in) in
-# de provider-txlog — met DEZELFDE transaction_id. Tabel/kolom schema-agnostisch opzoeken.
-echo "smoke-e2e: transactie-correlatie (zelfde Fsc-Transaction-Id in beide txlogs)..."
-find_tx_table() {  # $1=db ; echoot "schema.table" met een transaction_id-kolom
-  psqltx "$1" "SELECT format('%I.%I', table_schema, table_name)
-               FROM information_schema.columns
-               WHERE column_name = 'transaction_id' AND table_schema NOT IN ('pg_catalog','information_schema')
-               ORDER BY table_schema LIMIT 1;" | head -n1
-}
-CTBL=$(find_tx_table "$TXDB_CONSUMER" || true)
-PTBL=$(find_tx_table "$TXDB_PROVIDER" || true)
-if [ -z "$CTBL" ] || [ -z "$PTBL" ]; then
-  echo "FAIL: geen transaction_id-tabel gevonden (consumer='${CTBL:-?}', provider='${PTBL:-?}')." >&2
-  [ -s "$ERRLOG" ] && echo "  psql-fout: $(tail -n1 "$ERRLOG")" >&2
-  exit 1
-fi
-
+# --- 5. Verantwoording: DEZELFDE Fsc-Transaction-Id bij outway (out) én inway (in) -------------
+# De transactie van stap 3 = de NIEUWE out-id in de consumer-txlog (t.o.v. de baseline). Die id
+# moet óók in de provider-txlog staan mét direction=in. Het direction-predicaat sluit uit dat een
+# gedeelde id uit de token-/mesh-uitwisseling (managers dragen óók TX_LOG_API_ADDRESS) als
+# data-plane-correlatie telt.
+echo "smoke-e2e: transactie-correlatie (nieuwe out-id ook als in-id bij de provider)..."
 elapsed=0; CORR=""
 while [ "$elapsed" -lt "$TXLOG_TIMEOUT" ]; do
-  # transaction_id's die in BEIDE txlogs voorkomen (= gecorreleerde end-to-end transactie).
-  CIDS=$(psqltx "$TXDB_CONSUMER" "SELECT DISTINCT transaction_id FROM ${CTBL};" | sort -u || true)
-  PIDS=$(psqltx "$TXDB_PROVIDER" "SELECT DISTINCT transaction_id FROM ${PTBL};" | sort -u || true)
-  CORR=$(comm -12 <(printf '%s\n' "$CIDS") <(printf '%s\n' "$PIDS") | grep -v '^$' | head -n1 || true)
+  NOW=$(psqltx "$TXDB_CONSUMER" "SELECT transaction_id FROM ${CTBL} WHERE ${OUT_PRED};" | sort -u || true)
+  NEW=$(comm -13 <(printf '%s\n' "$BASELINE") <(printf '%s\n' "$NOW") | grep -v '^$' || true)
+  for id in $NEW; do
+    HIT=$(psqltx "$TXDB_PROVIDER" "SELECT 1 FROM ${PTBL} WHERE transaction_id = '${id}' AND ${IN_PRED} LIMIT 1;" || true)
+    if [ "$HIT" = "1" ]; then CORR="$id"; break; fi
+  done
   [ -n "$CORR" ] && break
   sleep "$INTERVAL"; elapsed=$((elapsed + INTERVAL))
-  echo "  ...nog geen gecorreleerde transaction_id in beide txlogs (${elapsed}s)"
+  echo "  ...nog geen gecorreleerde transactie (${elapsed}s)"
 done
 
 if [ -n "$CORR" ]; then
-  echo "OK: Fsc-Transaction-Id $CORR gelogd bij zowel outway (out) als inway (in)."
+  echo "OK: Fsc-Transaction-Id $CORR gelogd bij outway (direction out) én inway (direction in)."
   echo "SMOKE-E2E GROEN."
   exit 0
 fi
 
-echo "FAIL: geen gedeelde transaction_id in consumer- en provider-txlog binnen ${TXLOG_TIMEOUT}s." >&2
+echo "FAIL: de nieuwe out-transactie is niet als in-transactie bij de provider gecorreleerd binnen ${TXLOG_TIMEOUT}s." >&2
+surface_err
+echo "  nieuwe consumer-out-id's t.o.v. baseline: ${NEW:-<geen>}" >&2
 echo "  consumer-txlog (${CTBL}):" >&2; psqltx "$TXDB_CONSUMER" "SELECT transaction_id, direction FROM ${CTBL} LIMIT 10;" >&2 || true
 echo "  provider-txlog (${PTBL}):" >&2; psqltx "$TXDB_PROVIDER" "SELECT transaction_id, direction FROM ${PTBL} LIMIT 10;" >&2 || true
 "${COMPOSE[@]}" logs --tail=40 txlog-example-consumer txlog-example-provider >&2 || true
