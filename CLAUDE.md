@@ -107,12 +107,11 @@ contracts/   grant → sign → accept bootstrap
 
 ## Issues / stappenplan
 
-Onder #661: #720 (mTLS-spike, **done/GO**) · #721 (repo-skelet + governance/CI, **in afronding**)
-· #722 PKI · #723 directory+group · #724 peer magazijn · #725 peer uitvraag
-· #726 FBS-integratie · #727 contracten · #728 e2e+logging · #729 CI+cleanup · #730 profiel-peer.
+**Volgorde + status = de sub-issues van epic [#737](https://github.com/MinBZK/MijnOverheidZakelijk/issues/737)**
+(GitHub sub-issue-volgorde = single source of truth; niet hier dupliceren). `[FSC]`-issues horen bij
+dit repo; `[FBS]`-issues bij `moza-poc-fbs-berichtenbox`.
 
-**Huidige stap: #722 (test-PKI).** Het CA/cert-genereer-werk kan vooruit (OpenFSC `ca`/`ca-certportal`);
-het *mounten* van certs kan nu via ZAD `attachments` (sinds 2026-06-29 beschikbaar).
+**Huidige stap: #725** (peer `example-consumer`). #724 (`example-provider`) is de voorloper/template.
 
 ## Referenties
 

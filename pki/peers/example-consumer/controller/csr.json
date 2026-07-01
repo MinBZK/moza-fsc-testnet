@@ -1,0 +1,7 @@
+{
+  "CN": "controller.example-consumer.fsc-test.local",
+  "key": { "algo": "rsa", "size": 4096 },
+  "hosts": ["controller.example-consumer.fsc-test.local"],
+  "serialnumber": "00000000000000000020",
+  "names": [{ "O": "example-consumer", "C": "NL" }]
+}

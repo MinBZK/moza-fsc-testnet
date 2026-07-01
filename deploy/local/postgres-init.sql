@@ -3,3 +3,5 @@
 CREATE DATABASE fsc_directory;
 CREATE DATABASE fsc_example_provider;
 CREATE DATABASE fsc_controller_example_provider;
+CREATE DATABASE fsc_example_consumer;
+CREATE DATABASE fsc_controller_example_consumer;
