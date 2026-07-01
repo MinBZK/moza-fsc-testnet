@@ -5,23 +5,28 @@
 #
 # Stroom (OpenFSC Manager Internal-API, bewezen patroon uit deploy/local/publish-service.sh):
 #   1. bereken de outway-group-public-key-thumbprint (SPKI SHA-256 hex);
-#   2. idempotentie: is er al een eerder geaccepteerd contract (state-file-hash nog aanwezig
-#      op de provider)? -> no-op;
+#   2. idempotentie: draagt een eerder geaccepteerd contract (state-file-hash) NOG de
+#      provider-accept op de provider? -> no-op;
 #   3. POST /v1/contracts (contract_content) op de EIGEN (consumer-)manager -> die tekent
 #      server-side namens de consumer (2xx + content_hash = consumer-handtekening) en synct
 #      het contract via de mesh naar de provider;
 #   4. poll de provider-manager tot het contract (op content_hash) gesynct is, dan
-#      PUT /v1/contracts/{hash}/accept op de PROVIDER-manager (2xx = provider-handtekening).
-#   5. best-effort (non-fataal): token-fetch als bonus-signaal. Harde token-afdwinging +
+#      PUT /v1/contracts/{hash}/accept op de PROVIDER-manager (2xx = provider-handtekening);
+#   5. verifieer onafhankelijk (re-GET provider-lijst) dat ons contract nu de provider-accept
+#      draagt (accept-STAAT via jq, niet blote aanwezigheid);
+#   6. best-effort (non-fataal): token-probe als bonus-signaal. Harde token-afdwinging +
 #      transactie-logging = #728 (de outway haalt tokens native op tijdens egress).
 #
-# WAAROM 2xx-gating i.p.v. de contractenlijst grepppen: op de provider-manager staat óók het
-# auto-geaccepteerde servicePublication-contract voor dezelfde `example-service`. Een losse
-# grep op servicenaam/OIN/"accept" over de hele lijst matcht dus altijd (false green). Daarom:
+# WAAROM 2xx-gating + accept-STAAT i.p.v. de contractenlijst grepppen: op de provider-manager staat
+# óók het auto-geaccepteerde servicePublication-contract voor dezelfde `example-service`. Een losse
+# grep op servicenaam/OIN/"accept" over de hele lijst matcht dus altijd (false green); en blote
+# aanwezigheid van de content_hash bewijst geen accept (de consumer stelt 't contract zélf op).
+# Daarom:
 #   - consumer-handtekening  = POST gaf 2xx + content_hash;
 #   - provider-handtekening  = PUT .../accept gaf 2xx (scoped op exact die hash);
-#   - bestaans-/idempotentie-check = grep op de GLOBAAL UNIEKE content_hash (die het
-#     publicatie-contract per definitie niet deelt) — nooit op servicenaam/"accept".
+#   - idempotentie/verify     = jq accept-STAAT-check (signatures.accept bevat de provider-OIN),
+#     gescoped op de GLOBAAL UNIEKE content_hash. Zonder jq: fallback op aanwezigheid (de PUT-2xx
+#     bewees de accept dan al).
 #
 # De provider tekent NIET automatisch: AUTO_SIGN_GRANTS dekt alleen (delegated)servicePublication,
 # dus de serviceConnection-accept is een expliciete PUT (zie docs/.../contract-bootstrap-design.md).
@@ -90,15 +95,21 @@ HAVE_JQ=0; command -v jq >/dev/null 2>&1 && HAVE_JQ=1
 
 # Echoot "yes" | "no" | "unknown": draagt het contract met content_hash $2 een accept-handtekening
 # van OIN $3? Shape-tolerant (recursieve `..`; content_hash op top-niveau óf onder .content).
-# "unknown" als jq ontbreekt of de JSON-vorm afwijkt -> de caller valt dan terug op aanwezigheid
-# (in dit gesloten testnet volstaat dat: de PUT-2xx bewees de accept al bij bootstrap-tijd).
+# Faalt bewust NAAR "unknown" (i.p.v. "no") bij twijfel, zodat een afwijkende JSON-vorm nooit een
+# al-geaccepteerd contract ten onrechte afkeurt (de PUT-2xx bewees de accept al):
+#   - contract niet gevonden op deze hash        -> unknown (val terug op aanwezigheid)
+#   - geen herkenbaar signatures.accept-object   -> unknown (vorm wijkt af)
+#   - accept-object bevat provider-OIN           -> yes
+#   - accept-object aanwezig, zónder provider-OIN -> no  (échte pending/afgewezen -> opnieuw opzetten)
+# "unknown" ook als jq ontbreekt. In dit gesloten testnet volstaat de aanwezigheids-fallback.
 accept_state() {  # $1=json $2=content_hash $3=oin
   [ "$HAVE_JQ" -eq 1 ] || { echo unknown; return; }
   printf '%s' "$1" | jq -r --arg h "$2" --arg oin "$3" '
-    if ([.. | objects
-          | select((.content_hash? // .content?.content_hash?) == $h)
-          | (.signatures?.accept? // {}) | has($oin)] | any)
-    then "yes" else "no" end' 2>/dev/null || echo unknown
+    [.. | objects | select((.content_hash? // .content?.content_hash?) == $h)] as $c
+    | if ($c | length) == 0 then "unknown"
+      elif ([ $c[] | .signatures?.accept? | objects ] | length) == 0 then "unknown"
+      elif ($c | any((.signatures?.accept? // {}) | has($oin))) then "yes"
+      else "no" end' 2>/dev/null || echo unknown
 }
 
 # --- 0. Outway-public-key-thumbprint (host-side openssl; de toolbox heeft geen openssl-CLI) ----
@@ -131,7 +142,7 @@ if [ -f "$STATE_FILE" ]; then
           echo "OK: eerder geaccepteerd contract $SAVED nog aanwezig (idempotent, skip; jq afwezig → geen staat-check)."
           echo "BOOTSTRAP OK (bestaand contract)."; exit 0
         fi ;;
-      no) echo "bootstrap: state-file-contract $SAVED niet meer geaccepteerd — opnieuw opzetten." ;;
+      no) echo "bootstrap: state-file-contract $SAVED draagt geen provider-accept meer." ;;
     esac
   fi
   echo "bootstrap: geen bruikbaar bestaand contract — opnieuw opzetten."
@@ -171,7 +182,7 @@ RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: applicati
 HASH=$(printf '%s' "$RESP" | grep -o '"content_hash"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]*"' \
         | head -n1 | grep -o '[0-9a-fA-F]\{16,\}' | head -n1 || true)
 [ -n "$HASH" ] || { echo "FAIL: contract-respons zonder content_hash (formaat geweigerd?): $RESP" >&2; exit 1; }
-echo "  consumer-handtekening gezet (2xx) + gesynct; content_hash=$HASH"
+echo "  consumer-handtekening gezet (2xx); mesh-sync gestart; content_hash=$HASH"
 
 # --- 3. Provider laat het contract accepteren -------------------------------------------------
 echo "bootstrap: wachten tot het contract naar de provider-manager gesynct is..."

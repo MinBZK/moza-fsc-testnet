@@ -3,8 +3,10 @@
 # Smoke (#727): bewijst dat het contract-bootstrap-mechanisme een geldig, wederzijds
 # ondertekend serviceConnection-contract oplevert tussen example-consumer en example-provider.
 # Draait eerst de bootstrap (idempotent) en verifieert daarna ONAFHANKELIJK vanaf de
-# consumer-manager dat EXACT dat contract (op zijn globaal-unieke content_hash) mesh-breed
-# gesynct/zichtbaar is — d.w.z. dat de accept ook aan de consumer-kant is aangekomen.
+# consumer-manager (met jq) dat EXACT dat contract (op zijn globaal-unieke content_hash) de
+# PROVIDER-accept draagt — d.w.z. dat de accept mesh-breed naar de consumer-kant is gesynct.
+# Zonder jq valt het terug op een aanwezigheidscheck + caveat (de accept is dan al bewezen door
+# de bootstrap-PUT-2xx).
 #
 # Waarom scoped op content_hash: op beide managers staat óók het auto-geaccepteerde
 # servicePublication-contract voor dezelfde example-service; een losse grep op servicenaam/OIN/
@@ -52,11 +54,14 @@ OUT=$("${COMPOSE[@]}" exec -T toolbox curl -s --fail-with-body \
 # dat óns contract de accept-handtekening van de PROVIDER draagt = de accept is mesh-breed gesynct.
 # Zonder jq valt-ie terug op aanwezigheid (de bootstrap-PUT-2xx bewees de accept al) + caveat.
 if command -v jq >/dev/null 2>&1; then
+  # Faalt bewust naar "unknown" (niet "no") bij een afwijkende JSON-vorm, zodat een al-geaccepteerd
+  # contract nooit ten onrechte rood gaat (identiek aan accept_state() in contracts/bootstrap.sh).
   SIGNED=$(printf '%s' "$OUT" | jq -r --arg h "$HASH" --arg oin "$PROVIDER_OIN" '
-    if ([.. | objects
-          | select((.content_hash? // .content?.content_hash?) == $h)
-          | (.signatures?.accept? // {}) | has($oin)] | any)
-    then "yes" else "no" end' 2>/dev/null || echo unknown)
+    [.. | objects | select((.content_hash? // .content?.content_hash?) == $h)] as $c
+    | if ($c | length) == 0 then "unknown"
+      elif ([ $c[] | .signatures?.accept? | objects ] | length) == 0 then "unknown"
+      elif ($c | any((.signatures?.accept? // {}) | has($oin))) then "yes"
+      else "no" end' 2>/dev/null || echo unknown)
 else
   SIGNED=unknown
 fi
