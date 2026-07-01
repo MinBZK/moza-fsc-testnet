@@ -15,6 +15,8 @@
 #   ./deploy/zad/cleanup.sh validate                  # read-only auth-check + lijst deployments
 #   ./deploy/zad/cleanup.sh plan   <deployment>       # toont wat verwijderd wordt, muteert NIET
 #   ./deploy/zad/cleanup.sh apply  <deployment>       # DELETE + pollt de task
+# NB: anders dan upsert-directory.sh's offline `plan`, checkt `plan`/`apply` hier de live-staat
+# (bestaat de deployment?) -> ook `plan` vereist de API-key.
 # Env: ZAD_API_KEY (verplicht), ZAD_PROJECT (mft-tp9), ZAD_BASE (zad.rijksapp.nl), ALLOW_PROTECTED.
 set -euo pipefail
 
@@ -43,19 +45,23 @@ API="${BASE}/api/v2/projects/${PROJECT}"
 resp="$(mktemp)"; trap 'rm -f "${resp}"' EXIT
 hdr=(-H "X-API-Key: ${ZAD_API_KEY}")
 
-poll_task() {  # $1=task_id  (mutaties zijn async — spiegelt upsert-directory.sh)
-  local id="$1" status
+poll_task() {  # $1=task_id ; return 0=completed, 1=failed/onverwacht, 2=niet-bevestigd (timeout)
+  local id="$1" status code
   for _ in $(seq 1 45); do
-    curl -sS "${hdr[@]}" "${BASE}/api/tasks/${id}" -o "${resp}"
-    status="$(jq -r '.status' "${resp}")"
+    # HTTP-code hard checken (zoals de rest van dit script): een 5xx/401-errorbody mag niet als
+    # `null`-status de false-pending-lus in vallen en de destructieve delete "geslaagd" laten lijken.
+    code="$(curl -sS "${hdr[@]}" -o "${resp}" -w '%{http_code}' "${BASE}/api/tasks/${id}")"
+    case "${code}" in 2*) ;; *) echo "  task ${id}: poll HTTP ${code}"; jq . "${resp}" 2>/dev/null || cat "${resp}"; return 1 ;; esac
+    status="$(jq -r '.status // empty' "${resp}" 2>/dev/null || true)"
     case "${status}" in
       completed) echo "  task ${id}: completed"; return 0 ;;
-      failed)    echo "  task ${id}: FAILED -> $(jq -r '.error_message // .result.error' "${resp}")"; return 1 ;;
-      *)         sleep 2 ;;
+      failed)    echo "  task ${id}: FAILED -> $(jq -r '.error_message // .result.error // "?"' "${resp}")"; return 1 ;;
+      pending|running|in_progress|queued|"") sleep 2 ;;   # alléén BEKENDE non-terminale statussen retryen
+      *)         echo "  task ${id}: onverwachte status '${status}':"; jq . "${resp}" 2>/dev/null || cat "${resp}"; return 1 ;;
     esac
   done
-  echo "  task ${id}: nog bezig na ~90s (async ArgoCD-sync) — niet geblokkeerd, check later met 'validate'."
-  return 0
+  echo "  task ${id}: niet 'completed' binnen ~90s (async ArgoCD-sync)." >&2
+  return 2
 }
 
 # --- validate: auth + lijst bestaande deployments ---------------------------------------------
@@ -63,11 +69,16 @@ echo "== validate =="
 code="$(curl -sS "${hdr[@]}" -o "${resp}" -w '%{http_code}' "${API}/deployments")"
 [ "${code}" = 200 ] || { echo "auth/connectie faalt (HTTP ${code})"; cat "${resp}"; exit 1; }
 echo "auth OK — bestaande deployments in ${PROJECT}:"
-jq -r '.deployments[]? | "  - \(.name)"' "${resp}" 2>/dev/null || true
+jq -r '.deployments[]? | "  - \(.name)"' "${resp}" || true   # geen 2>/dev/null: laat shape-drift zien
 if [ "${MODE}" = validate ]; then echo "validate OK (read-only, niets gemuteerd)."; exit 0; fi
 
-# Idempotent: bestaat de deployment niet (meer), dan is er niets op te ruimen.
-if ! jq -e --arg d "${DEPLOYMENT}" '.deployments[]? | select(.name==$d)' "${resp}" >/dev/null 2>&1; then
+# Body MOET geldige JSON zijn: anders een corrupte 200-body niet als "deployment weg" interpreteren
+# (dat zou een nog-levende deployment op prod stil laten lekken + valse "niets te doen" melden).
+jq -e . "${resp}" >/dev/null 2>&1 \
+  || { echo "onverwachte /deployments-body (geen geldige JSON) — afbreken i.p.v. 'niets te doen':" >&2; cat "${resp}" >&2; exit 1; }
+# Idempotent: bestaat de deployment niet (meer), dan is er niets op te ruimen. Geen 2>/dev/null
+# op de select -> een echte jq-fout maskeert nooit als "bestaat niet".
+if ! jq -e --arg d "${DEPLOYMENT}" '.deployments[]? | select(.name==$d)' "${resp}" >/dev/null; then
   echo "deployment '${DEPLOYMENT}' bestaat niet in ${PROJECT} — niets te doen (idempotent)."
   exit 0
 fi
@@ -87,5 +98,15 @@ case "${code}" in
   *)   jq . "${resp}" 2>/dev/null || cat "${resp}"; exit 1 ;;
 esac
 tid="$(jq -r '.task_id // empty' "${resp}")"
-if [ -n "${tid}" ]; then poll_task "${tid}"; else jq . "${resp}" 2>/dev/null || true; fi
-echo "Klaar. '${DEPLOYMENT}' opgeruimd uit ${PROJECT}."
+if [ -z "${tid}" ]; then
+  # 2xx zonder task_id: geaccepteerd maar niet-async-bevestigbaar -> niet als "opgeruimd" claimen.
+  echo "DELETE geaccepteerd (HTTP ${code}) zonder task_id; verifieer met 'validate'."
+  jq . "${resp}" 2>/dev/null || true
+  exit 0
+fi
+if poll_task "${tid}"; then
+  echo "Klaar. '${DEPLOYMENT}' opgeruimd uit ${PROJECT}."
+else
+  echo "cleanup NIET bevestigd — task ${tid} niet 'completed'. Verifieer met 'validate'." >&2
+  exit 2
+fi
