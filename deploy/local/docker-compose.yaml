@@ -435,7 +435,9 @@ services:
       LOG_LEVEL: debug
       GROUP_ID: moza-fbs-test
       NAME: example-consumer-outway
-      SELF_ADDRESS: https://outway.example-consumer.fsc-test.local:443
+      # Outway = niet-adresseerbare egress-client: identificeert zich naar de provider via
+      # de cert-thumbprint (FSC grant outway.identification.public_key_thumbprint), niet via
+      # een SELF_ADDRESS zoals de inway. LISTEN_ADDRESS = lokale proxy-poort voor de app.
       LISTEN_ADDRESS: 0.0.0.0:8443
       MONITORING_ADDRESS: 0.0.0.0:8081
       DISABLE_CRL_CHECKS: "true"
