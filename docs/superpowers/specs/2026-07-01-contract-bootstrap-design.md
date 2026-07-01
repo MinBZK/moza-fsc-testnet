@@ -136,10 +136,22 @@ Spiegelt `deploy/local/publish-service.sh` (zelfde toolbox-mTLS-, idempotentie- 
 
 De `content_hash` van een succesvol geaccepteerd contract wordt weggeschreven naar
 `contracts/.bootstrap-state/<consumer>-<provider>-<service>.hash` (gitignored; niet-geheim,
-host-lokaal). Een herstart leest 'm terug en no-opt als die hash nog op de provider staat; is de
-state weg of het contract verdwenen, dan bouwt de bootstrap 'm opnieuw op (self-healing). Bij een
-verse checkout zónder state kan een 2e opzet een tweede geldig contract aanmaken — onschadelijk
-(de outway gebruikt er één), en in de praktijk begint `run-smokes.sh` vanaf `down -v`.
+host-lokaal). Een herstart leest 'm terug en no-opt **als dat contract nog de provider-accept
+draagt**; is de state weg, het contract verdwenen of niet meer geaccepteerd, dan bouwt de
+bootstrap 'm opnieuw op (self-healing). Bij een verse checkout zónder state kan een 2e opzet een
+tweede geldig contract aanmaken — onschadelijk (de outway gebruikt er één), en in de praktijk
+begint `run-smokes.sh` vanaf `down -v`.
+
+### Accept-STAAT i.p.v. blote aanwezigheid (jq)
+
+Aanwezigheid van de `content_hash` in de contractenlijst bewijst géén accept: de consumer heeft
+het contract zélf opgesteld, dus de hash staat er vanaf creatie (pending). Alleen een
+provider-handtekening onder `signatures.accept` bewijst de accept. `bootstrap.sh` en
+`smoke-contract.sh` checken die staat host-side met **jq** (shape-tolerant: `content_hash` op
+top-niveau óf onder `.content`), en vallen zónder jq terug op een aanwezigheidscheck — verantwoord
+omdat de accept dan al deterministisch bewezen is door de `PUT …/accept`-2xx tijdens de bootstrap.
+Dit geldt voor (a) de idempotentie-skip, (b) de post-accept-verify in `bootstrap.sh`, en (c) de
+onafhankelijke consumer-side verify in `smoke-contract.sh`.
 
 Parametriseerbaar via env (defaults = de example-peers) zodat het mechanisme **generiek** is:
 `CONSUMER_OIN`, `PROVIDER_OIN`, `SERVICE_NAME`, cert-paden, manager-hostnamen.

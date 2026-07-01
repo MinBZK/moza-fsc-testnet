@@ -82,6 +82,25 @@ provider_contracts() {
   printf '%s' "$out"
 }
 
+# jq (host-side) laat ons de accept-STAAT checken i.p.v. blote hash-aanwezigheid: de consumer
+# heeft het contract zélf opgesteld, dus de content_hash staat in de lijst vanaf creatie —
+# aanwezigheid bewijst dus géén provider-accept. Alleen een provider-handtekening onder
+# signatures.accept doet dat. jq is een bestaande repo-dependency (deploy/zad/upsert-directory.sh).
+HAVE_JQ=0; command -v jq >/dev/null 2>&1 && HAVE_JQ=1
+
+# Echoot "yes" | "no" | "unknown": draagt het contract met content_hash $2 een accept-handtekening
+# van OIN $3? Shape-tolerant (recursieve `..`; content_hash op top-niveau óf onder .content).
+# "unknown" als jq ontbreekt of de JSON-vorm afwijkt -> de caller valt dan terug op aanwezigheid
+# (in dit gesloten testnet volstaat dat: de PUT-2xx bewees de accept al bij bootstrap-tijd).
+accept_state() {  # $1=json $2=content_hash $3=oin
+  [ "$HAVE_JQ" -eq 1 ] || { echo unknown; return; }
+  printf '%s' "$1" | jq -r --arg h "$2" --arg oin "$3" '
+    if ([.. | objects
+          | select((.content_hash? // .content?.content_hash?) == $h)
+          | (.signatures?.accept? // {}) | has($oin)] | any)
+    then "yes" else "no" end' 2>/dev/null || echo unknown
+}
+
 # --- 0. Outway-public-key-thumbprint (host-side openssl; de toolbox heeft geen openssl-CLI) ----
 command -v openssl >/dev/null 2>&1 || { echo "FAIL: openssl niet gevonden op de host (zie pki/README.md)." >&2; exit 1; }
 [ -r "$OUTWAY_CERT_HOST" ] || { echo "FAIL: outway-cert niet leesbaar: $OUTWAY_CERT_HOST (draai pki/issue.sh?)" >&2; exit 1; }
@@ -94,22 +113,37 @@ case "$THUMB" in
 esac
 echo "bootstrap: outway public-key-thumbprint = $THUMB"
 
-# --- 1. Idempotentie: staat een eerder geaccepteerd contract (state-file-hash) nog op de provider? -
-# Scoped op de GLOBAAL UNIEKE content_hash -> geen verwarring met het publicatie-contract.
+# --- 1. Idempotentie: is een eerder geaccepteerd contract (state-file-hash) NOG geaccepteerd? -----
+# Scoped op de GLOBAAL UNIEKE content_hash. We checken de accept-STAAT (niet blote aanwezigheid):
+# een ge-revoke't/afgewezen contract staat óók nog in de lijst, dus presence != geaccepteerd.
 if [ -f "$STATE_FILE" ]; then
   SAVED=$(cat "$STATE_FILE" 2>/dev/null || true)
-  if [ -n "$SAVED" ] && printf '%s' "$(provider_contracts)" | grep -qF "$SAVED"; then
-    echo "OK: eerder geaccepteerd contract $SAVED nog aanwezig op de provider (idempotent, skip)."
-    echo "BOOTSTRAP OK (bestaand contract)."
-    exit 0
+  if [ -n "$SAVED" ]; then
+    LIST=$(provider_contracts)
+    case "$(accept_state "$LIST" "$SAVED" "$PROVIDER_OIN")" in
+      yes)
+        echo "OK: eerder geaccepteerd contract $SAVED draagt nog de provider-accept (idempotent, skip)."
+        echo "BOOTSTRAP OK (bestaand contract)."; exit 0 ;;
+      unknown)
+        # Geen jq (of afwijkende JSON-vorm): val terug op aanwezigheid. De state-file wordt pas ná
+        # een geslaagde accept geschreven, dus in dit gesloten testnet (geen revoke-pad) volstaat dat.
+        if printf '%s' "$LIST" | grep -qF "$SAVED"; then
+          echo "OK: eerder geaccepteerd contract $SAVED nog aanwezig (idempotent, skip; jq afwezig → geen staat-check)."
+          echo "BOOTSTRAP OK (bestaand contract)."; exit 0
+        fi ;;
+      no) echo "bootstrap: state-file-contract $SAVED niet meer geaccepteerd — opnieuw opzetten." ;;
+    esac
   fi
-  echo "bootstrap: state-file-hash ontbreekt/niet meer op de provider — opnieuw opzetten."
+  echo "bootstrap: geen bruikbaar bestaand contract — opnieuw opzetten."
 fi
 
 # --- 2. Contract opstellen + indienen bij de eigen (consumer-)manager -------------------------
 IV=$(cat /proc/sys/kernel/random/uuid)   # UUID v4; bij 400 op iv-formaat -> UUID v7 genereren
 NBF=$(date -u +%s)
 NAF=$((NBF + 315360000))                 # +10 jaar
+# De connection-grant heeft géén `protocol` (dat hoort bij de service-PUBLICATIE, niet bij de
+# connection) en géén `service.type` (v1.43.7 default = SERVICE_TYPE_SERVICE, zoals publish-service.sh).
+# Bij een 400 op het service-blok is `"type":"SERVICE_TYPE_SERVICE"` de eerste toevoeging om te proberen.
 echo "bootstrap: serviceConnection-contract indienen bij de consumer-manager..."
 RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: application/json' -d "{
   \"contract_content\": {
@@ -155,23 +189,37 @@ prov -X PUT "$PROVIDER_MANAGER/v1/contracts/$HASH/accept" -H 'Content-Type: appl
   || { echo "FAIL: PUT accept ($HASH) geweigerd: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
 echo "  provider-handtekening gezet (2xx)."
 
-# --- 4. Verifieer scoped: exact ONS contract (content_hash) staat nu op de provider -----------
-# Beide handtekeningen zijn al deterministisch bewezen door de 2xx-en hierboven; deze re-GET
-# bevestigt scoped (op de unieke hash) dat het geaccepteerde contract zichtbaar/gesynct is.
-if printf '%s' "$(provider_contracts)" | grep -qF "$HASH"; then
-  echo "OK: wederzijds ondertekend serviceConnection-contract $HASH ($CONSUMER_OIN <-> $PROVIDER_OIN)."
-else
-  echo "FAIL: contract $HASH niet meer zichtbaar op de provider na accept." >&2
-  [ -s "$ERRLOG" ] && { echo "  -> $(tail -n1 "$ERRLOG")" >&2; }
-  "${COMPOSE[@]}" logs --tail=50 manager-example-provider >&2 || true
-  exit 1
-fi
+# --- 4. Verifieer scoped: draagt ONS contract (content_hash) nu de provider-accept? -----------
+# De PUT-2xx hierboven is de deterministische accept-bewijs; deze re-GET checkt het onafhankelijk
+# vanaf de provider-lijst — via de accept-STAAT (niet blote aanwezigheid, want het contract stond
+# er al pending vóór de accept). Zonder jq valt-ie terug op aanwezigheid (PUT-2xx bewees 't al).
+FINAL=$(provider_contracts)
+case "$(accept_state "$FINAL" "$HASH" "$PROVIDER_OIN")" in
+  yes) echo "OK: wederzijds ondertekend serviceConnection-contract $HASH ($CONSUMER_OIN <-> $PROVIDER_OIN)." ;;
+  no)
+    echo "FAIL: contract $HASH draagt géén provider-accept-handtekening na de PUT (accept niet gezet?)." >&2
+    "${COMPOSE[@]}" logs --tail=50 manager-example-provider >&2 || true
+    exit 1 ;;
+  unknown)
+    if printf '%s' "$FINAL" | grep -qF "$HASH"; then
+      echo "OK: contract $HASH aanwezig op de provider (accept al bewezen door PUT-2xx; jq afwezig → geen staat-check)."
+    else
+      echo "FAIL: contract $HASH niet meer zichtbaar op de provider na accept." >&2
+      [ -s "$ERRLOG" ] && { echo "  -> $(tail -n1 "$ERRLOG")" >&2; }
+      "${COMPOSE[@]}" logs --tail=50 manager-example-provider >&2 || true
+      exit 1
+    fi ;;
+esac
 
 # State-file pas NA succesvolle accept schrijven (bron van waarheid voor idempotentie).
 mkdir -p "$STATE_DIR" && printf '%s\n' "$HASH" > "$STATE_FILE"
 
 # --- 5. Best-effort token (bonus; echte afdwinging + logging = #728) --------------------------
-echo "bootstrap: (best-effort) token-fetch als bonus-signaal — echte afdwinging is #728."
+# LET OP: FSC's /token verwacht scope=<GRANT-hash> (de `gth`-claim), niet de contract-content_hash.
+# We hebben alleen de content_hash, dus een NIET-200 is hier VERWACHT — geen rode vlag. De echte,
+# grant-hash-gebonden token haalt de outway native op tijdens egress in #728 (canonicalisatie +
+# SHA3-512 over enkel het grant-object is versiegevoelig; daarom hier niet nagebouwd).
+echo "bootstrap: (best-effort) token-probe — een niet-200 is verwacht (scope=content_hash); echte token = #728."
 : >"$ERRLOG"
 TOK=$("${COMPOSE[@]}" exec -T toolbox curl -s -o /dev/null -w '%{http_code}' \
         --cert /pki/out/example-consumer/outway/cert.pem \
@@ -182,7 +230,7 @@ TOK=$("${COMPOSE[@]}" exec -T toolbox curl -s -o /dev/null -w '%{http_code}' \
         --data-urlencode 'grant_type=client_credentials' \
         --data-urlencode "scope=$HASH" \
         --data-urlencode "client_id=$CONSUMER_OIN" 2>"$ERRLOG" || true)
-echo "  token-endpoint HTTP-status: ${TOK:-<geen>} (200 = bonus; anders → outway doet dit native in #728)."
+echo "  token-endpoint HTTP-status: ${TOK:-<geen>} (niet-200 verwacht; grant-hash-token = #728)."
 [ "${TOK:-}" = "200" ] || { [ -s "$ERRLOG" ] && echo "  (info) token-diagnostiek: $(tail -n1 "$ERRLOG")" >&2; }
 
 echo "BOOTSTRAP OK."

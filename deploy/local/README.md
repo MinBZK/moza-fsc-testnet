@@ -16,6 +16,9 @@ Bouwt voort op `docs/spikes/manager-443-sni/`.
 - **Docker** + `docker compose` (v2).
 - **cfssl + cfssljson + openssl** voor de cert-generatie — zie `pki/README.md`
   ("Benodigdheden") voor de `go install`-commando's.
+- **jq** (optioneel, aanbevolen) — laat `bootstrap.sh`/`smoke-contract.sh` (#727) de
+  provider-accept-**staat** van een contract verifiëren i.p.v. blote aanwezigheid. Zonder jq
+  vallen ze terug op een aanwezigheidscheck (de accept is dan al bewezen door de bootstrap-PUT-2xx).
 
 ## Draaiboek
 

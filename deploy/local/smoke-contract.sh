@@ -40,20 +40,41 @@ bash "${REPO_ROOT}/contracts/bootstrap.sh"
 [ -f "$STATE_FILE" ] || { echo "FAIL: geen state-file ($STATE_FILE) — bootstrap heeft geen contract vastgelegd." >&2; exit 1; }
 HASH=$(cat "$STATE_FILE")
 [ -n "$HASH" ] || { echo "FAIL: lege content_hash in $STATE_FILE." >&2; exit 1; }
-echo "smoke-contract: verifiëren dat contract $HASH ook op de consumer-manager staat..."
+echo "smoke-contract: verifiëren dat de PROVIDER-accept van contract $HASH ook op de consumer-manager staat..."
 
 OUT=$("${COMPOSE[@]}" exec -T toolbox curl -s --fail-with-body \
         --cert "$CERT" --key "$KEY" --cacert "$CA" \
         "$CONS_MANAGER/v1/contracts" 2>"$ERRLOG") || {
   echo "FAIL: GET /v1/contracts (consumer) faalde: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
 
-if printf '%s' "$OUT" | grep -qF "$HASH"; then
-  echo "OK: consumer-manager ziet het wederzijds ondertekende serviceConnection-contract $HASH."
-  echo "SMOKE-CONTRACT GROEN."
-  exit 0
+# De consumer heeft dit contract zélf opgesteld, dus de content_hash staat bij hem in de lijst
+# vanaf creatie — aanwezigheid bewijst dus GÉÉN provider-accept. We checken (jq, shape-tolerant)
+# dat óns contract de accept-handtekening van de PROVIDER draagt = de accept is mesh-breed gesynct.
+# Zonder jq valt-ie terug op aanwezigheid (de bootstrap-PUT-2xx bewees de accept al) + caveat.
+if command -v jq >/dev/null 2>&1; then
+  SIGNED=$(printf '%s' "$OUT" | jq -r --arg h "$HASH" --arg oin "$PROVIDER_OIN" '
+    if ([.. | objects
+          | select((.content_hash? // .content?.content_hash?) == $h)
+          | (.signatures?.accept? // {}) | has($oin)] | any)
+    then "yes" else "no" end' 2>/dev/null || echo unknown)
+else
+  SIGNED=unknown
 fi
 
-echo "FAIL: contract $HASH niet zichtbaar op de consumer-manager (mesh-sync na accept?)." >&2
+case "$SIGNED" in
+  yes)
+    echo "OK: consumer-manager ziet de provider-accept van serviceConnection-contract $HASH."
+    echo "SMOKE-CONTRACT GROEN."; exit 0 ;;
+  unknown)
+    if printf '%s' "$OUT" | grep -qF "$HASH"; then
+      echo "OK: contract $HASH aanwezig op de consumer-manager (accept al bewezen door bootstrap-PUT-2xx; jq afwezig → geen staat-check)."
+      echo "SMOKE-CONTRACT GROEN."; exit 0
+    fi
+    echo "FAIL: contract $HASH niet zichtbaar op de consumer-manager (mesh-sync na accept?)." >&2 ;;
+  no)
+    echo "FAIL: contract $HASH draagt géén provider-accept op de consumer-manager (accept niet gesynct?)." >&2 ;;
+esac
+
 echo "Debug: contracten (consumer) + manager-logs:" >&2
 printf '%s\n' "$OUT" >&2
 "${COMPOSE[@]}" logs --tail=50 manager-example-consumer manager-example-provider >&2 || true
