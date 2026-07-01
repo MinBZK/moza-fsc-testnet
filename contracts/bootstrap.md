@@ -32,8 +32,11 @@ Idempotent mechanisme dat na deploy een geldig, **wederzijds ondertekend**
 ./deploy/local/smoke-contract.sh         # bewijst: wederzijds ondertekend contract  (SMOKE-CONTRACT GROEN)
 ```
 
-**Idempotent**: een 2e run detecteert het bestaande geaccepteerde contract (op outway-thumbprint +
-servicenaam) en is een no-op.
+**Idempotent**: `bootstrap.sh` legt de `content_hash` van het geaccepteerde contract vast in
+`contracts/.bootstrap-state/` (gitignored). Een 2e run no-opt als díe exacte hash nog op de
+provider staat. Het succes rust op de twee 2xx-responsen (POST = consumer-sig, `PUT …/accept` =
+provider-sig) en checks greppen alléén op de unieke `content_hash` — nooit op servicenaam/`"accept"`,
+want het auto-geaccepteerde publicatie-contract voor dezelfde dienst zou dat altijd laten matchen.
 
 **Generiek**: alle peers/paden zijn via env te overrulen (`CONSUMER_OIN`, `PROVIDER_OIN`,
 `SERVICE_NAME`, `*_MANAGER`, `*_CERT/KEY/CA`, `OUTWAY_CERT_HOST`). Defaults = de example-peers. De

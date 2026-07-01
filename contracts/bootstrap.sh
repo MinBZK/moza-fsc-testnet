@@ -5,14 +5,23 @@
 #
 # Stroom (OpenFSC Manager Internal-API, bewezen patroon uit deploy/local/publish-service.sh):
 #   1. bereken de outway-group-public-key-thumbprint (SPKI SHA-256 hex);
-#   2. idempotentie: bestaat er al een geaccepteerd serviceConnection-contract voor deze
-#      (service, outway)? -> no-op;
+#   2. idempotentie: is er al een eerder geaccepteerd contract (state-file-hash nog aanwezig
+#      op de provider)? -> no-op;
 #   3. POST /v1/contracts (contract_content) op de EIGEN (consumer-)manager -> die tekent
-#      server-side namens de consumer en synct het contract via de mesh naar de provider;
+#      server-side namens de consumer (2xx + content_hash = consumer-handtekening) en synct
+#      het contract via de mesh naar de provider;
 #   4. poll de provider-manager tot het contract (op content_hash) gesynct is, dan
-#      PUT /v1/contracts/{hash}/accept op de PROVIDER-manager -> provider-handtekening.
+#      PUT /v1/contracts/{hash}/accept op de PROVIDER-manager (2xx = provider-handtekening).
 #   5. best-effort (non-fataal): token-fetch als bonus-signaal. Harde token-afdwinging +
 #      transactie-logging = #728 (de outway haalt tokens native op tijdens egress).
+#
+# WAAROM 2xx-gating i.p.v. de contractenlijst grepppen: op de provider-manager staat óók het
+# auto-geaccepteerde servicePublication-contract voor dezelfde `example-service`. Een losse
+# grep op servicenaam/OIN/"accept" over de hele lijst matcht dus altijd (false green). Daarom:
+#   - consumer-handtekening  = POST gaf 2xx + content_hash;
+#   - provider-handtekening  = PUT .../accept gaf 2xx (scoped op exact die hash);
+#   - bestaans-/idempotentie-check = grep op de GLOBAAL UNIEKE content_hash (die het
+#     publicatie-contract per definitie niet deelt) — nooit op servicenaam/"accept".
 #
 # De provider tekent NIET automatisch: AUTO_SIGN_GRANTS dekt alleen (delegated)servicePublication,
 # dus de serviceConnection-accept is een expliciete PUT (zie docs/.../contract-bootstrap-design.md).
@@ -48,6 +57,11 @@ PROVIDER_CA="${PROVIDER_CA:-/pki/internal/example-provider/ca/root.pem}"
 
 SYNC_TIMEOUT="${SYNC_TIMEOUT:-60}"; SYNC_INTERVAL="${SYNC_INTERVAL:-3}"
 
+# State-file: content_hash van een eerder succesvol geaccepteerd contract. Bron van waarheid voor
+# idempotentie (gitignored; hash is niet-geheim maar host-lokaal). Zie contracts/.bootstrap-state/.
+STATE_DIR="${STATE_DIR:-${REPO_ROOT}/contracts/.bootstrap-state}"
+STATE_FILE="${STATE_DIR}/${CONSUMER_OIN}-${PROVIDER_OIN}-${SERVICE_NAME}.hash"
+
 # Vang toolbox-/curl-stderr op i.p.v. weg te gooien: een mTLS-/netwerk-/dode-container-fout mag
 # niet als "nog niet klaar" maskeren (spiegelt publish-service.sh). Surface 'm op de FAIL-paden.
 ERRLOG=$(mktemp)
@@ -61,6 +75,13 @@ tb() { local c="$1" k="$2" a="$3"; shift 3
 cons() { tb "$CONSUMER_CERT" "$CONSUMER_KEY" "$CONSUMER_CA" "$@"; }
 prov() { tb "$PROVIDER_CERT" "$PROVIDER_KEY" "$PROVIDER_CA" "$@"; }
 
+# Haalt de contractenlijst van de provider-manager op; surfacet een GET-fout i.p.v. 'm te slikken.
+provider_contracts() {
+  local out; out=$(prov "$PROVIDER_MANAGER/v1/contracts") || {
+    echo "  WARN: GET /v1/contracts (provider) faalde: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; : >"$ERRLOG"; }
+  printf '%s' "$out"
+}
+
 # --- 0. Outway-public-key-thumbprint (host-side openssl; de toolbox heeft geen openssl-CLI) ----
 command -v openssl >/dev/null 2>&1 || { echo "FAIL: openssl niet gevonden op de host (zie pki/README.md)." >&2; exit 1; }
 [ -r "$OUTWAY_CERT_HOST" ] || { echo "FAIL: outway-cert niet leesbaar: $OUTWAY_CERT_HOST (draai pki/issue.sh?)" >&2; exit 1; }
@@ -73,18 +94,16 @@ case "$THUMB" in
 esac
 echo "bootstrap: outway public-key-thumbprint = $THUMB"
 
-# --- 1. Idempotentie: bestaat er al een geaccepteerd serviceConnection-contract? --------------
-# Een geaccepteerd contract bevat de thumbprint + servicenaam ÉN een provider-accept-signature.
-# We greppen (geen jq in de toolbox); het POST-antwoord levert later de exacte hash voor de accept.
-echo "bootstrap: bestaand contract checken op de provider-manager..."
-EXISTING=$(prov "$PROVIDER_MANAGER/v1/contracts" || true)
-if [ -s "$ERRLOG" ]; then echo "  WARN: contracts-GET-fout: $(tail -n1 "$ERRLOG")" >&2; : >"$ERRLOG"; fi
-if printf '%s' "$EXISTING" | grep -q "$THUMB" \
-   && printf '%s' "$EXISTING" | grep -q "\"$SERVICE_NAME\"" \
-   && printf '%s' "$EXISTING" | grep -q '"accept"'; then
-  echo "OK: er is al een serviceConnection-contract met deze outway + dienst (idempotent, skip)."
-  echo "BOOTSTRAP OK (bestaand contract)."
-  exit 0
+# --- 1. Idempotentie: staat een eerder geaccepteerd contract (state-file-hash) nog op de provider? -
+# Scoped op de GLOBAAL UNIEKE content_hash -> geen verwarring met het publicatie-contract.
+if [ -f "$STATE_FILE" ]; then
+  SAVED=$(cat "$STATE_FILE" 2>/dev/null || true)
+  if [ -n "$SAVED" ] && printf '%s' "$(provider_contracts)" | grep -qF "$SAVED"; then
+    echo "OK: eerder geaccepteerd contract $SAVED nog aanwezig op de provider (idempotent, skip)."
+    echo "BOOTSTRAP OK (bestaand contract)."
+    exit 0
+  fi
+  echo "bootstrap: state-file-hash ontbreekt/niet meer op de provider — opnieuw opzetten."
 fi
 
 # --- 2. Contract opstellen + indienen bij de eigen (consumer-)manager -------------------------
@@ -118,14 +137,13 @@ RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: applicati
 HASH=$(printf '%s' "$RESP" | grep -o '"content_hash"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]*"' \
         | head -n1 | grep -o '[0-9a-fA-F]\{16,\}' | head -n1 || true)
 [ -n "$HASH" ] || { echo "FAIL: contract-respons zonder content_hash (formaat geweigerd?): $RESP" >&2; exit 1; }
-echo "  consumer-handtekening gezet + gesynct; content_hash=$HASH"
+echo "  consumer-handtekening gezet (2xx) + gesynct; content_hash=$HASH"
 
 # --- 3. Provider laat het contract accepteren -------------------------------------------------
 echo "bootstrap: wachten tot het contract naar de provider-manager gesynct is..."
 elapsed=0; synced=0
 while [ "$elapsed" -lt "$SYNC_TIMEOUT" ]; do
-  if prov "$PROVIDER_MANAGER/v1/contracts" | grep -q "$HASH"; then synced=1; break; fi
-  [ -s "$ERRLOG" ] && { echo "  WARN: poll-fout: $(tail -n1 "$ERRLOG")" >&2; : >"$ERRLOG"; }
+  if printf '%s' "$(provider_contracts)" | grep -qF "$HASH"; then synced=1; break; fi
   sleep "$SYNC_INTERVAL"; elapsed=$((elapsed + SYNC_INTERVAL))
   echo "  ...nog niet gesynct (${elapsed}s)"
 done
@@ -134,21 +152,27 @@ done
 
 echo "bootstrap: provider accepteert (PUT .../accept)..."
 prov -X PUT "$PROVIDER_MANAGER/v1/contracts/$HASH/accept" -H 'Content-Type: application/json' \
-  || { echo "FAIL: PUT accept geweigerd: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
-echo "  provider-handtekening gezet."
+  || { echo "FAIL: PUT accept ($HASH) geweigerd: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
+echo "  provider-handtekening gezet (2xx)."
 
-# --- 4. Verifieer: wederzijds ondertekend (accept-signatures van beide OIN's) ------------------
-FINAL=$(prov "$PROVIDER_MANAGER/v1/contracts" || true)
-if printf '%s' "$FINAL" | grep -q "$CONSUMER_OIN" && printf '%s' "$FINAL" | grep -q "$PROVIDER_OIN" \
-   && printf '%s' "$FINAL" | grep -q '"accept"'; then
-  echo "OK: wederzijds ondertekend serviceConnection-contract ($CONSUMER_OIN <-> $PROVIDER_OIN)."
+# --- 4. Verifieer scoped: exact ONS contract (content_hash) staat nu op de provider -----------
+# Beide handtekeningen zijn al deterministisch bewezen door de 2xx-en hierboven; deze re-GET
+# bevestigt scoped (op de unieke hash) dat het geaccepteerde contract zichtbaar/gesynct is.
+if printf '%s' "$(provider_contracts)" | grep -qF "$HASH"; then
+  echo "OK: wederzijds ondertekend serviceConnection-contract $HASH ($CONSUMER_OIN <-> $PROVIDER_OIN)."
 else
-  echo "WARN: kon de wederzijdse accept-signatures niet bevestigen in de respons; check handmatig:" >&2
-  printf '%s\n' "$FINAL" >&2
+  echo "FAIL: contract $HASH niet meer zichtbaar op de provider na accept." >&2
+  [ -s "$ERRLOG" ] && { echo "  -> $(tail -n1 "$ERRLOG")" >&2; }
+  "${COMPOSE[@]}" logs --tail=50 manager-example-provider >&2 || true
+  exit 1
 fi
+
+# State-file pas NA succesvolle accept schrijven (bron van waarheid voor idempotentie).
+mkdir -p "$STATE_DIR" && printf '%s\n' "$HASH" > "$STATE_FILE"
 
 # --- 5. Best-effort token (bonus; echte afdwinging + logging = #728) --------------------------
 echo "bootstrap: (best-effort) token-fetch als bonus-signaal — echte afdwinging is #728."
+: >"$ERRLOG"
 TOK=$("${COMPOSE[@]}" exec -T toolbox curl -s -o /dev/null -w '%{http_code}' \
         --cert /pki/out/example-consumer/outway/cert.pem \
         --key  /pki/out/example-consumer/outway/key.pem \
@@ -157,7 +181,8 @@ TOK=$("${COMPOSE[@]}" exec -T toolbox curl -s -o /dev/null -w '%{http_code}' \
         -H 'Content-Type: application/x-www-form-urlencoded' \
         --data-urlencode 'grant_type=client_credentials' \
         --data-urlencode "scope=$HASH" \
-        --data-urlencode "client_id=$CONSUMER_OIN" 2>/dev/null || true)
+        --data-urlencode "client_id=$CONSUMER_OIN" 2>"$ERRLOG" || true)
 echo "  token-endpoint HTTP-status: ${TOK:-<geen>} (200 = bonus; anders → outway doet dit native in #728)."
+[ "${TOK:-}" = "200" ] || { [ -s "$ERRLOG" ] && echo "  (info) token-diagnostiek: $(tail -n1 "$ERRLOG")" >&2; }
 
 echo "BOOTSTRAP OK."

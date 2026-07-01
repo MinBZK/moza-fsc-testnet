@@ -40,18 +40,26 @@ cd "$REPO_ROOT"
 # --- 1. Certs (test-CA + per-peer). Regenereer alleen als afwezig of geforceerd. ---------------
 if [ "$REGEN_CERTS" -eq 1 ] || [ ! -d pki/out ] || [ ! -d pki/internal ]; then
   echo ">> certs genereren (test-CA + per-peer)..."
-  [ -f pki/ca/root.pem ] || ./pki/init-ca.sh
-  ./pki/issue.sh -f
-  ./pki/gen-crl.sh
-  ./pki/fix-permissions.sh
-  ./pki/verify.sh || fail "pki/verify.sh rood — certs onvolledig."
+  [ -f pki/ca/root.pem ] || ./pki/init-ca.sh || fail "pki/init-ca.sh faalde."
+  ./pki/issue.sh -f        || fail "pki/issue.sh faalde."
+  ./pki/gen-crl.sh         || fail "pki/gen-crl.sh faalde."
+  ./pki/fix-permissions.sh || fail "pki/fix-permissions.sh faalde."
 else
   echo ">> certs aanwezig (gebruik --regen-certs om te herbouwen)."
 fi
+# Altijd verifiëren — óók op het "al aanwezig"-pad: stale/onvolledige certs (bv. onderbroken run)
+# mogen niet ongemerkt de stack in en zich later als vage mTLS-fouten voordoen.
+./pki/verify.sh || fail "pki/verify.sh rood — certs onvolledig (draai met --regen-certs)."
 
-# --- 2. .env: zorg dat HOST_UID/GID = de huidige gebruiker (last-wins append, non-destructief) --
-[ -f deploy/local/.env ] || cp deploy/local/.env.example deploy/local/.env
-printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> deploy/local/.env
+# --- 2. .env: zet HOST_UID/GID = de huidige gebruiker (idempotent: bestaande regels vervangen) --
+ENV_FILE=deploy/local/.env
+[ -f "$ENV_FILE" ] || cp deploy/local/.env.example "$ENV_FILE"
+# Strip eventuele eerdere HOST_UID/HOST_GID-regels en zet ze één keer opnieuw (geen ongebreidelde
+# aangroei van dubbele regels bij herhaald draaien).
+tmp_env=$(mktemp)
+grep -vE '^HOST_(UID|GID)=' "$ENV_FILE" > "$tmp_env" || true
+printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> "$tmp_env"
+mv "$tmp_env" "$ENV_FILE"
 
 # --- 3. Stack starten --------------------------------------------------------------------------
 echo ">> docker compose up -d ${BUILD}..."

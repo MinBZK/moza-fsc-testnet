@@ -88,7 +88,8 @@ Per fsc-core: *"de SHA-256-thumbprint van de publieke sleutel in het Outway-cert
 HEX-encoded"* (64 hex-tekens). Cruciaal: het is de **publieke sleutel** (SubjectPublicKeyInfo),
 niet het hele certificaat — daardoor blijft het contract geldig bij cert-rotatie. De outway
 presenteert zijn **group**-cert (`pki/out/example-consumer/outway/cert.pem`) naar de provider-inway;
-dus dáárvan de thumbprint. Berekening (openssl, in de toolbox):
+dus dáárvan de thumbprint. Berekening **host-side** (de `toolbox`-image heeft geen openssl-CLI;
+`bootstrap.sh` draait toch al host-side, net als de UUID/timestamp in `publish-service.sh`):
 
 ```bash
 openssl x509 -in "$OUTWAY_CERT" -pubkey -noout \
@@ -107,19 +108,38 @@ openssl x509 -in "$OUTWAY_CERT" -pubkey -noout \
 Spiegelt `deploy/local/publish-service.sh` (zelfde toolbox-mTLS-, idempotentie- en
 `ERRLOG`-conventies):
 
-1. **Thumbprint** van de consumer-outway-group-cert berekenen (openssl in de toolbox).
-2. **Idempotentie-check**: `GET /v1/contracts` op de provider-manager; bestaat er al een
-   `serviceConnection`-contract voor deze (service, outway) mét een provider-accept-signature →
-   klaar (no-op), spring naar verify.
+1. **Thumbprint** van de consumer-outway-group-cert berekenen (host-side openssl).
+2. **Idempotentie-check** (scoped): als een eerdere run een geaccepteerd contract vastlegde
+   (state-file met de `content_hash`), en die **exacte hash** staat nog op de provider →
+   no-op. De check grept op de **globaal-unieke `content_hash`**, niet op servicenaam/OIN/`"accept"`
+   (zie kader hieronder).
 3. **Indienen**: `POST /v1/contracts` (`contract_content`) op de **consumer**-manager
    (Internal-API `:9443`, consumer internal-cert). Manager tekent namens consumer + synct naar de
-   provider. Respons bevat `content_hash`; faalt de respons zonder `content_hash` → hard fail
-   (spiegelt `publish-service.sh`).
+   provider. **2xx + `content_hash` = de consumer-handtekening**; faalt de respons zonder
+   `content_hash` → hard fail (spiegelt `publish-service.sh`).
 4. **Accepteren**: poll de provider-manager tot het contract (op `content_hash`) daar zichtbaar is,
    dan `PUT /v1/contracts/{content_hash}/accept` op de **provider**-manager (provider internal-cert).
-5. **Best-effort token** (bonus, non-fataal): probeer een grant-hash uit het contract te lezen en
-   `POST /token` te doen; log het resultaat, faal niet als het scope/grant-hash-detail afwijkt
-   (echte token-afdwinging = #728).
+   **2xx = de provider-handtekening.** Daarna scoped re-GET (hash aanwezig) + state-file schrijven.
+5. **Best-effort token** (bonus, non-fataal): `POST /token` (`scope=content_hash`); log het
+   resultaat + diagnostiek, faal niet als het scope/grant-detail afwijkt (echte token-afdwinging
+   = #728).
+
+> **Waarom geen losse grep op servicenaam/OIN/`"accept"`.** Op de provider-manager staat óók het
+> auto-geaccepteerde **servicePublication**-contract voor dezelfde `example-service`. Een losse
+> grep over de hele contractenlijst op servicenaam, provider-OIN of `"accept"` matcht daardoor
+> **altijd** (false green) — de tokens hoeven niet bij één contract te horen. Daarom rust het
+> succes op de **twee deterministische 2xx-responsen** (POST = consumer-sig, PUT accept =
+> provider-sig, scoped op exact die hash) en gebruiken idempotentie/verify uitsluitend een grep op
+> de **unieke `content_hash`**, die het publicatie-contract per definitie niet deelt.
+
+### Idempotentie via state-file
+
+De `content_hash` van een succesvol geaccepteerd contract wordt weggeschreven naar
+`contracts/.bootstrap-state/<consumer>-<provider>-<service>.hash` (gitignored; niet-geheim,
+host-lokaal). Een herstart leest 'm terug en no-opt als die hash nog op de provider staat; is de
+state weg of het contract verdwenen, dan bouwt de bootstrap 'm opnieuw op (self-healing). Bij een
+verse checkout zónder state kan een 2e opzet een tweede geldig contract aanmaken — onschadelijk
+(de outway gebruikt er één), en in de praktijk begint `run-smokes.sh` vanaf `down -v`.
 
 Parametriseerbaar via env (defaults = de example-peers) zodat het mechanisme **generiek** is:
 `CONSUMER_OIN`, `PROVIDER_OIN`, `SERVICE_NAME`, cert-paden, manager-hostnamen.
