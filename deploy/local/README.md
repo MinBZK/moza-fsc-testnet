@@ -157,6 +157,32 @@ het contract bij beide peers geaccepteerd is. De **echte data-call** (outway →
 > boot logt (`docker compose logs outway-example-consumer`). Ze moeten identiek zijn (beide =
 > SPKI-SHA-256-hex van de outway-group-publieke sleutel).
 
+## End-to-end afname + verantwoording (Fase G, #728) — data-call + token + tx-logging
+
+Het contract (#727) maakt afname mógelijk; #728 bewíjst de echte aanroep én de verantwoording.
+`smoke-e2e.sh` toont de keten `consumer → outway → inway → stub-upstream → terug`:
+
+```bash
+./deploy/local/smoke-e2e.sh   # verwacht: "SMOKE-E2E GROEN." + exit 0
+```
+
+Het bewijst drie dingen:
+
+1. **Data-call** — een call naar de outway (`http://outway.example-consumer…:8080/` met een
+   `Fsc-Grant-Hash`-header) levert `200` + de stub-echo. De outway resolvet grant→service→inway
+   native en haalt zélf het certificate-bound token op (`Fsc-Authorization`); de app zet geen token.
+2. **Token-afdwinging** — een directe inway-call **zonder** token wordt geweigerd
+   (`401 ERROR_CODE_ACCESS_TOKEN_MISSING`).
+3. **Verantwoording** — dezelfde `Fsc-Transaction-Id` is gelogd bij de outway (`direction out`,
+   consumer-txlog) én de inway (`direction in`, provider-txlog).
+
+Nieuw t.o.v. #725: **per peer een echte `txlog-api`** (eigen DB, internal-PKI-mTLS), de outway
+krijgt zijn **egress-config** (manager-internal + controller-registratie + grant-hash-suggestie,
+app-ingress op plain-HTTP `:8080`), en de router krijgt een **`:443`-SNI-route naar de inway**
+(`inway.example-provider.fsc-test.local`). Zie
+[`docs/superpowers/specs/2026-07-01-e2e-afname-design.md`](../../docs/superpowers/specs/2026-07-01-e2e-afname-design.md)
+voor de ontwerpkeuzes en de eerste-run-checks.
+
 ## Alles in één keer (host-runner)
 
 `deploy/local/run-smokes.sh` draait de volledige keten host-side (certs → `up --build` → alle
