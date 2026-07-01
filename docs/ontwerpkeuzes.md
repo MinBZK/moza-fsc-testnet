@@ -61,13 +61,30 @@ system-of-record en moeten persistent + gebackupt op ZAD (niet ephemeral/preview
 ## ZAD / OpenShift (uit #720, GO)
 
 - **mTLS-passthrough bewezen** op het ODCN-prod-cluster, beide poorten, eigen cert.
-- Poort **443** (data, Outway→Inway): OpenShift Route met `passthrough`. Schaalt — gedeeld
-  router-IP, routering op **SNI**-hostnaam. Elke inway krijgt een eigen, stabiele SNI-hostnaam.
-- Poort **8443** (management, Manager-mesh): MetalLB `LoadBalancer` met eigen publiek IP.
-  **Schaars** → minimaliseer managers (~1 per project/peer), deel IP's waar mogelijk.
+- Poort **443** (data Outway→Inway **én manager-mesh**): OpenShift Route met `passthrough`.
+  Schaalt — gedeeld router-IP, routering op **SNI**-hostnaam. Elke inway én elke manager
+  krijgt een eigen, stabiele SNI-hostnaam. **Manager-mesh op :443 bewezen** in
+  `docs/spikes/manager-443-sni.md` (#723).
+- Poort **8443** (Manager-mesh via MetalLB): **vervallen (#723)** — de mesh loopt nu op
+  :443-SNI (zie boven). MetalLB-IP's blijven schaars maar zijn voor de mesh niet meer nodig.
 - `edge`/`reencrypt` of client-cert-in-header **breken** de certificate-binding — verboden.
 
-### Openstaande ZAD-dependency
+### Migratie op ZAD = wrapper-image (#723)
 
-ZAD heeft (nog) geen cert-upload. Er komt een generiek `attachments`-blok (encrypted opslag,
-read-only mount in de pod). Nodig vóór #722/#723 live kunnen.
+OpenFSC migreert de DB via een init-container met args (`manager migrate up`). ZAD staat geen
+component-args/init-containers toe. Oplossing: een dunne **wrapper-image**
+(`deploy/zad/manager-migrate/`) met een entrypoint dat eerst `manager migrate up` draait en
+daarna `manager serve` exec't. Het is een *deploy-image* boven de stock-image, **geen
+broncode-fork** — consistent met "geen fork van de FSC-software".
+
+### Keycloak als OIDC-provider (#723)
+
+De controller-beheer-UI doet OIDC. OpenFSC levert standaard **Keycloak** (baked realm
+`organization-a`), niet Dex. Lokaal draait de controller bewust **zonder** login
+(`AUTHN_TYPE=none`, een door OpenFSC ondersteunde modus); volledige OIDC is een
+gedocumenteerde TODO (issuer-split + redirect-URI — zie `deploy/local/README.md`).
+
+### ZAD-dependency: cert-mount (opgelost, 2026-06-29)
+
+ZAD `attachments` (generiek blok: encrypted opslag, read-only mount in de pod) is beschikbaar.
+Per-peer certs kunnen gemount worden — #722/#723 zijn hierop niet langer geblokkeerd.
