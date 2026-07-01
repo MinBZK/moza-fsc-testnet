@@ -43,6 +43,10 @@ docker compose -f deploy/local/docker-compose.yaml up -d --build
 
 # 5. Bewijs de announce (pollt de directory-DB tot example-provider verschijnt).
 ./deploy/local/smoke-announce.sh     # verwacht: "OK: example-provider is aangemeld" + exit 0
+
+# 6. Bewijs de dienst-publicatie (maakt example-service aan + publiceert + pollt
+#    tot die geldig vindbaar is bij de directory).
+./deploy/local/smoke-publish.sh   # verwacht: "OK: example-service is gepubliceerd en vindbaar" + exit 0
 ```
 
 Klaar met kijken? Opruimen:
@@ -86,6 +90,22 @@ Volledig bedraden zoals OpenFSC vergt:
 
 Zet daarna `AUTHN_TYPE=oidc` op de controller en start keycloak mee:
 `docker compose --profile oidc up -d`.
+
+## Provider-onboarding (Fase D, #724) — inway + dienst publiceren
+
+Na stap 4 draaien ook:
+
+- **inway-example-provider**: registreert zich bij de controller en levert de ingress
+  vóór `stub-upstream`. In `GET /v1/inways` verschijnt `example-provider-inway`.
+- **stub-upstream**: neutrale HTTP-echo (`hashicorp/http-echo`) die de business-app
+  vervangt; wordt de `endpoint_url` van `example-service`. De échte data-call door de
+  inway is #728.
+- **toolbox**: curl-client op het netwerk voor de twee mTLS-onboarding-calls.
+
+`smoke-publish.sh` maakt `example-service` aan (controller Administration-API `:9444`)
+en publiceert 'm met één `servicePublication`-contract (manager Internal-API `:9443`);
+de manager signt server-side en de directory auto-accept (`AUTO_SIGN_GRANTS`). De dienst
+is daarna zichtbaar in de directory-ui (`http://localhost:8080`).
 
 ## Troubleshooting
 
