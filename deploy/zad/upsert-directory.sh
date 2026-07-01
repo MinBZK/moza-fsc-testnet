@@ -40,15 +40,16 @@ case "${CLONE_FROM}" in *[!a-z0-9-]*) echo "ongeldige clone_from: '${CLONE_FROM}
 
 MANAGER_IMAGE="ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${MANAGER_TAG}"
 UI_IMAGE="docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG}"
-MANAGER_HOST="dirmgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
+MANAGER_HOST="dirmgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"        # deze deployment (voor display)
+# Deployment-agnostisch: ZAD vult $DEPLOYMENT_NAME per deployment in -> hoort in de aliases, zodat
+# één (project-brede) component-definitie in elke deployment (test, pr-...) de juiste hostnaam krijgt.
+SELF_HOST='dirmgr-$DEPLOYMENT_NAME-'"${PROJECT}.${BASE_DOMAIN}"
 
 # --- env-blobs (KEY=value, newline-sep, plain). TLS_*-paden = de bijlage-mounts (UI, ontwerp A). ---
 MANAGER_ENV="$(printf '%s\n' \
   "LOG_TYPE=live" "LOG_LEVEL=info" "AUDITLOG_TYPE=stdout" \
   "GROUP_ID=moza-fbs-test" \
   "DIRECTORY_PEER_ID=00000000000000000010" \
-  "SELF_ADDRESS=https://${MANAGER_HOST}:443" \
-  "DIRECTORY_MANAGER_ADDRESS=https://${MANAGER_HOST}:443" \
   "TX_LOG_API_ADDRESS=" \
   "AUTO_SIGN_GRANTS=servicePublication,delegatedServicePublication" \
   "LISTEN_ADDRESS_EXTERNAL=0.0.0.0:8443" \
@@ -70,19 +71,22 @@ MANAGER_ENV="$(printf '%s\n' \
   "TLS_INTERNAL_UNAUTHENTICATED_CERT=/etc/fsc/internal/directory/directory/cert.pem" \
   "TLS_INTERNAL_UNAUTHENTICATED_KEY=/etc/fsc/internal/directory/directory/key.pem")"
 
-# STORAGE_POSTGRES_DSN via alias: $DATABASE_*-substitutievars van de managed-Postgres-service.
-# Single-quotes -> $DATABASE_* blijft letterlijk (door ZAD ingevuld, niet door de shell).
-MANAGER_ALIASES='STORAGE_POSTGRES_DSN=postgres://$DATABASE_SERVER_USER:$DATABASE_PASSWORD@$DATABASE_SERVER_HOST:5432/$DATABASE_DB?sslmode='"${PG_SSLMODE}"
+# Aliases = env-vars met ZAD-substitutievars ($DEPLOYMENT_NAME voor de eigen hostnaam, $DATABASE_*
+# voor de managed Postgres). \$ houdt ze letterlijk (ZAD vult ze per deployment in, niet de shell).
+MANAGER_ALIASES="$(printf '%s\n' \
+  "SELF_ADDRESS=https://${SELF_HOST}:443" \
+  "DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}:443" \
+  "STORAGE_POSTGRES_DSN=postgres://\$DATABASE_SERVER_USER:\$DATABASE_PASSWORD@\$DATABASE_SERVER_HOST:5432/\$DATABASE_DB?sslmode=${PG_SSLMODE}")"
 
 UI_ENV="$(printf '%s\n' \
   "LOG_TYPE=live" "LOG_LEVEL=info" \
   "LISTEN_ADDRESS=0.0.0.0:8080" \
   "MONITORING_ADDRESS=0.0.0.0:8081" \
-  "DIRECTORY_MANAGER_ADDRESS=https://${MANAGER_HOST}:443" \
   "BASE_URL_PATH=/" \
   "TLS_GROUP_ROOT_CERT=/etc/fsc/ca/root.pem" \
   "TLS_GROUP_CERT=/etc/fsc/out/directory/directory/cert.pem" \
   "TLS_GROUP_KEY=/etc/fsc/out/directory/directory/key.pem")"
+UI_ALIASES="DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}:443"
 
 # component-body (AddComponentRequest) via jq -> correcte JSON-escaping.
 component_body() {  # $1=name $2=image $3=port $4=env  [$5=services_json=[]]  [$6=aliases=""]
@@ -98,7 +102,7 @@ DEPLOY_BODY="$(jq -n --arg d "${DEPLOYMENT}" --arg cf "${CLONE_FROM}" \
    + (if $cf=="" then {} else {cloneFrom:$cf, forceClone:true} end)')"
 
 MANAGER_BODY="$(component_body dirmgr "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}" '["postgresql-database"]' "${MANAGER_ALIASES}")"
-UI_BODY="$(component_body dirui "${UI_IMAGE}" 8080 "${UI_ENV}")"
+UI_BODY="$(component_body dirui "${UI_IMAGE}" 8080 "${UI_ENV}" '[]' "${UI_ALIASES}")"
 
 # ---- plan: toon alleen ----
 if [ "${MODE}" = plan ]; then
