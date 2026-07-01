@@ -28,7 +28,8 @@ echo "publish: wachten op inway-registratie bij de controller..."
 INWAY_ADDR=""
 elapsed=0
 while [ "$elapsed" -lt 60 ]; do
-  INWAY_ADDR=$(tb "$CONTROLLER/v1/inways" | grep -o '"[^"]*example-provider-inway[^"]*"' | head -1 | tr -d '"' || true)
+  # CreateService verwacht het inway-ADRES (https://...:443, = SELF_ADDRESS), niet de naam.
+  INWAY_ADDR=$(tb "$CONTROLLER/v1/inways" | grep -o 'https://inway\.example-provider\.fsc-test\.local:443' | head -1 || true)
   [ -n "$INWAY_ADDR" ] && break
   sleep 5; elapsed=$((elapsed + 5))
   echo "  ...inway nog niet geregistreerd (${elapsed}s)"
