@@ -45,14 +45,15 @@ API="${BASE}/api/v2/projects/${PROJECT}"
 resp="$(mktemp)"; trap 'rm -f "${resp}"' EXIT
 hdr=(-H "X-API-Key: ${ZAD_API_KEY}")
 
-poll_task() {  # $1=task_id ; return 0=completed, 1=failed/onverwacht, 2=niet-bevestigd (timeout)
+poll_task() {  # $1=task_id ; return 0=completed, 1=failed/cancelled/HTTP-fout/onverwacht, 2=niet-bevestigd (timeout)
   # BEWUST: `code` los declareren van de `code="$(curl…)"` hieronder. `local code="$(curl…)"` zou
   # `local` het commando maken en de substitutie-exitcode voor `set -e` maskeren (fail-open bij een
   # netwerkfout tijdens pollen). Niet samenvoegen.
   local id="$1" status code
   for _ in $(seq 1 45); do
-    # HTTP-code hard checken (zoals de rest van dit script): een 5xx/401-errorbody mag niet als
-    # `null`-status de false-pending-lus in vallen en de destructieve delete "geslaagd" laten lijken.
+    # HTTP-code hard checken (zoals de rest van dit script): zonder deze gate valt een 5xx/401-
+    # errorbody als lege status in de pending-lus en pollt ~90s stil door tot een dubbelzinnige
+    # "niet bevestigd" (return 2), i.p.v. de echte HTTP-fout meteen te tonen (fail-fast).
     code="$(curl -sS "${hdr[@]}" -o "${resp}" -w '%{http_code}' "${BASE}/api/tasks/${id}")"
     case "${code}" in 2*) ;; *) echo "  task ${id}: poll HTTP ${code}"; jq . "${resp}" 2>/dev/null || cat "${resp}"; return 1 ;; esac
     status="$(jq -r '.status // empty' "${resp}" 2>/dev/null || true)"
@@ -60,7 +61,7 @@ poll_task() {  # $1=task_id ; return 0=completed, 1=failed/onverwacht, 2=niet-be
       completed) echo "  task ${id}: completed"; return 0 ;;
       failed)    echo "  task ${id}: FAILED -> $(jq -r '.error_message // .result.error // "?"' "${resp}")"; return 1 ;;
       cancelled) echo "  task ${id}: cancelled"; return 1 ;;
-      pending|claimed|running|"") sleep 2 ;;   # BEKENDE non-terminale statussen (ZAD-API-enum)
+      pending|claimed|running|"") sleep 2 ;;   # pending|claimed|running = bekende non-terminale ZAD-enum; "" = status-veld (nog) afwezig
       *)         echo "  task ${id}: onverwachte status '${status}':"; jq . "${resp}" 2>/dev/null || cat "${resp}"; return 1 ;;
     esac
   done
