@@ -15,6 +15,7 @@
 #
 # Volgorde: up -> publish-service.sh -> smoke-discover.sh -> smoke-contract.sh -> smoke-e2e.sh.
 set -euo pipefail
+export LC_ALL=C   # pin de sort/comm-ordening (correlatie leunt op consistente `comm`-invoer)
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
@@ -79,17 +80,22 @@ find_tx_table() {  # $1=db ; echoot "schema.table" met een transaction_id-kolom
                WHERE column_name = 'transaction_id' AND table_schema NOT IN ('pg_catalog','information_schema')
                ORDER BY table_schema LIMIT 1;" | head -n1
 }
-# Out-/in-predicaat is tolerant voor de encoding (`out`/`OUT`/`DIRECTION_OUT`): 'out' en 'in' zijn
-# elkaars complement (geen 'in' in 'out' en v.v.), dus de LIKE's zijn wederzijds uitsluitend.
-OUT_PRED="lower(direction) LIKE '%out%'"
-IN_PRED="lower(direction) LIKE '%in%'"
+# Exacte direction-encoding-lijst i.p.v. een substring-LIKE: `%in%` zou óók `outgoing` matchen
+# (out-g-o-i-n-g bevat "in"). Dek de plausibele fsc-logging-encodings af; wijkt v1.43.7 af, dan
+# faalt de correlatie luid (FAIL-dump toont de echte direction-waarden) — nooit stil groen.
+OUT_PRED="lower(direction) IN ('out','outgoing','outbound','direction_out')"
+IN_PRED="lower(direction) IN ('in','incoming','inbound','direction_in')"
 CTBL=$(find_tx_table "$TXDB_CONSUMER" || true)
 PTBL=$(find_tx_table "$TXDB_PROVIDER" || true)
 if [ -z "$CTBL" ] || [ -z "$PTBL" ]; then
   echo "FAIL: geen transaction_id-tabel gevonden (consumer='${CTBL:-?}', provider='${PTBL:-?}')." >&2
   surface_err; exit 1
 fi
+# Baseline hard valideren: een stil-gefaalde (leeg-gemaskeerde) baseline zou in stap 5 ELKE
+# bestaande out-id als "nieuw" tellen -> false green op een oude id uit een eerdere run.
+: >"$ERRLOG"
 BASELINE=$(psqltx "$TXDB_CONSUMER" "SELECT transaction_id FROM ${CTBL} WHERE ${OUT_PRED};" | sort -u || true)
+[ -s "$ERRLOG" ] && { echo "FAIL: baseline-query (consumer-txlog) faalde — correlatie niet betrouwbaar." >&2; surface_err; exit 1; }
 
 # --- 3. Positieve data-call: consumer -> outway -> inway -> stub -> terug ----------------------
 echo "smoke-e2e: data-call via de outway (verwacht 200 + stub-echo)..."
@@ -133,6 +139,8 @@ while [ "$elapsed" -lt "$TXLOG_TIMEOUT" ]; do
   NOW=$(psqltx "$TXDB_CONSUMER" "SELECT transaction_id FROM ${CTBL} WHERE ${OUT_PRED};" | sort -u || true)
   NEW=$(comm -13 <(printf '%s\n' "$BASELINE") <(printf '%s\n' "$NOW") | grep -v '^$' || true)
   for id in $NEW; do
+    # Guard: alleen UUID-vormige id's in de query (defensief tegen een rare waarde met quote/glob).
+    case "$id" in *[!0-9a-fA-F-]*|"") continue ;; esac
     HIT=$(psqltx "$TXDB_PROVIDER" "SELECT 1 FROM ${PTBL} WHERE transaction_id = '${id}' AND ${IN_PRED} LIMIT 1;" || true)
     if [ "$HIT" = "1" ]; then CORR="$id"; break; fi
   done
