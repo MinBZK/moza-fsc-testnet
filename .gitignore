@@ -19,3 +19,6 @@ group/group-config.yaml
 
 # Claude Code agent-lokale werkmap (worktrees, sessie-state) — nooit committen.
 .claude/
+
+# Contract-bootstrap state (content_hash van geaccepteerde contracten; host-lokaal, niet-geheim).
+contracts/.bootstrap-state/
