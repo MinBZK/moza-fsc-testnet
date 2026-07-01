@@ -46,6 +46,9 @@ resp="$(mktemp)"; trap 'rm -f "${resp}"' EXIT
 hdr=(-H "X-API-Key: ${ZAD_API_KEY}")
 
 poll_task() {  # $1=task_id ; return 0=completed, 1=failed/onverwacht, 2=niet-bevestigd (timeout)
+  # BEWUST: `code` los declareren van de `code="$(curl…)"` hieronder. `local code="$(curl…)"` zou
+  # `local` het commando maken en de substitutie-exitcode voor `set -e` maskeren (fail-open bij een
+  # netwerkfout tijdens pollen). Niet samenvoegen.
   local id="$1" status code
   for _ in $(seq 1 45); do
     # HTTP-code hard checken (zoals de rest van dit script): een 5xx/401-errorbody mag niet als
@@ -56,7 +59,8 @@ poll_task() {  # $1=task_id ; return 0=completed, 1=failed/onverwacht, 2=niet-be
     case "${status}" in
       completed) echo "  task ${id}: completed"; return 0 ;;
       failed)    echo "  task ${id}: FAILED -> $(jq -r '.error_message // .result.error // "?"' "${resp}")"; return 1 ;;
-      pending|running|in_progress|queued|"") sleep 2 ;;   # alléén BEKENDE non-terminale statussen retryen
+      cancelled) echo "  task ${id}: cancelled"; return 1 ;;
+      pending|claimed|running|"") sleep 2 ;;   # BEKENDE non-terminale statussen (ZAD-API-enum)
       *)         echo "  task ${id}: onverwachte status '${status}':"; jq . "${resp}" 2>/dev/null || cat "${resp}"; return 1 ;;
     esac
   done
@@ -72,10 +76,11 @@ echo "auth OK — bestaande deployments in ${PROJECT}:"
 jq -r '.deployments[]? | "  - \(.name)"' "${resp}" || true   # geen 2>/dev/null: laat shape-drift zien
 if [ "${MODE}" = validate ]; then echo "validate OK (read-only, niets gemuteerd)."; exit 0; fi
 
-# Body MOET geldige JSON zijn: anders een corrupte 200-body niet als "deployment weg" interpreteren
-# (dat zou een nog-levende deployment op prod stil laten lekken + valse "niets te doen" melden).
-jq -e . "${resp}" >/dev/null 2>&1 \
-  || { echo "onverwachte /deployments-body (geen geldige JSON) — afbreken i.p.v. 'niets te doen':" >&2; cat "${resp}" >&2; exit 1; }
+# Body MOET de verwachte VORM hebben (.deployments = array): een corrupte/shape-gedrifte 200-body
+# niet als "deployment weg" interpreteren (dat zou een nog-levende deployment op prod stil laten
+# lekken + valse "niets te doen" melden). Dekt ook niet-JSON (jq parse-error -> non-zero).
+jq -e '.deployments | type == "array"' "${resp}" >/dev/null 2>&1 \
+  || { echo "onverwachte /deployments-body (.deployments geen array / geen geldige JSON) — afbreken:" >&2; cat "${resp}" >&2; exit 1; }
 # Idempotent: bestaat de deployment niet (meer), dan is er niets op te ruimen. Geen 2>/dev/null
 # op de select -> een echte jq-fout maskeert nooit als "bestaat niet".
 if ! jq -e --arg d "${DEPLOYMENT}" '.deployments[]? | select(.name==$d)' "${resp}" >/dev/null; then
@@ -97,10 +102,12 @@ case "${code}" in
   404) echo "  al weg (404) — idempotent."; exit 0 ;;
   *)   jq . "${resp}" 2>/dev/null || cat "${resp}"; exit 1 ;;
 esac
-tid="$(jq -r '.task_id // empty' "${resp}")"
+tid="$(jq -r '.task_id // empty' "${resp}" 2>/dev/null || true)"   # malformed body -> lege tid, geen abort
 if [ -z "${tid}" ]; then
-  # 2xx zonder task_id: geaccepteerd maar niet-async-bevestigbaar -> niet als "opgeruimd" claimen.
-  echo "DELETE geaccepteerd (HTTP ${code}) zonder task_id; verifieer met 'validate'."
+  # Per de ZAD-API is een async-delete 202 + task_id; een 2xx ZONDER task_id (bv. 200/204) betekent
+  # synchroon voltooid. We claimen 't niet hard als "opgeruimd" maar wijzen naar 'validate' i.p.v.
+  # een niet-bevestigbare completion te asserten.
+  echo "DELETE geaccepteerd (HTTP ${code}) zonder task_id (synchroon voltooid?); verifieer met 'validate'."
   jq . "${resp}" 2>/dev/null || true
   exit 0
 fi
