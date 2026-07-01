@@ -131,6 +131,35 @@ Bewijs de consumer-kant (draai eerst `smoke-publish.sh` zodat er een dienst te v
 `smoke-discover.sh` pollt de directory-DB tot (a) de consumer-OIN in `peers.peers` staat
 (announce) en (b) `example-service` in de directory-catalogus verschijnt (discovery).
 
+## Contract-bootstrap (Fase F, #727) — grant → sign → accept
+
+Announce + discovery bewijzen dat de peers elkaar kennen; een **contract** geeft de consumer
+toegang tot de dienst. `contracts/bootstrap.sh` zet idempotent een wederzijds ondertekend
+`ServiceConnectionGrant`-contract op: de consumer dient 'm in bij de eigen manager (die tekent +
+synct), de provider accepteert expliciet (`AUTO_SIGN_GRANTS` dekt serviceConnection niet). Zie
+[`contracts/bootstrap.md`](../../contracts/bootstrap.md).
+
+Bewijs de contract-kant (draai eerst `publish-service.sh` zodat er een dienst te contracteren is):
+
+```bash
+./deploy/local/smoke-contract.sh   # verwacht: "SMOKE-CONTRACT GROEN." + exit 0
+```
+
+`smoke-contract.sh` draait de bootstrap en verifieert onafhankelijk vanaf de consumer-manager dat
+het contract bij beide peers geaccepteerd is. De **echte data-call** (outway → inway → upstream) +
+**token-afdwinging** (`Fsc-Authorization`) + **transactie-logging** (`Fsc-Transaction-Id`) zijn #728.
+
+> **Thumbprint-mismatch** → als een latere egress (#728) `access denied` geeft, vergelijk de
+> `outway public-key-thumbprint`-regel uit `bootstrap.sh` met de thumbprint die de outway zelf bij
+> boot logt (`docker compose logs outway-example-consumer`). Ze moeten identiek zijn (beide =
+> SPKI-SHA-256-hex van de outway-group-publieke sleutel).
+
+## Alles in één keer (host-runner)
+
+`deploy/local/run-smokes.sh` draait de volledige keten host-side (certs → `up --build` → alle
+smokes op volgorde) en is de reproduceerbare "bewijs het werkt"-knop — handig per PR. Zie het
+script voor opties (`--no-build`, `--keep`).
+
 ## Troubleshooting
 
 - **`verify.sh` rood / certs ontbreken** → stap 2 niet (volledig) gedraaid; draai
