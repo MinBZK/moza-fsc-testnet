@@ -609,6 +609,15 @@ Expected: `exit 0`, example-consumer-certs groen.
 Run: `cd deploy/local && docker compose up -d`
 Expected: alle services healthy; `manager-example-consumer`, `outway-example-consumer`, `controller-example-consumer` `Up`.
 
+- [ ] **Step 2b: Anti-waste-guard — geen crash-loop (R3 digital-waste)**
+
+De outway boot in #725 zonder contract; als hij daarop crasht, herstart-loopt hij eindeloos
+(`restart: on-failure`) → verspilde CPU + log-spam. Assert dat niets in een restart-loop zit:
+
+Run (wacht ~30s na `up`): `docker compose ps --format '{{.Name}} {{.State}} {{.Status}}' | grep -iE 'restart|exited' && echo "LOOP GEVONDEN" || echo "geen restart-loop — OK"`
+Expected: `geen restart-loop — OK`. Zo niet: `docker compose logs outway-example-consumer` en de
+outway-env corrigeren (zie Task 5 verify-noot) i.p.v. de crash-loop te laten draaien.
+
 - [ ] **Step 3: Publiceer de provider-dienst**
 
 Run: `bash deploy/local/publish-service.sh`
