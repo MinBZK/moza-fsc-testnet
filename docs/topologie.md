@@ -38,6 +38,10 @@ waar mogelijk. 443 schaalt wél via gedeeld router-IP + SNI.
 kan via de gedeelde router op **443 met `passthrough` + SNI** — net als de inway, zonder eigen IP.
 Bewezen met een lokale plug-and-play compose (HAProxy `mode tcp`): peers registreren zich bij de
 directory met `manager_address` op `:443`. Zie [`spikes/manager-443-sni.md`](spikes/manager-443-sni.md).
-Gevolg voor ZAD: de SNI-hostname hoeft **niet** in de cert-SAN — alleen een geldige OIN + keten naar
-de trust-anchor. De cluster-Route op ODCN (i.p.v. de lokale sni-proxy) valt samen met de
-directory/group-deploy; ZAD `attachments` (cert-mount) is sinds 2026-06-29 beschikbaar.
+Gevolg voor ZAD: voor de **FSC-mesh** (peer↔peer, OIN-based validatie) hoeft de SNI-hostname niet in
+de cert-SAN — een geldige OIN + keten naar de trust-anchor volstaat. **Let op:** standaard-TLS-clients
+doen wél hostnaamverificatie — `directory-ui` roept de manager op `DIRECTORY_MANAGER_ADDRESS` (de
+ZAD-hostnaam) en faalt als de SAN die niet bevat. Daarom heeft de directory-cert een wildcard-SAN
+`*.rig.prd1.gn2.quattro.rijksapps.nl` (dekt alle ZAD-hostnamen) naast `directory.fsc-test.local` (lokaal).
+De cluster-Route op ODCN (i.p.v. de lokale sni-proxy) valt samen met de directory/group-deploy;
+ZAD `attachments` (cert-mount) is sinds 2026-06-29 beschikbaar.
