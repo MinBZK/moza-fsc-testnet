@@ -21,9 +21,9 @@ on:
         required: false
         default: "v1.43.7"
 
+# Top-level read-only; write-scope alleen op de job die pusht (Scorecard Token-Permissions).
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: build-manager-migrate-${{ github.ref }}
@@ -32,6 +32,9 @@ concurrency:
 jobs:
   build-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
