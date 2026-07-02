@@ -24,9 +24,24 @@ go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 ./pki/gen-crl.sh          # 3. lege CRL                          -> pki/ca/intermediate.crl
 ./pki/fix-permissions.sh  # 4. world-rw van keys halen
 ./pki/verify.sh           # 5. acceptatie-asserts (exit 0 = groen)
+./pki/combine-pem.sh      # 6. (ZAD, optioneel) cert+key -> combined.pem — NIET nodig voor modus 2
+./pki/zad-bundle.sh directory   # 7. (ZAD) upload-set + manifest per peer -> pki/zad-upload/
 ```
 
 `pki/ca/root.pem` = trust-anchor voor de group rules (`group/group-config.example.yaml`).
+
+Voor ZAD (zie `docs/spikes/zad-attachments.md`):
+
+- Modus 2 (passthrough) serveert de **losse** `TLS_GROUP_CERT`/`KEY` vanuit de pod — een
+  gecombineerde cert+key-PEM is **niet** vereist (`docs/spikes/zad-attachments.md`, vraag 5).
+  `combine-pem.sh` blijft een losse optie (`combined.pem` per group-endpoint) voor het geval een
+  upload toch één bestand vraagt; standaard niet nodig.
+- `zad-bundle.sh <peer>` verzamelt de hele upload-set (group-root + group-CRL, per-endpoint
+  cert/key, internal-CA + internal cert/key) in `pki/zad-upload/<peer>/` met een `MANIFEST.md`
+  dat per bestand het beoogde pod-pad (attachment) + de `TLS_*`-env-var noemt. Draai eerst
+  `gen-crl.sh` zodat de CRL mee gaat (nodig om `DISABLE_CRL_CHECKS` te kunnen weghalen).
+
+Beide outputs zijn gitignored (bevatten privésleutels).
 
 ## Twee cert-ketens per endpoint
 
@@ -58,8 +73,8 @@ nieuwe peer wordt automatisch aangemaakt.
 - [x] Per-peer leaf-certs via script — `issue.sh` (group- én internal-keten).
 - [x] Per-peer internal-CA + internal-certs (manager-cert-set compleet) — `issue.sh`.
 - [x] CRL-distributie — `gen-crl.sh` (lege CRL, intermediate als issuer).
-- [ ] Secrets via ZAD `attachments` (encrypted, read-only mount) — **geblokkeerd**, wacht op
-      ZAD cert-upload-feature. `TODO(#723)`: mount group-trust (`pki/ca/root.pem`,
+- [ ] Secrets via ZAD `attachments` (encrypted, read-only mount) — feature **beschikbaar sinds
+      2026-06-29** (eerder geblokkeerd). `TODO(#723)`: mount group-trust (`pki/ca/root.pem`,
       `pki/ca/intermediate.crl`), per-peer `out/<peer>/<endpoint>/{cert,key}.pem` (group) plus
       `internal/<peer>/ca/root.pem` + `internal/<peer>/<endpoint>/{cert,key}.pem` (internal).
       Nooit in image bakken.

@@ -1,0 +1,59 @@
+# Directe ZAD-API-deploy van de directory (#723) via de v2 Operations Manager API.
+# Roept deploy/zad/upsert-directory.sh aan (zelfde bron als de CLI). `validate` is read-only;
+# `apply` upsert het deployment. Model: PR = eigen deployment; main -> deployment `test`.
+#
+# Dekt alleen de deploy-API (deployment + componenten + images + domain_format). NIET via de API
+# (UI-only): bijlagen (cert-mount), env-vars, "Publicatie op het web" (passthrough-TLS).
+name: zad-deploy-directory
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "validate=auth-check; plan=toon bodies; apply=muteren + pollen"
+        type: choice
+        options: [validate, plan, apply]
+        default: validate
+      deployment:
+        description: "deployment-naam (main -> test; PR -> eigen naam)"
+        required: false
+        default: "test"
+      image_tag:
+        description: "OpenFSC stock-tag (directory-ui; default voor de manager)"
+        required: false
+        default: "v1.43.7"
+      manager_tag:
+        description: "ghcr manager-migrate-tag (bv. branch-tag); leeg = image_tag"
+        required: false
+        default: ""
+      clone_from:
+        description: "optioneel: erf componenten van deze deployment (bv. test)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zad-deploy-directory-${{ inputs.deployment }}
+  cancel-in-progress: false
+
+jobs:
+  zad:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Upsert directory via ZAD v2-API
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          MODE: ${{ inputs.mode }}
+          DEPLOYMENT: ${{ inputs.deployment || 'test' }}
+          IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
+          ZAD_MANAGER_TAG: ${{ inputs.manager_tag }}
+          CLONE_FROM: ${{ inputs.clone_from }}
+        run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}" "${CLONE_FROM}"

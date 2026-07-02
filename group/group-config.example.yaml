@@ -1,9 +1,10 @@
-# Group-configuratie (template — #723). Vul in en bewaar de echte versie buiten git.
+# Group-configuratie (#723). Vul in en bewaar de echte versie buiten git.
+# group_id wordt op elke manager gezet als GROUP_ID-env (zie deploy/local + peers/directory).
 group:
-  id: moza-fbs-test            # group_id; identificeert de federatie
+  id: moza-fbs-test            # group_id; identificeert de federatie. == GROUP_ID-env op alle managers.
   trust_anchor:
-    # Pad naar de test-CA root (via ZAD attachments gemount). Geen PKIoverheid.
-    ca_cert: /etc/fsc/ca/root.pem
-    crl: /etc/fsc/ca/intermediate.crl   # CRL getekend door de intermediate (issuer peer-certs)
+    # test-CA root (via ZAD attachments gemount, lokaal bind-mount). GEEN PKIoverheid (#720).
+    ca_cert: /etc/fsc/ca/root.pem            # -> TLS_GROUP_ROOT_CERT
+    crl: /etc/fsc/ca/intermediate.crl        # CRL, intermediate als issuer
   rules:
-    tls_min_version: "1.2"     # conform NCSC TLS 2.1 (OpenFSC-default)
+    tls_min_version: "1.2"     # NCSC TLS 2.1 / OpenFSC-default
