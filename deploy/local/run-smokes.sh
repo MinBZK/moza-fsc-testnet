@@ -32,7 +32,7 @@ for arg in "$@"; do
 done
 
 teardown() { [ "$KEEP" -eq 1 ] && { echo ">> --keep: stack blijft draaien."; return; }
-             echo ">> opruimen (down -v)..."; "${COMPOSE[@]}" down -v || true; }
+             echo ">> opruimen (down -v --remove-orphans)..."; "${COMPOSE[@]}" down -v --remove-orphans || true; }
 fail() { echo "XX run-smokes FAALT: $1" >&2; teardown; exit 1; }
 
 cd "$REPO_ROOT"
@@ -62,9 +62,12 @@ printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> "$tmp_env"
 mv "$tmp_env" "$ENV_FILE"
 
 # --- 3. Stack starten --------------------------------------------------------------------------
-echo ">> docker compose up -d ${BUILD}..."
+# --remove-orphans: ruim containers op van een vórige (hernoemde) compose (bv. het oude
+# `controller` vóór de rename naar `controller-example-provider`) die anders een host-poort
+# bezet houden (`port is already allocated`).
+echo ">> docker compose up -d ${BUILD} --remove-orphans..."
 # shellcheck disable=SC2086
-"${COMPOSE[@]}" up -d $BUILD || fail "compose up faalde."
+"${COMPOSE[@]}" up -d $BUILD --remove-orphans || fail "compose up faalde."
 
 # --- 4. Smokes op volgorde (elke stap fail-hard). Groeit per issue. ----------------------------
 run() { echo; echo "======== $1 ========"; bash "${HERE}/$1" || fail "$1 rood."; }
