@@ -52,6 +52,7 @@ gaat verder op dezelfde branch en de PR wordt van `fix(docs)` naar `feat` her-ge
 ## Beslissingen
 
 ### A. Implementatie via de curl-scripts, niet de marketplace-action
+
 De preview- en cleanup-stappen gebruiken de bestaande `deploy/zad/upsert-directory.sh` en
 `deploy/zad/cleanup.sh` (al de gedeelde bron voor CLI + CI), **niet** `RijksICTGilde/zad-actions`.
 Reden: `docs/ontwerpkeuzes.md` legt de keuze "geen marketplace-action → geen extra action-SHA te
@@ -59,6 +60,7 @@ pinnen → OpenSSF Scorecard Pinned-Dependencies groen" vast. "Net als berichten
 *gedrag* (pr-preview + cleanup-on-close), niet de implementatie.
 
 ### B. Triggers en job-condities
+
 `zad-deploy-directory.yml` krijgt naast de bestaande triggers een `pull_request`-trigger:
 
 ```yaml
@@ -86,12 +88,14 @@ on:
   secrets, dus een deploy zou hoe dan ook falen. Intern MinBZK-repo, dus zeldzaam; luid loggen.
 
 ### C. Docs-only-skip
+
 De bestaande `changes`-job (of een gelijkwaardige `git diff`/`gh api …/files`-stap) bepaalt of de
 PR iets deploybaars raakt. Een docs-only PR (alleen `docs/**` of `*.md`) skipt de preview —
 `skipped` telt als succes voor required checks, dus merge blijft mogelijk. Fail-safe: kan de
 bestandenlijst niet opgehaald worden, dan **wel** deployen (niet stil overslaan).
 
 ### D. Volledig-functionele preview (geen handwerk)
+
 Dankzij de project-niveau-bijlagen + web-publicatie (Achtergrond) is de preview volledig via de
 API/CI op te zetten:
 `upsert-directory.sh apply pr-<n> <manager-tag>` → eigen deployment + componenten (`dirmgr` +
@@ -104,6 +108,7 @@ is zelf-voorzienend en de SoR-DB mag niet gekloond worden).
   `v1.43.7`. Dit hergebruikt de bestaande `changes → build`-logica.
 
 ### E. PR-feedback via comment, geen GitHub-environment
+
 Na een geslaagde preview-deploy plaatst/werkt de workflow een **PR-comment** bij met de preview-URL
 (`gh pr comment`/`--edit-last` of een marker-gebaseerde upsert), met alleen `GITHUB_TOKEN`
 (`pull-requests: write`). **Geen** GitHub-`environment`: dat vergt een `GH_ADMIN_TOKEN` (PAT) om de
@@ -111,12 +116,14 @@ environment bij PR-close op te ruimen (GITHUB_TOKEN mag dat niet). Comment-only 
 PAT-dependency; de ZAD-cleanup zelf heeft alleen `ZAD_API_KEY_DIRECTORY` nodig.
 
 ### F. Geen required-check-gate vóór deploy
+
 De sibling pollt zijn functionele checks (`test`, `detekt`, …) vóór de preview. Dit repo heeft geen
 functionele testsuite voor de directory; de required checks (`lint`, `Analyze (actions)`) zijn
 statisch, en `migrate up`+`serve`+self-announce **ís** de functionele check (faalt zichtbaar in de
 deploy). YAGNI: geen gate nu; later toe te voegen als er een directory-testsuite komt.
 
 ### G. Cleanup-on-close
+
 Bij `pull_request: closed` draait een cleanup-job:
 `cleanup.sh apply pr-<n>` — bestaat al, valideert de naam (`[a-z0-9-]`), is idempotent (niet-bestaand
 = no-op) en weigert beschermde namen (`test`/`main`/`production`). Optioneel (parallel met de
@@ -124,6 +131,7 @@ sibling): de preview-image-tag `manager-migrate:v1.43.7-<slug>` uit ghcr verwijd
 (`packages: write`).
 
 ### H. Redundante branch-push-build opruimen
+
 `build-manager-migrate.yml` heeft nu een `push: branches-ignore:[main]`-trigger die bestond "zodat
 previews een branch-image hebben". Nu previews de image via de reusable `build`-call krijgen
 (ordering-veilig, geen aparte race), is die standalone branch-push-build **redundant** en zou hij
@@ -147,6 +155,7 @@ pull_request (closed)
 ```
 
 Elke unit heeft één taak en een gedefinieerde interface:
+
 - **`changes`** — bepaalt `run` (deploybaar?) + `manager_migrate_changed`. In: event/diff. Uit: bools.
 - **`build`** (reusable) — bouwt+pusht de wrapper-image voor een tag. In: `image_tag`. Uit: image in ghcr.
 - **`deploy-preview`** — roept `upsert-directory.sh apply pr-<n>` aan. In: secrets/env + tag. Uit: live deployment + URL.
@@ -176,6 +185,7 @@ Elke unit heeft één taak en een gedefinieerde interface:
 ## Testen / verificatie
 
 Geen unit-tests (workflow + shell). Verificatie:
+
 - **Lint**: `actionlint` + `yamllint` op de workflow; `shellcheck` op ongewijzigde scripts.
 - **Dry-run**: `upsert-directory.sh plan pr-<n>` toont de bodies zonder te muteren.
 - **End-to-end** (handmatig, één keer): open een test-PR die de directory raakt → controleer dat

@@ -25,9 +25,11 @@
 ### Task 1: `build-manager-migrate.yml` — redundante push-build weg, expliciete `image_suffix`
 
 **Files:**
+
 - Modify: `.github/workflows/build-manager-migrate.yml`
 
 **Interfaces:**
+
 - Produces: reusable workflow met inputs `image_tag` (OpenFSC-basis + build-arg, default `v1.43.7`) en `image_suffix` (default `''`). Pusht `ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:<image_tag>[-<image_suffix>]`; bij lege suffix de canonieke `<image_tag>`.
 
 - [ ] **Step 1: Verwijder de `push`-trigger en vervang de tag-logica**
@@ -120,9 +122,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 2: `zad-deploy-directory.yml` — `pull_request`-trigger, `meta`-job, concurrency
 
 **Files:**
+
 - Modify: `.github/workflows/zad-deploy-directory.yml`
 
 **Interfaces:**
+
 - Produces: `meta`-job met outputs `deployment` (`test` | `pr-<n>` | dispatch-input), `image_base` (`v1.43.7` of dispatch-input), `manager_suffix` (`''` | `pr-<n>`).
 
 - [ ] **Step 1: Voeg de `pull_request`-trigger toe**
@@ -209,9 +213,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 3: `zad-deploy-directory.yml` — `changes`-job herzien (run + changed voor alle events)
 
 **Files:**
+
 - Modify: `.github/workflows/zad-deploy-directory.yml` (`changes`-job)
 
 **Interfaces:**
+
 - Consumes: —
 - Produces: `changes`-job outputs `run` (`true`/`false` — moet er gedeployd worden?) en `manager_migrate_changed` (`true`/`false` — wrapper gewijzigd → build nodig?).
 
@@ -295,10 +301,12 @@ Expected: geen output. (`actionlint` draait `shellcheck` op de run-steps; SC-fou
 - [ ] **Step 3: Verifieer de docs-only-logica lokaal**
 
 Run:
+
 ```bash
 printf 'docs/x.md\nREADME.md\n' | grep -qvE '(^docs/|\.md$)'; echo "docs-only run? exit=$? (1=skip)"
 printf 'docs/x.md\ndeploy/zad/manager-migrate/Dockerfile\n' | grep -q '^deploy/zad/manager-migrate/'; echo "wrapper? exit=$? (0=build)"
 ```
+
 Expected: eerste `exit=1` (docs-only → geen niet-docs → run=false), tweede `exit=0` (wrapper geraakt → changed=true).
 
 - [ ] **Step 4: Commit**
@@ -315,9 +323,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 4: `zad-deploy-directory.yml` — `build`- en `deploy`-job condities + preview-tag
 
 **Files:**
+
 - Modify: `.github/workflows/zad-deploy-directory.yml` (`build`- en `deploy`-job)
 
 **Interfaces:**
+
 - Consumes: `meta.outputs.{deployment,image_base,manager_suffix}`, `changes.outputs.{run,manager_migrate_changed}`.
 - Produces: live ZAD-deployment (`test`/`pr-<n>`).
 
@@ -393,9 +403,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 5: `zad-deploy-directory.yml` — PR-comment met preview-URL
 
 **Files:**
+
 - Modify: `.github/workflows/zad-deploy-directory.yml` (`deploy`-job: `permissions` + extra step)
 
 **Interfaces:**
+
 - Consumes: `meta.outputs.deployment`.
 - Produces: een (ge-upsert) PR-comment met de directory-ui-preview-URL.
 
@@ -461,9 +473,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 6: `zad-deploy-directory.yml` — `cleanup-preview`-job bij PR-close
 
 **Files:**
+
 - Modify: `.github/workflows/zad-deploy-directory.yml` (nieuwe job)
 
 **Interfaces:**
+
 - Consumes: `meta.outputs.deployment`.
 - Produces: opgeruimde ZAD-deployment + (optioneel) verwijderde ghcr preview-tag.
 
@@ -535,6 +549,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 7: Documentatie bijwerken (auto-preview i.p.v. handmatige conventie)
 
 **Files:**
+
 - Modify: `docs/ontwerpkeuzes.md` (§"Auto-deploy directory naar `test` op main")
 - Modify: `docs/zad-directory-deploy.md` (Deploymodel-noot + status-noot)
 - Modify: `docs/zad-cleanup.md` (cleanup nu ook automatisch bij PR-close)
@@ -619,12 +634,14 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 - [ ] **Step 1: Volledige lint-sweep over alle geraakte files**
 
 Run:
+
 ```bash
 actionlint .github/workflows/zad-deploy-directory.yml .github/workflows/build-manager-migrate.yml
 yamllint .github/workflows/zad-deploy-directory.yml .github/workflows/build-manager-migrate.yml
 npx --no-install markdownlint-cli2 docs/ontwerpkeuzes.md docs/zad-directory-deploy.md docs/zad-cleanup.md
 shellcheck deploy/zad/upsert-directory.sh deploy/zad/cleanup.sh
 ```
+
 Expected: geen fouten (shellcheck: alleen de pre-existing SC2016-info op `upsert-directory.sh:46`, geen nieuwe).
 
 - [ ] **Step 2: Push + PR her-titelen naar `feat`**
@@ -695,6 +712,7 @@ test-PR en is de functionele acceptatie.
 ## Self-Review
 
 **Spec-dekking:**
+
 - Naamgeving `pr-<n>` → Task 2 (`meta`), Global Constraints. ✓
 - Curl-scripts, geen marketplace-action (Besl. A) → Tasks 4/6 gebruiken `upsert-directory.sh`/`cleanup.sh`. ✓
 - Triggers + condities (Besl. B) → Tasks 2/3/4. ✓
