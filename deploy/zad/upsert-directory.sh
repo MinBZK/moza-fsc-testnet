@@ -74,9 +74,11 @@ MANAGER_ENV="$(printf '%s\n' \
 
 # Aliases = env-vars met ZAD-substitutievars ($DEPLOYMENT_NAME voor de eigen hostnaam, $DATABASE_*
 # voor de managed Postgres). \$ houdt ze letterlijk (ZAD vult ze per deployment in, niet de shell).
+# :443 = de mesh-poort (ingress SNI-passthrough -> pod :8443). OpenFSC eist een expliciete poort in
+# het manager-adres ("missing port in manager address" -> Fatal in create-self-peer) — dus niet weglaten.
 MANAGER_ALIASES="$(printf '%s\n' \
-  "SELF_ADDRESS=https://${SELF_HOST}" \
-  "DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}" \
+  "SELF_ADDRESS=https://${SELF_HOST}:443" \
+  "DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}:443" \
   "STORAGE_POSTGRES_DSN=postgres://\$DATABASE_SERVER_USER:\$DATABASE_PASSWORD@\$DATABASE_SERVER_HOST:5432/\$DATABASE_DB?sslmode=${PG_SSLMODE}")"
 
 UI_ENV="$(printf '%s\n' \
@@ -87,7 +89,7 @@ UI_ENV="$(printf '%s\n' \
   "TLS_GROUP_ROOT_CERT=/etc/fsc/ca/root.pem" \
   "TLS_GROUP_CERT=/etc/fsc/out/directory/directory/cert.pem" \
   "TLS_GROUP_KEY=/etc/fsc/out/directory/directory/key.pem")"
-UI_ALIASES="DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}"
+UI_ALIASES="DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}:443"
 
 # component-body (AddComponentRequest) via jq -> correcte JSON-escaping.
 component_body() {  # $1=name $2=image $3=port $4=env  [$5=services_json=[]]  [$6=aliases=""]
