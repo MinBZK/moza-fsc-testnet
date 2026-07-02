@@ -89,6 +89,9 @@ jobs:
   # push: git diff. dispatch: run=true, changed=false (geef desnoods manager_tag mee).
   changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       run: ${{ steps.c.outputs.run }}
       manager_migrate_changed: ${{ steps.c.outputs.changed }}
@@ -170,7 +173,7 @@ jobs:
     needs: [meta, changes, build]
     if: >-
       ${{ always() && needs.changes.outputs.run == 'true'
-          && needs.changes.result == 'success'
+          && needs.changes.result == 'success' && needs.meta.result == 'success'
           && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:

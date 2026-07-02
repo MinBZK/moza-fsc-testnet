@@ -155,9 +155,10 @@ Drie jobs voorkomen de build-deploy-race:
 | `deploy` | ná build-succes, óf meteen als build geskipt | `upsert-directory.sh apply test` |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór `apply`). Config/group-change
-→ build skip → deploy herbruikt de bestaande tag. `build-manager-migrate` bouwt op main **niet**
-meer zelfstandig (`branches-ignore: [main]`) — main bouwt via de reusable-call, wat een dubbele
-build + concurrency-clash voorkomt; z'n eigen `push`-trigger blijft voor branch-previews.
+→ build skip → deploy herbruikt de bestaande tag. De manager-migrate-image bouwt via de reusable
+`workflow_call` in `zad-deploy-directory.yml` (build → deploy in één run, ordering-veilig).
+`build-manager-migrate.yml` heeft géén eigen `push`-trigger meer; een preview krijgt zijn image
+(`v1.43.7-pr-<n>`) uit die call, main de canonieke `v1.43.7`.
 
 Faalt de deploy, dan is dat een **kale rode run** in de Actions-tab (bewust, geen auto-issue).
 Handmatige/preview-deploys en `validate`/`plan` blijven via `workflow_dispatch` (zie stap 6).
