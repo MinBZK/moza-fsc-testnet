@@ -115,6 +115,15 @@ accept_state() {  # $1=json $2=content_hash $3=oin
       else "no" end' 2>/dev/null || echo unknown
 }
 
+# Echoot de lifecycle-state (lowercased) van het contract met content_hash $2, of "unknown".
+# valid_contracts eist dat de state 'valid' is (beide accept-sigs fysiek in DÍT manager's DB).
+contract_state() {  # $1=json $2=content_hash
+  [ "$HAVE_JQ" -eq 1 ] || { echo unknown; return; }
+  printf '%s' "$1" | jq -r --arg h "$2" '
+    [.. | objects | select((.content_hash? // .content?.content_hash?) == $h) | .state?]
+    | map(select(. != null)) | (first // "unknown") | ascii_downcase' 2>/dev/null || echo unknown
+}
+
 # --- 0. Outway-public-key-thumbprint (host-side openssl; de toolbox heeft geen openssl-CLI) ----
 command -v openssl >/dev/null 2>&1 || { echo "FAIL: openssl niet gevonden op de host (zie pki/README.md)." >&2; exit 1; }
 [ -r "$OUTWAY_CERT_HOST" ] || { echo "FAIL: outway-cert niet leesbaar: $OUTWAY_CERT_HOST (draai pki/issue.sh?)" >&2; exit 1; }
@@ -204,27 +213,53 @@ prov -X PUT "$PROVIDER_MANAGER/v1/contracts/$HASH/accept" -H 'Content-Type: appl
   || { echo "FAIL: PUT accept ($HASH) geweigerd: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
 echo "  provider-handtekening gezet (2xx)."
 
-# --- 4. Verifieer scoped: draagt ONS contract (content_hash) nu de provider-accept? -----------
-# De PUT-2xx hierboven is de deterministische accept-bewijs; deze re-GET checkt het onafhankelijk
-# vanaf de provider-lijst — via de accept-STAAT (niet blote aanwezigheid, want het contract stond
-# er al pending vóór de accept). Zonder jq valt-ie terug op aanwezigheid (PUT-2xx bewees 't al).
-FINAL=$(provider_contracts)
-case "$(accept_state "$FINAL" "$HASH" "$PROVIDER_OIN")" in
-  yes) echo "OK: wederzijds ondertekend serviceConnection-contract $HASH ($CONSUMER_OIN <-> $PROVIDER_OIN)." ;;
-  no)
-    echo "FAIL: contract $HASH draagt géén provider-accept-handtekening na de PUT (accept niet gezet?)." >&2
-    "${COMPOSE[@]}" logs --tail=50 manager-example-provider >&2 || true
-    exit 1 ;;
-  unknown)
-    if printf '%s' "$FINAL" | grep -qF "$HASH"; then
-      echo "OK: contract $HASH aanwezig op de provider (accept al bewezen door PUT-2xx; jq afwezig → geen staat-check)."
-    else
-      echo "FAIL: contract $HASH niet meer zichtbaar op de provider na accept." >&2
-      [ -s "$ERRLOG" ] && { echo "  -> $(tail -n1 "$ERRLOG")" >&2; }
-      "${COMPOSE[@]}" logs --tail=50 manager-example-provider >&2 || true
-      exit 1
-    fi ;;
-esac
+# --- 4. Wacht tot de CONSUMER-manager het contract als 'valid' ziet ---------------------------
+# contracts.valid_contracts (bron: OpenFSC migratie 011) eist BEIDE accept-sigs fysiek in de
+# consumer-DB. De provider-accept-sig wordt async/best-effort naar de consumer gepusht (bounded
+# backoff, GÉÉN cron-retry); landt die niet, dan blijft het contract 'proposed' op de consumer en
+# ziet de outway 'm nooit (grant_links: []). Dus pollen we op state=valid en forceren we anders de
+# provider-side her-distributie (het canonieke herstel voor een gestrande failed_distribution).
+consumer_valid() {  # 0=valid, 1=nog niet, 2=onbekend (geen jq)
+  local st; st=$(contract_state "$(cons "$CONSUMER_MANAGER/v1/contracts" || true)" "$HASH")
+  case "$st" in valid|contract_state_valid) return 0 ;; unknown) return 2 ;; *) return 1 ;; esac
+}
+wait_valid() {  # pollt de consumer tot valid; 0=valid, 1=timeout, 2=onbekend (geen jq)
+  local elapsed=0 rc
+  while [ "$elapsed" -lt "$SYNC_TIMEOUT" ]; do
+    consumer_valid; rc=$?
+    [ "$rc" -eq 0 ] && return 0
+    [ "$rc" -eq 2 ] && return 2
+    sleep "$SYNC_INTERVAL"; elapsed=$((elapsed + SYNC_INTERVAL))
+    echo "  ...contract nog niet 'valid' op de consumer (${elapsed}s)"
+  done
+  return 1
+}
+redistribute_accept() {  # her-push de provider-accept-sig naar de consumer (idempotent, best-effort)
+  echo "bootstrap: forceer provider-side her-distributie van de accept-sig naar de consumer..."
+  prov -X POST "$PROVIDER_MANAGER/v1/contracts/$HASH/distributions/$CONSUMER_OIN/DISTRIBUTION_ACTION_SUBMIT_ACCEPT_SIGNATURE/retry" \
+    -H 'Content-Type: application/json' >/dev/null \
+    || echo "  WARN: retry-call fout (mogelijk geen gestrande distributie): $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2
+}
+
+echo "bootstrap: wachten tot de consumer-manager het contract '$HASH' als 'valid' ziet..."
+wait_valid; wv=$?
+if [ "$wv" -eq 2 ]; then
+  # Geen jq op de host -> kan de state niet lezen. Forceer één her-distributie zodat de accept-sig
+  # zeker naar de consumer gaat, en ga door (installeer jq voor een harde valid-verificatie).
+  echo "WARN: jq afwezig → kan contract-state niet verifiëren; forceer her-distributie. Installeer jq voor een harde check." >&2
+  redistribute_accept
+elif [ "$wv" -ne 0 ]; then
+  # Wel jq, maar niet valid binnen de timeout -> gestrande push. Her-distribueer en poll opnieuw.
+  redistribute_accept
+  if ! wait_valid; then
+    echo "FAIL: contract $HASH werd niet 'valid' op de consumer-manager (provider-accept-sig niet gesynct)." >&2
+    "${COMPOSE[@]}" logs --tail=60 manager-example-provider manager-example-consumer >&2 || true
+    exit 1
+  fi
+  echo "OK: contract $HASH is 'valid' op de consumer-manager (na her-distributie)."
+else
+  echo "OK: contract $HASH is 'valid' op de consumer-manager (wederzijds ondertekend)."
+fi
 
 # State-file pas NA succesvolle accept schrijven (bron van waarheid voor idempotentie).
 mkdir -p "$STATE_DIR" && printf '%s\n' "$HASH" > "$STATE_FILE"

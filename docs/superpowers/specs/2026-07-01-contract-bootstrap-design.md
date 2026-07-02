@@ -123,8 +123,16 @@ Spiegelt `deploy/local/publish-service.sh` (zelfde toolbox-mTLS-, idempotentie- 
    `content_hash` → hard fail (spiegelt `publish-service.sh`).
 4. **Accepteren**: poll de provider-manager tot het contract (op `content_hash`) daar zichtbaar is,
    dan `PUT /v1/contracts/{content_hash}/accept` op de **provider**-manager (provider internal-cert).
-   **2xx = de provider-handtekening.** Daarna scoped re-GET (hash aanwezig) + state-file schrijven.
-5. **Best-effort token** (bonus, non-fataal): `POST /token` (`scope=content_hash`); log het
+   **2xx = de provider-handtekening.**
+5. **Wachten op `valid` bij de consumer + her-distributie-fallback**: `contracts.valid_contracts`
+   (OpenFSC-migratie 011) eist BEIDE accept-sigs fysiek in de consumer-DB. De provider-accept-sig
+   wordt async/best-effort naar de consumer gepusht (bounded backoff, **geen** cron-retry). Bootstrap
+   pollt daarom de **consumer**-manager tot `state=valid`; blijft het `proposed`, dan forceert het de
+   **provider-side** her-distributie
+   (`POST …/distributions/{consumer}/DISTRIBUTION_ACTION_SUBMIT_ACCEPT_SIGNATURE/retry`) en pollt
+   opnieuw. Pas dán state-file schrijven. Zonder jq kan de state niet gelezen worden → forceer één
+   her-distributie + WARN (installeer jq voor een harde `valid`-check).
+6. **Best-effort token** (bonus, non-fataal): `POST /token` (`scope=content_hash`); log het
    resultaat + diagnostiek, faal niet als het scope/grant-detail afwijkt (echte token-afdwinging
    = #728).
 
