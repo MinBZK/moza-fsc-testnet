@@ -162,8 +162,8 @@ services:
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
       # Eigen manager, internal-unauthenticated poort:
       MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-provider.fsc-test.local:9444
-      # Presence-check (chart eist niet-leeg); placeholder -- inway mag crashen als de
-      # waarde gedialed wordt (dan txlog-api toevoegen, zie #728):
+      # Presence-check (chart eist niet-leeg); placeholder -- inway mag crashen als
+      # de waarde gedialed wordt (dan txlog-api toevoegen, zie #728):
       TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
       TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
       TLS_CERT: /pki/internal/example-provider/inway/cert.pem
