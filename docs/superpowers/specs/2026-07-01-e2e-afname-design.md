@@ -101,8 +101,9 @@ docker-host bij de eerste run:
 3. **txlog-tabel/-kolommen**: schema-agnostisch opgezocht op kolom `transaction_id`; de correlatie
    gebruikt ook een `direction`-kolom met een **exacte** encoding-lijst
    (`in|incoming|inbound|direction_in` resp. de out-varianten) — geen substring-LIKE (`%in%` zou
-   `outgoing` matchen). Gebruikt fsc-logging een andere kolom/encoding, dan faalt de query luid
-   (FAIL-dump toont het schema) — nooit stil groen.
+   `outgoing` matchen). `direction` is een PG-**enum/custom-type**, dus `lower(direction::text)`
+   (zonder `::text` → "No function matches ... lower"). Gebruikt fsc-logging een andere
+   kolom/encoding, dan faalt de query luid (FAIL-dump toont het schema) — nooit stil groen.
 4. **Outway-egress-env**: de egress gebruikt `MANAGER_INTERNAL_ADDRESS` (authenticated :9443); de
    #725-unauthenticated variant blijft als boot-hedge staan. Bevestig dat de outway registreert +
    routeert (outway-logs).
