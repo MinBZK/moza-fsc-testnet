@@ -41,4 +41,3 @@ want het auto-geaccepteerde publicatie-contract voor dezelfde dienst zou dat alt
 **Generiek**: alle peers/paden zijn via env te overrulen (`CONSUMER_OIN`, `PROVIDER_OIN`,
 `SERVICE_NAME`, `*_MANAGER`, `*_CERT/KEY/CA`, `OUTWAY_CERT_HOST`). Defaults = de example-peers. De
 FBS-toepassing (magazijn ↔ uitvraag) is een [FBS]-zusterissue in repo B.
-</content>
