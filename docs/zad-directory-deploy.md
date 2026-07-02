@@ -4,7 +4,8 @@
 > peers kunnen announcen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
 > ZAD Operations Manager API (`https://zad.rijksapp.nl/openapi.json`, v2).
 >
-> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723`). `migrate up` ok tegen de
+> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723` — nog naar het issuenummer
+> benoemd; nieuwe previews volgen `pr-<PR-nummer>`, zie Deploymodel). `migrate up` ok tegen de
 > managed Postgres, manager serveert, **self-announce geslaagd** (`EVENT_TYPE_CREATE_PEER`, OIN
 > `00000000000000000010`, SUCCEEDED). Cert-mount (ontwerp A) + managed DB bewezen op ODCN-prod.
 >
@@ -46,11 +47,12 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 - Cluster = `odcn-production` (prod). Voorbeeld bestaande URL: `directory-test-mft-tp9.<base_domain>`.
 - De manager-hostnaam is de **SNI-hostnaam** voor `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` (zie env).
 
-> **Deploymodel:** een PR krijgt een eigen deployment; wat naar `main` gaat landt in deployment
-> **`test`**. De directory = 2 componenten (`dirmgr` + `dirui`) op ZAD's managed Postgres; een
-> upsert van `test` vervangt de bestaande placeholder-component `directory` (image leeg).
-> Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR-preview
-> gebruikt zijn eigen deployment-naam i.p.v. `test`.
+> **Deploymodel:** een PR krijgt een eigen deployment, benoemd naar het **PR-nummer**
+> (`pr-<PR-nummer>`, bv. `pr-42`) — niet naar het issuenummer; wat naar `main` gaat landt in
+> deployment **`test`**. De directory = 2 componenten (`dirmgr` + `dirui`) op ZAD's managed
+> Postgres; een upsert van `test` vervangt de bestaande placeholder-component `directory` (image
+> leeg). Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een
+> PR-preview gebruikt zijn eigen `pr-<PR-nummer>`-deployment i.p.v. `test`.
 
 ## Stappen
 

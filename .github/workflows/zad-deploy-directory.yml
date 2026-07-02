@@ -1,6 +1,6 @@
 # Directe ZAD-API-deploy van de directory (#723) via de v2 Operations Manager API.
 # Roept deploy/zad/upsert-directory.sh aan (zelfde bron als de CLI). `validate` is read-only;
-# `apply` upsert het deployment. Model: PR = eigen deployment; main -> deployment `test`.
+# `apply` upsert het deployment. Model: PR = eigen deployment `pr-<PR-nummer>`; main -> deployment `test`.
 #
 # Dekt alleen de deploy-API (deployment + componenten + images + domain_format). NIET via de API
 # (UI-only): bijlagen (cert-mount), env-vars, "Publicatie op het web" (passthrough-TLS).
@@ -25,7 +25,7 @@ on:
         options: [validate, plan, apply]
         default: validate
       deployment:
-        description: "deployment-naam (main -> test; PR -> eigen naam)"
+        description: "deployment-naam (main -> test; PR -> pr-<PR-nummer>)"
         required: false
         default: "test"
       image_tag:

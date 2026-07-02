@@ -3,7 +3,7 @@
 # Zet de directory op ZAD via de v2 Operations Manager API (#723). Eén bron voor CLI + de
 # workflow zad-deploy-directory.yml. Zie docs/zad-directory-deploy.md en [[zad-deploy-api-model]].
 #
-# Model: PR = eigen deployment; main -> deployment `test`. `:upsert-deployment` REFEREERT alleen
+# Model: PR = eigen deployment `pr-<PR-nummer>`; main -> deployment `test`. `:upsert-deployment` REFEREERT alleen
 # bestaande componenten; componenten maak je met POST /components (incl. env_vars/services/aliases).
 # Previews kunnen `cloneFrom` een bestaande deployment (erven componenten, alleen images zetten).
 # NIET via de API (UI-only): bijlagen (cert-mount) + "Publicatie op het web" (passthrough-TLS).

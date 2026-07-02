@@ -43,7 +43,7 @@ export ZAD_API_KEY=...                          # niet inline
   veilig herhaalbaar is (bv. na een gefaalde PR-preview).
 - **Beschermde namen** (`test`, `main`, `production`, …) weigeren tenzij `ALLOW_PROTECTED=1` /
   de workflow-input `allow_protected`. Het cluster is **odcn-production** — dit voorkomt dat een
-  losse hand de gedeelde `test`-singleton sloopt. Previews (`pr-<n>`) ruim je vrij op.
+  losse hand de gedeelde `test`-singleton sloopt. Previews (`pr-<PR-nummer>`) ruim je vrij op.
 
 ## Beveiliging & versievastlegging
 
