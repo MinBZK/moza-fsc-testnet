@@ -18,7 +18,7 @@ set -euo pipefail
 export LC_ALL=C   # pin de sort/comm-ordening (correlatie leunt op consistente `comm`-invoer)
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${HERE}/.." && pwd)"
+REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 COMPOSE=(docker compose -f "${HERE}/docker-compose.yaml")
 
 STUB_MARKER="${STUB_MARKER:-hello from example-provider stub-upstream}"
