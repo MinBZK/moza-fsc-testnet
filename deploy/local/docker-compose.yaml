@@ -123,6 +123,10 @@ services:
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://example-provider.fsc-test.local:443
+      # #728: de manager bevraagt bij token-uitgifte de eigen controller naar de dienst
+      # (/v1/groups/{group}/services/{service}); zonder dit adres faalt /token met "unsupported
+      # protocol scheme". Registratie-API :9443, manager presenteert zijn internal-cert.
+      CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
       # #728: echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
       TX_LOG_API_ADDRESS: https://txlog.example-provider.fsc-test.local:9443
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
