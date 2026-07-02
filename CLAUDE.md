@@ -94,7 +94,7 @@ contracts/   grant → sign → accept bootstrap
 
 - **Secrets nooit committen.** Sleutels/certs/`.env` blijven buiten git (zie `.gitignore`).
   Alleen scripts en `.example`-templates in de repo.
-- Toekomstig werk mag tijdens een PR gemarkeerd met `TODO(#nnn)` verwijzend naar het
+- Toekomstig werk mag tijdens een PR worden gemarkeerd met `TODO(#nnn)` verwijzend naar het
   GitHub-issue, **maar de ticketreferentie moet vóór/bij merge weer verwijderd zijn**: een los
   ticketnummer in een comment is indirecte documentatie. Laat de comment zonder het nummer
   zelf-verklarend achter (wat + waarom), of haal 'm helemaal weg als het werk klaar is.

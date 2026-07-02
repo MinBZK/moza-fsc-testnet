@@ -5,7 +5,8 @@ peer:
   oin: "00000000000000000010"        # synthetische infra-OIN -> Peer ID (directory)
   name: "directory"                  # -> subject.organization in het cert
 manager:
-  # Mesh-endpoint op :443 (SNI-passthrough-Route), NIET 8443/MetalLB (spike).
+  # Mesh-endpoint op :443 (SNI-passthrough-Route), NIET 8443/MetalLB
+  # (bewezen in docs/spikes/manager-443-sni/).
   selfAddress: "https://directory.fsc-test.local:443"   # -> SELF_ADDRESS
   directoryMode: true                # DIRECTORY_PEER_ID == peer.oin; TX_LOG_API_ADDRESS leeg
   image: "manager-migrate"           # wrapper-image (Taak 2), niet de stock-image
