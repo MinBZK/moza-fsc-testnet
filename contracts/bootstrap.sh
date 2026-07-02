@@ -179,8 +179,9 @@ RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: applicati
 
 # --fail-with-body vangt HTTP-4xx/5xx; een 2xx zónder content_hash duidt op een geweigerd formaat
 # (bv. service dat toch een protocol eist, of een afwijkend outway-blok). Surface de respons.
-HASH=$(printf '%s' "$RESP" | grep -o '"content_hash"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]*"' \
-        | head -n1 | grep -o '[0-9a-fA-F]\{16,\}' | head -n1 || true)
+# De content_hash is GÉÉN hex maar het crypt-stijl SHA3-512-formaat `$1$<n>$<base64url>` (zoals
+# smoke-publish's respons); pak dus de volledige JSON-stringwaarde (geen `"` erin) i.p.v. hex.
+HASH=$(printf '%s' "$RESP" | sed -n 's/.*"content_hash"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
 [ -n "$HASH" ] || { echo "FAIL: contract-respons zonder content_hash (formaat geweigerd?): $RESP" >&2; exit 1; }
 echo "  consumer-handtekening gezet (2xx); mesh-sync gestart; content_hash=$HASH"
 
