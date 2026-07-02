@@ -37,15 +37,26 @@ fail() { echo "XX run-smokes FAALT: $1" >&2; teardown; exit 1; }
 
 cd "$REPO_ROOT"
 
-# --- 1. Certs (test-CA + per-peer). Regenereer alleen als afwezig of geforceerd. ---------------
-if [ "$REGEN_CERTS" -eq 1 ] || [ ! -d pki/out ] || [ ! -d pki/internal ]; then
-  echo ">> certs genereren (test-CA + per-peer)..."
+# --- 1. Certs (test-CA + per-peer). Regenereer bij --regen-certs, afwezige mappen, óf een CSR
+#        zonder cert (bv. een nieuw endpoint zoals txlog — anders skipt 'aanwezig' die stil). ------
+need_certs() {
+  [ "$REGEN_CERTS" -eq 1 ] && return 0
+  { [ ! -d pki/out ] || [ ! -d pki/internal ]; } && return 0
+  local csr rel
+  while IFS= read -r csr; do
+    rel=${csr#pki/peers/}; rel=${rel%/csr.json}
+    [ -s "pki/internal/${rel}/cert.pem" ] && [ -s "pki/out/${rel}/cert.pem" ] || return 0
+  done < <(find pki/peers -name csr.json)
+  return 1
+}
+if need_certs; then
+  echo ">> certs (her)genereren (test-CA + per-peer; ontbrekende/nieuwe CSR's meegenomen)..."
   [ -f pki/ca/root.pem ] || ./pki/init-ca.sh || fail "pki/init-ca.sh faalde."
   ./pki/issue.sh -f        || fail "pki/issue.sh faalde."
   ./pki/gen-crl.sh         || fail "pki/gen-crl.sh faalde."
   ./pki/fix-permissions.sh || fail "pki/fix-permissions.sh faalde."
 else
-  echo ">> certs aanwezig (gebruik --regen-certs om te herbouwen)."
+  echo ">> certs aanwezig + compleet (gebruik --regen-certs om te herbouwen)."
 fi
 # Altijd verifiëren — óók op het "al aanwezig"-pad: stale/onvolledige certs (bv. onderbroken run)
 # mogen niet ongemerkt de stack in en zich later als vage mTLS-fouten voordoen.
