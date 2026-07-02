@@ -10,7 +10,10 @@
 name: build-manager-migrate
 
 on:
+  # `main` bouwt via de reusable-call in zad-deploy-directory (build->deploy in één run,
+  # geen dubbele build + geen concurrency-clash). Hier alleen branch-previews.
   push:
+    branches-ignore: [main]
     paths:
       - "deploy/zad/manager-migrate/**"
       - ".github/workflows/build-manager-migrate.yml"
@@ -19,6 +22,14 @@ on:
       image_tag:
         description: "OpenFSC manager-basisversie (build-arg IMAGE_TAG + image-tag)"
         required: false
+        default: "v1.43.7"
+  # Aangeroepen door zad-deploy-directory (build-job) vóór de deploy naar test.
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "OpenFSC manager-basisversie (build-arg IMAGE_TAG + image-tag)"
+        required: false
+        type: string
         default: "v1.43.7"
 
 # Top-level read-only; write-scope alleen op de job die pusht (Scorecard Token-Permissions).
