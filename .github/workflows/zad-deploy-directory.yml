@@ -154,21 +154,23 @@ jobs:
   # image-wijziging; anders geskipt en herbruikt deploy de bestaande tag. Reusable workflow =
   # één bron voor de build-logica.
   build:
-    needs: changes
-    if: ${{ needs.changes.outputs.manager_migrate_changed == 'true' }}
+    needs: [meta, changes]
+    if: ${{ needs.changes.outputs.run == 'true' && needs.changes.outputs.manager_migrate_changed == 'true' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/build-manager-migrate.yml
     with:
-      image_tag: ${{ inputs.image_tag || 'v1.43.7' }}
+      image_tag: ${{ needs.meta.outputs.image_base }}
+      image_suffix: ${{ needs.meta.outputs.manager_suffix }}
 
   # Rolt de directory uit. Draait ná build-succes, of meteen als de build geskipt is
   # (config/group-only) -> de image bestaat gegarandeerd vóór apply.
   deploy:
-    needs: [changes, build]
+    needs: [meta, changes, build]
     if: >-
-      ${{ always() && needs.changes.result == 'success'
+      ${{ always() && needs.changes.outputs.run == 'true'
+          && needs.changes.result == 'success'
           && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
@@ -181,10 +183,12 @@ jobs:
         env:
           ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          # Push naar main = altijd apply/test; dispatch gebruikt zijn inputs.
-          MODE: ${{ github.event_name == 'push' && 'apply' || inputs.mode }}
-          DEPLOYMENT: ${{ inputs.deployment || 'test' }}
-          IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
-          ZAD_MANAGER_TAG: ${{ inputs.manager_tag }}
-          CLONE_FROM: ${{ inputs.clone_from }}
+          # push/PR = altijd apply; dispatch gebruikt zijn mode-input.
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'apply' }}
+          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
+          IMAGE_TAG: ${{ needs.meta.outputs.image_base }}
+          # PR met gewijzigde wrapper -> de zojuist gebouwde pr-<n>-image; anders leeg (canoniek).
+          ZAD_MANAGER_TAG: ${{ (github.event_name == 'pull_request' && needs.changes.outputs.manager_migrate_changed == 'true') && format('{0}-{1}', needs.meta.outputs.image_base, needs.meta.outputs.manager_suffix) || inputs.manager_tag }}
+          # Previews klonen NIET (SoR-DB uitgezonderd); dispatch mag clone_from meegeven.
+          CLONE_FROM: ${{ github.event_name == 'workflow_dispatch' && inputs.clone_from || '' }}
         run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}" "${CLONE_FROM}"
