@@ -49,12 +49,17 @@ need_certs() {
   done < <(find pki/peers -name csr.json)
   return 1
 }
+RECREATE=""
 if need_certs; then
   echo ">> certs (her)genereren (test-CA + per-peer; ontbrekende/nieuwe CSR's meegenomen)..."
   [ -f pki/ca/root.pem ] || ./pki/init-ca.sh || fail "pki/init-ca.sh faalde."
   ./pki/issue.sh -f        || fail "pki/issue.sh faalde."
   ./pki/gen-crl.sh         || fail "pki/gen-crl.sh faalde."
   ./pki/fix-permissions.sh || fail "pki/fix-permissions.sh faalde."
+  # Certs (incl. de per-peer internal-CA's) zijn vernieuwd -> draaiende containers hebben nog de
+  # OUDE certs/CA in geheugen; force-recreate zodat alles de nieuwe (consistente) set herlaadt.
+  # Anders: nieuw inway-cert (nieuwe CA) vs controller die de oude CA trust -> mTLS faalt.
+  RECREATE="--force-recreate"
 else
   echo ">> certs aanwezig + compleet (gebruik --regen-certs om te herbouwen)."
 fi
@@ -76,9 +81,9 @@ mv "$tmp_env" "$ENV_FILE"
 # --remove-orphans: ruim containers op van een vórige (hernoemde) compose (bv. het oude
 # `controller` vóór de rename naar `controller-example-provider`) die anders een host-poort
 # bezet houden (`port is already allocated`).
-echo ">> docker compose up -d ${BUILD} --remove-orphans..."
+echo ">> docker compose up -d ${BUILD} --remove-orphans ${RECREATE}..."
 # shellcheck disable=SC2086
-"${COMPOSE[@]}" up -d $BUILD --remove-orphans || fail "compose up faalde."
+"${COMPOSE[@]}" up -d $BUILD --remove-orphans $RECREATE || fail "compose up faalde."
 
 # --- 4. Smokes op volgorde (elke stap fail-hard). Groeit per issue. ----------------------------
 run() { echo; echo "======== $1 ========"; bash "${HERE}/$1" || fail "$1 rood."; }
