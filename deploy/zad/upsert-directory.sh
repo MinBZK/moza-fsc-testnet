@@ -124,15 +124,19 @@ hdr=(-H "X-API-Key: ${ZAD_API_KEY}")
 poll_task() {  # $1=task_id
   local id="$1" i status
   for i in $(seq 1 45); do
-    curl -sS "${hdr[@]}" "${BASE}/api/tasks/${id}" -o "${resp}"
+    # --fail: HTTP 4xx/5xx op de tasks-API mag niet als "nog bezig" (status=null) tellen; retry.
+    if ! curl -sS --fail "${hdr[@]}" "${BASE}/api/tasks/${id}" -o "${resp}"; then
+      echo "  task ${id}: tasks-API HTTP-fout (poging ${i}/45) — retry" >&2
+      sleep 2; continue
+    fi
     status="$(jq -r '.status' "${resp}")"
     case "${status}" in
       completed) echo "  task ${id}: completed"; return 0 ;;
-      failed)    echo "  task ${id}: FAILED -> $(jq -r '.error_message // .result.error' "${resp}")"; return 1 ;;
+      failed)    echo "  task ${id}: FAILED -> $(jq -r '.error_message // .result.error' "${resp}")" >&2; return 1 ;;
       *)         sleep 2 ;;
     esac
   done
-  echo "  task ${id}: nog bezig na ~90s (async ArgoCD-sync) — niet geblokkeerd, check later met 'validate'."
+  echo "  task ${id}: nog bezig na ~90s (async ArgoCD-sync) — niet geblokkeerd, check later met 'validate'." >&2
   return 0
 }
 
@@ -143,7 +147,12 @@ post() {  # $1=label $2=path $3=body
   echo "  -> HTTP ${code}"
   case "${code}" in 2*) ;; *) jq . "${resp}" 2>/dev/null || cat "${resp}"; return 1 ;; esac
   local tid; tid="$(jq -r '.task_id // empty' "${resp}")"
-  [ -n "${tid}" ] && poll_task "${tid}" || { jq . "${resp}"; }
+  # if/then/else zodat poll_task's non-zero (FAILED-task) propageert i.p.v. gemaskeerd door `|| {…}`.
+  if [ -n "${tid}" ]; then
+    poll_task "${tid}"
+  else
+    jq . "${resp}"
+  fi
 }
 
 # ---- apply ----
