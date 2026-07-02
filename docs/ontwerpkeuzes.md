@@ -71,8 +71,8 @@ system-of-record en moeten persistent + gebackupt op ZAD (niet ephemeral/preview
 
 ### Migratie op ZAD = wrapper-image (#723)
 
-OpenFSC migreert de DB via een init-container met args (`manager migrate up`). ZAD staat geen
-component-args/init-containers toe. Oplossing: een dunne **wrapper-image**
+OpenFSC migreert de DB via een init-container met args (`manager migrate up`). ZAD ondersteunt
+(nog) geen component-args/init-containers. Oplossing: een dunne **wrapper-image**
 (`deploy/zad/manager-migrate/`) met een entrypoint dat eerst `manager migrate up` draait en
 daarna `manager serve` exec't. Het is een *deploy-image* boven de stock-image, **geen
 broncode-fork** — consistent met "geen fork van de FSC-software".
