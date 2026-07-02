@@ -4,6 +4,6 @@ group:
   trust_anchor:
     # Pad naar de test-CA root (via ZAD attachments gemount). Geen PKIoverheid.
     ca_cert: /etc/fsc/ca/root.pem
-    crl: /etc/fsc/ca/root.crl
+    crl: /etc/fsc/ca/intermediate.crl   # CRL getekend door de intermediate (issuer peer-certs)
   rules:
     tls_min_version: "1.2"     # conform NCSC TLS 2.1 (OpenFSC-default)

@@ -17,9 +17,10 @@ Eén **group** + één **directory** + N **peers** (organisaties). Voor de PoC:
 
 | Peer | Rol | FSC-componenten | OIN (PeerID) |
 |------|-----|-----------------|--------------|
-| directory | groep-anker | directory + manager | n.v.t. |
-| magazijn-org | provider | manager + inway → `berichtenmagazijn` | `<afzender-OIN>` |
-| uitvraag-org | consumer | manager + outway → `berichtenuitvraag` | `<OIN>` |
+| directory | groep-anker | directory + manager | `00000000000000000010` (synth.) |
+| magazijn-a | provider | manager + inway → `berichtenmagazijn` | `00000001003214345000` |
+| magazijn-b | provider | manager + inway → `berichtenmagazijn` | `00000001823288444000` |
+| uitvraag-org | consumer | manager + outway → `berichtenuitvraag` | `00000000000000000020` (synth.) |
 | profiel-org | (later) | manager + inway → `moza-profiel-service` | `<OIN>` |
 
 Zie [`docs/topologie.md`](docs/topologie.md), [`docs/ontwerpkeuzes.md`](docs/ontwerpkeuzes.md)

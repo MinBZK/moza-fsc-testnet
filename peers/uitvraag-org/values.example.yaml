@@ -1,7 +1,7 @@
 # Helm-values voor peer 'uitvraag-org' (template — #723/#724/#725).
 # Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
 peer:
-  oin: "00000000000000000000"        # TODO(#722): geldige test-OIN -> wordt Peer ID
+  oin: "00000000000000000020"        # synthetische test-OIN (uitvraag heeft geen org-OIN in FBS)
   name: "uitvraag-org"                          # -> subject.organization in het cert
 manager:
   managementAddress: "uitvraag-org-manager:8443"
