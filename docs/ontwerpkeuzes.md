@@ -88,3 +88,36 @@ gedocumenteerde TODO (issuer-split + redirect-URI — zie `deploy/local/README.m
 
 ZAD `attachments` (generiek blok: encrypted opslag, read-only mount in de pod) is beschikbaar.
 Per-peer certs kunnen gemount worden — #722/#723 zijn hierop niet langer geblokkeerd.
+
+### Auto-deploy directory naar `test` op main
+
+Een merge naar `main` (CI groen) rolt de centrale **directory** automatisch uit naar
+ZAD-deployment `test`. Dit spiegelt het `moza-poc-fbs-berichtenbox`-model: geautomatiseerde tests
+(en eventueel functioneel op de preview-branch) → main → automatische update van `test`. Vóór dit
+besluit was `zad-deploy-directory.yml` alleen handmatig (`workflow_dispatch`).
+
+**Scope: alleen de centrale directory.** Peers (`example-consumer`/`-provider`) deployen bij de app
+(eigen ZAD-projecten) en beslissen **zelf** of/hoe ze auto-deployen — geen generiek peer-mechanisme
+hier.
+
+Gemaakte keuzes:
+
+- **Bestaande workflow uitbreiden** (niet een nieuwe file): `zad-deploy-directory.yml` krijgt náást
+  `workflow_dispatch` een `push`-trigger op main. `upsert-directory.sh` is al de gedeelde bron;
+  het push-pad zet enkel `apply`/`test`. `workflow_dispatch` blijft voor PR-previews.
+- **Eén workflow, 3 jobs** (`changes` → `build` → `deploy`) tegen de build-deploy-race: een
+  image-wijziging bouwt éérst (`build-manager-migrate` als reusable `workflow_call`), pas dán
+  deployt `apply`. Een config/group-only merge skipt de build en herbruikt de bestaande tag.
+- **`git diff` in een run-step** detecteert de image-wijziging — geen marketplace-action, dus geen
+  extra action-SHA te pinnen → OpenSSF Scorecard blijft groen. Om dezelfde reden stopt
+  `build-manager-migrate` z'n eigen `push`-build op main (`branches-ignore: [main]`): main bouwt
+  via de reusable-call (geen dubbele build + geen concurrency-clash).
+- **Trigger-paths:** `deploy/zad/upsert-directory.sh`, `deploy/zad/manager-migrate/**`, `group/**`
+  en de workflow zelf. `group/**` erbij voor zichtbaarheid, al is een group-wijziging via de API
+  meestal een no-op (trust-anchor/certs zijn UI-only bijlagen).
+- **Failure = kale rode workflow-run** in de Actions-tab. Bewust geen auto-issue: wordt dit ooit te
+  vaak gemist, dan gaan we naar échte externe notificatie (Slack/mail), niet naar een
+  half-oplossing. Fully-auto, géén environment-approval (conform het FBS-model).
+
+Ontwerp: `docs/superpowers/specs/2026-07-02-auto-deploy-test-design.md`. Mechaniek:
+`docs/zad-directory-deploy.md`.

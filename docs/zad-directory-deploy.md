@@ -128,6 +128,33 @@ de exacte bodies. **Daarna nog handmatig (UI, stappen 3 + 5):** bijlagen (certs)
 web modus 2 op `directory-manager`. Via CI: `zad-deploy-directory.yml` (zelfde script; beschikbaar
 zodra 'ie op `main` staat). Env (stap 4) zit nu in het script — UI-env niet meer nodig.
 
+### Auto-deploy naar `test` op main
+
+`zad-deploy-directory.yml` triggert náást `workflow_dispatch` (previews/handmatig) ook op **push
+naar main** — een merge (CI groen) rolt de directory automatisch uit naar deployment `test`
+(besluit in `docs/ontwerpkeuzes.md`, ontwerp in `docs/superpowers/specs/`). Push-pad zet vast:
+`mode=apply`, `deployment=test`, `image_tag=v1.43.7`, `manager_tag=""` (canonieke tag).
+
+Path-filter (alleen deze paden triggeren de auto-deploy):
+`deploy/zad/upsert-directory.sh`, `deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf.
+Docs- en peer-merges blijven dus stil.
+
+Drie jobs voorkomen de build-deploy-race:
+
+| Job | Wanneer | Doet |
+|-----|---------|------|
+| `changes` | elke push | `git diff` (run-step) → output `manager_migrate_changed` |
+| `build` | alleen als `manager-migrate/**` wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht canonieke `v1.43.7` |
+| `deploy` | ná build-succes, óf meteen als build geskipt | `upsert-directory.sh apply test` |
+
+Image-change → build eerst → deploy (image bestaat gegarandeerd vóór `apply`). Config/group-change
+→ build skip → deploy herbruikt de bestaande tag. `build-manager-migrate` bouwt op main **niet**
+meer zelfstandig (`branches-ignore: [main]`) — main bouwt via de reusable-call, wat een dubbele
+build + concurrency-clash voorkomt; z'n eigen `push`-trigger blijft voor branch-previews.
+
+Faalt de deploy, dan is dat een **kale rode run** in de Actions-tab (bewust, geen auto-issue).
+Handmatige/preview-deploys en `validate`/`plan` blijven via `workflow_dispatch` (zie stap 6).
+
 ### 7. Verifiëren
 
 - **Announce-self:** de directory zet zichzelf in `peers.peers`. Check (psql op de managed Postgres):
