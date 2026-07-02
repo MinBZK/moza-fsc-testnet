@@ -110,9 +110,9 @@ echte env-namen.
 Omdat ZAD images + env deployt (geen charts), is dit een **GitHub-workflow**-vraag,
 geen Helm-distributievraag.
 
-**Besluit (#729): kopiëren/vendoren van de generieke scripts.** De deploy-/cleanup-tooling is
+**Besluit (#729): kopiëren van de generieke scripts.** De deploy-/cleanup-tooling is
 **volledig env-gedreven** (`deploy/zad/upsert-directory.sh`, `deploy/zad/cleanup.sh` — via
-`ZAD_PROJECT` en `ZAD_API_KEY`). Een app-repo vendort die scripts + een dunne
+`ZAD_PROJECT` en `ZAD_API_KEY`). Een app-repo kopieert die scripts + een dunne
 `workflow_dispatch`-workflow met het
 **eigen** project + de eigen key; source-of-truth (images, componentnamen, env-templates) blijft
 hier. Een reusable `workflow_call` is bewust niet gekozen: dispatch (repo-secret) en call

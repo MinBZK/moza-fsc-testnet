@@ -13,7 +13,7 @@ draaien bij hun app** (co-located in het app-project). Deploy/cleanup volgen die
 | Onderdeel | Deploy | Cleanup | Beheerd vanuit |
 |-----------|--------|---------|----------------|
 | directory | `zad-deploy-directory.yml` → `deploy/zad/upsert-directory.sh` | `zad-cleanup.yml` → `deploy/zad/cleanup.sh` | **dit repo** |
-| peer (magazijn/uitvraag/…) | app-repo's `deploy.yml` (peer náást de app) | app-repo vendort `deploy/zad/cleanup.sh` | bij de app |
+| peer (magazijn/uitvraag/…) | app-repo's `deploy.yml` (peer náást de app) | app-repo kopieert `deploy/zad/cleanup.sh` | bij de app |
 
 Beide scripts zijn **volledig env-gedreven** (`ZAD_PROJECT`, `ZAD_API_KEY`, `ZAD_BASE`), dus een
 app-repo hergebruikt exact dezelfde `cleanup.sh` met zijn eigen project + key — geen fork nodig.
@@ -61,7 +61,7 @@ export ZAD_API_KEY=...                          # niet inline
   controller-componenten) leven bij de app-repo's; de component-definities + env-templates hier
   (`peers/*/values.example.yaml`, de lokale `deploy/local/docker-compose.yaml`) zijn de bron.
 - Een gedeelde **reusable `workflow_call`-cleanup** is bewust niet gedaan: dispatch (repo-secret)
-  en call (doorgegeven secret) mengen in één workflow botst met de secrets-context. Vendoren van
+  en call (doorgegeven secret) mengen in één workflow botst met de secrets-context. Het kopiëren van
   `cleanup.sh` + een dunne dispatch-workflow bij de app is simpeler en even reproduceerbaar.
 - **Follow-up**: `cleanup.sh`'s `poll_task` checkt de HTTP-code + faalt hard op een onbekende/
   timeout-status (geen valse "opgeruimd"). De deploy-tegenhanger `upsert-directory.sh` heeft nog de
