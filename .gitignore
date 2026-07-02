@@ -22,3 +22,7 @@ group/group-config.yaml
 
 # Contract-bootstrap state (content_hash van geaccepteerde contracten; host-lokaal, niet-geheim).
 contracts/.bootstrap-state/
+
+# Core dumps (bv. van een gecrasht CLI-proces in de repo-cwd) — nooit committen.
+core
+core.*

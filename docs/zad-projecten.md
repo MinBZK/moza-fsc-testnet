@@ -108,18 +108,16 @@ echte env-namen.
 ## Cross-repo consumptie (hoe een app-repo de peer-template gebruikt)
 
 Omdat ZAD images + env deployt (geen charts), is dit een **GitHub-workflow**-vraag,
-geen Helm-distributievraag. Opties — te besluiten in #729:
+geen Helm-distributievraag.
 
-1. **Reusable workflow (aanbevolen).** Deze repo levert een `workflow_call`-workflow
-   die `zad-actions/deploy` aanroept met de peer-componentlijst. Het app-repo roept
-   die aan in zijn eigen `deploy.yml` (deployt de peer náást de app, in hetzelfde
-   project). Source-of-truth (images, componentnamen) blijft hier; versionering via
-   de git-ref van de aanroep.
-2. **Composite action** hier, gebruikt door het app-repo (vergelijkbaar, fijnmaziger).
-3. **Kopiëren + pinnen** in het app-repo (simpelst, maar drift-risico).
-
-De env-var-templates (`.env.example`) worden in alle gevallen door het app-team
-éénmalig in Operations Manager ingevoerd.
+**Besluit (#729): kopiëren van de generieke scripts.** De deploy-/cleanup-tooling is
+**volledig env-gedreven** (`deploy/zad/upsert-directory.sh`, `deploy/zad/cleanup.sh` — via
+`ZAD_PROJECT` en `ZAD_API_KEY`). Een app-repo kopieert die scripts + een dunne
+`workflow_dispatch`-workflow met het
+**eigen** project + de eigen key; source-of-truth (images, componentnamen, env-templates) blijft
+hier. Een reusable `workflow_call` is bewust niet gekozen: dispatch (repo-secret) en call
+(doorgegeven secret) in één workflow mengen botst met de GitHub-secrets-context (zie
+`docs/zad-cleanup.md`). De env-var-templates (`.env.example`) voert het app-team éénmalig in.
 
 ## Open punten / blockers
 
