@@ -1,0 +1,7 @@
+{
+  "CN": "inway.example-provider.fsc-test.local",
+  "key": { "algo": "rsa", "size": 4096 },
+  "hosts": ["inway.example-provider.fsc-test.local"],
+  "serialnumber": "00000000000000000030",
+  "names": [{ "O": "example-provider", "C": "NL" }]
+}

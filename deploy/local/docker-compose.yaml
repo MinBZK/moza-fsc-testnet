@@ -33,7 +33,7 @@ services:
       default:
         aliases:
           - directory.fsc-test.local
-          - magazijn-a.fsc-test.local
+          - example-provider.fsc-test.local
     depends_on:
       manager-directory:
         condition: service_started
@@ -79,20 +79,20 @@ services:
       postgres:
         condition: service_healthy
 
-  migrate-magazijn-a:
+  migrate-example-provider:
     image: *manager-image
     command:
       - /usr/local/bin/manager
       - migrate
       - up
       - --postgres-dsn
-      - postgres://postgres:postgres@postgres:5432/fsc_magazijn_a?sslmode=disable
+      - postgres://postgres:postgres@postgres:5432/fsc_example_provider?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
     restart: on-failure
 
-  manager-magazijn-a:
+  manager-example-provider:
     image: *manager-image
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-keys (zie manager-directory)
     command:
@@ -100,37 +100,102 @@ services:
       - serve
     environment:
       <<: *manager-common-env
-      SELF_ADDRESS: https://magazijn-a.fsc-test.local:443
+      SELF_ADDRESS: https://example-provider.fsc-test.local:443
       # presence-check (serve.go); niet gedialed bij announce
       TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
       MONITORING_ADDRESS: 0.0.0.0:8080
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_magazijn_a?sslmode=disable
-      TLS_GROUP_CERT: &maga-grp /pki/out/magazijn-a/manager/cert.pem
-      TLS_GROUP_KEY: &maga-grp-key /pki/out/magazijn-a/manager/key.pem
-      TLS_GROUP_TOKEN_CERT: *maga-grp
-      TLS_GROUP_TOKEN_KEY: *maga-grp-key
-      TLS_GROUP_CONTRACT_CERT: *maga-grp
-      TLS_GROUP_CONTRACT_KEY: *maga-grp-key
-      TLS_ROOT_CERT: &maga-introot /pki/internal/magazijn-a/ca/root.pem
-      TLS_CERT: &maga-int /pki/internal/magazijn-a/manager/cert.pem
-      TLS_KEY: &maga-int-key /pki/internal/magazijn-a/manager/key.pem
-      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: *maga-introot
-      TLS_INTERNAL_UNAUTHENTICATED_CERT: *maga-int
-      TLS_INTERNAL_UNAUTHENTICATED_KEY: *maga-int-key
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_example_provider?sslmode=disable
+      TLS_GROUP_CERT: &ep-grp /pki/out/example-provider/manager/cert.pem
+      TLS_GROUP_KEY: &ep-grp-key /pki/out/example-provider/manager/key.pem
+      TLS_GROUP_TOKEN_CERT: *ep-grp
+      TLS_GROUP_TOKEN_KEY: *ep-grp-key
+      TLS_GROUP_CONTRACT_CERT: *ep-grp
+      TLS_GROUP_CONTRACT_KEY: *ep-grp-key
+      TLS_ROOT_CERT: &ep-introot /pki/internal/example-provider/ca/root.pem
+      TLS_CERT: &ep-int /pki/internal/example-provider/manager/cert.pem
+      TLS_KEY: &ep-int-key /pki/internal/example-provider/manager/key.pem
+      TLS_INTERNAL_UNAUTHENTICATED_ROOT_CERT: *ep-introot
+      TLS_INTERNAL_UNAUTHENTICATED_CERT: *ep-int
+      TLS_INTERNAL_UNAUTHENTICATED_KEY: *ep-int-key
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
     networks:
       default:
         # Alias = de internal-cert-hostnaam, zodat de controller TLS naar :9443 valideert.
         aliases:
-          - manager.magazijn-a.fsc-test.local
+          - manager.example-provider.fsc-test.local
     depends_on:
-      migrate-magazijn-a:
+      migrate-example-provider:
         condition: service_completed_successfully
       manager-directory:
+        condition: service_started
+
+  stub-upstream:
+    # Neutrale HTTP-echo die de business-app vervangt (Spec A). Wordt de endpoint_url
+    # van example-service; in #724 niet gedialed (data-pad = #728).
+    image: docker.io/hashicorp/http-echo:1.0
+    command: ["-listen=:8080", "-text=hello from example-provider stub-upstream (#724)"]
+
+  inway-example-provider:
+    image: docker.io/federatedserviceconnectivity/inway:${IMAGE_TAG:-v1.43.7}
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-keys
+    restart: on-failure                            # boot-race met controller/manager
+    command:
+      - /usr/local/bin/inway
+      - serve
+    environment:
+      LOG_TYPE: local
+      LOG_LEVEL: debug
+      GROUP_ID: moza-fbs-test
+      # geregistreerde inway-naam; SELF_ADDRESS wordt als inway_address doorgegeven bij CreateService
+      NAME: example-provider-inway
+      SELF_ADDRESS: https://inway.example-provider.fsc-test.local:443
+      LISTEN_ADDRESS: 0.0.0.0:8443
+      MONITORING_ADDRESS: 0.0.0.0:8081
+      DISABLE_CRL_CHECKS: "true"
+      # Registreert zich bij de controller via TLS op de controller-internal-cert
+      # (CN controller.example-provider.fsc-test.local):
+      CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
+      # Eigen manager, internal-unauthenticated poort:
+      MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-provider.fsc-test.local:9444
+      # Presence-check (chart eist niet-leeg); placeholder -- inway mag crashen als
+      # de waarde gedialed wordt (dan txlog-api toevoegen, zie #728):
+      TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
+      TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
+      TLS_CERT: /pki/internal/example-provider/inway/cert.pem
+      TLS_KEY: /pki/internal/example-provider/inway/key.pem
+      TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
+      TLS_GROUP_CERT: /pki/out/example-provider/inway/cert.pem
+      TLS_GROUP_KEY: /pki/out/example-provider/inway/key.pem
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        aliases:
+          - inway.example-provider.fsc-test.local
+    depends_on:
+      controller:
+        condition: service_started
+      manager-example-provider:
+        condition: service_started
+      stub-upstream:
+        condition: service_started
+
+  toolbox:
+    # Curl-client BINNEN het netwerk voor de mTLS-onboarding-calls (publish-service.sh).
+    # Draait als host-UID zodat het de 0600-internal-key leest.
+    image: docker.io/curlimages/curl:8.11.1
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    entrypoint: ["sleep", "infinity"]
+    volumes:
+      - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    depends_on:
+      manager-example-provider:
+        condition: service_started
+      controller:
         condition: service_started
 
   directory-ui:
@@ -147,8 +212,8 @@ services:
       DIRECTORY_MANAGER_ADDRESS: https://directory.fsc-test.local:443
       BASE_URL_PATH: /
       TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
-      TLS_GROUP_CERT: /pki/out/magazijn-a/manager/cert.pem   # lezer-peer-identiteit
-      TLS_GROUP_KEY: /pki/out/magazijn-a/manager/key.pem
+      TLS_GROUP_CERT: /pki/out/example-provider/manager/cert.pem   # lezer-peer-identiteit
+      TLS_GROUP_KEY: /pki/out/example-provider/manager/key.pem
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
     depends_on:
@@ -179,7 +244,7 @@ services:
       - migrate
       - up
       - --postgres-dsn
-      - postgres://postgres:postgres@postgres:5432/fsc_controller_magazijn_a?sslmode=disable
+      - postgres://postgres:postgres@postgres:5432/fsc_controller_example_provider?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -198,16 +263,16 @@ services:
       LISTEN_ADDRESS_REGISTRATION_API: 0.0.0.0:9443
       LISTEN_ADDRESS_ADMINISTRATION_API: 0.0.0.0:9444
       MONITORING_ADDRESS: 0.0.0.0:8081
-      MANAGER_ADDRESS_INTERNAL: https://manager.magazijn-a.fsc-test.local:9443   # = internal-cert-SAN
+      MANAGER_ADDRESS_INTERNAL: https://manager.example-provider.fsc-test.local:9443   # = internal-cert-SAN
       GROUP_ID: moza-fbs-test
       DIRECTORY_PEER_ID: "00000000000000000010"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
-      POSTGRES_DATABASE: fsc_controller_magazijn_a
+      POSTGRES_DATABASE: fsc_controller_example_provider
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       PGSSLMODE: disable
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_controller_magazijn_a?sslmode=disable
+      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_controller_example_provider?sslmode=disable
       # Lokaal ZONDER login (AUTHN_TYPE=none — een door OpenFSC ondersteunde modus). De
       # controller-management (dienst publiceren, grant->sign->accept) werkt zonder
       # loginscherm; OIDC is enkel de auth-laag ervoor en is niet nodig om dienst-
@@ -232,15 +297,19 @@ services:
       AUTHZ_TYPE: rbac
       CSRF_PROTECTION_ENABLED: "false"
       AUDITLOG_TYPE: stdout
-      TLS_ROOT_CERT: /pki/internal/magazijn-a/ca/root.pem
-      TLS_CERT: /pki/internal/magazijn-a/manager/cert.pem
-      TLS_KEY: /pki/internal/magazijn-a/manager/key.pem
+      TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
+      TLS_CERT: /pki/internal/example-provider/controller/cert.pem
+      TLS_KEY: /pki/internal/example-provider/controller/key.pem
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
+    networks:
+      default:
+        aliases:
+          - controller.example-provider.fsc-test.local
     depends_on:
       migrate-controller:
         condition: service_completed_successfully
-      manager-magazijn-a:
+      manager-example-provider:
         condition: service_started
 
 networks:

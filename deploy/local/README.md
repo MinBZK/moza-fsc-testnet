@@ -1,6 +1,6 @@
 # Lokale harness (#723) — directory + announce-proof
 
-Runnable shift-left van de ZAD-deploy: directory + magazijn-a-peer + SNI-router op
+Runnable shift-left van de ZAD-deploy: directory + example-provider-peer + SNI-router op
 :443. Bewijst dat een peer zich aanmeldt (announce) bij de directory. Bouwt voort op
 `docs/spikes/manager-443-sni/`.
 
@@ -41,8 +41,12 @@ printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> deploy/local/.env
 #    ZAD-artefact (migrate->serve in de pod-entrypoint).
 docker compose -f deploy/local/docker-compose.yaml up -d --build
 
-# 5. Bewijs de announce (pollt de directory-DB tot magazijn-a verschijnt).
-./deploy/local/smoke-announce.sh     # verwacht: "OK: magazijn-a is aangemeld" + exit 0
+# 5. Bewijs de announce (pollt de directory-DB tot example-provider verschijnt).
+./deploy/local/smoke-announce.sh     # verwacht: "OK: example-provider is aangemeld" + exit 0
+
+# 6. Bewijs de dienst-publicatie (maakt example-service aan + publiceert + pollt
+#    tot die geldig vindbaar is bij de directory).
+./deploy/local/smoke-publish.sh   # verwacht: "OK: example-service is gepubliceerd en vindbaar" + exit 0
 ```
 
 Klaar met kijken? Opruimen:
@@ -52,7 +56,7 @@ docker compose -f deploy/local/docker-compose.yaml down -v
 ```
 
 > **Hosts-bestand niet nodig.** De SNI-hostnames (`directory.fsc-test.local`,
-> `magazijn-a.fsc-test.local`) resolven *binnen* het docker-netwerk via de
+> `example-provider.fsc-test.local`) resolven *binnen* het docker-netwerk via de
 > router-aliases. De UIs benader je via `localhost`-poorten (hieronder).
 
 ## Beheer-UI (Fase C) — keycloak + controller
@@ -60,7 +64,7 @@ docker compose -f deploy/local/docker-compose.yaml down -v
 Na stap 4 draaien ook:
 
 - **directory-ui** (catalogus): `http://localhost:8080`, geen login. De aangemelde
-  magazijn-a-peer is hier zichtbaar.
+  example-provider-peer is hier zichtbaar.
 - **controller** (beheer-UI): `http://localhost:8090`. Draait lokaal **zonder login**
   (`AUTHN_TYPE=none`, een door OpenFSC ondersteunde modus). De management — dienst
   publiceren, toegang aanvragen, contract grant→sign→accept — werkt zonder loginscherm,
@@ -87,6 +91,22 @@ Volledig bedraden zoals OpenFSC vergt:
 Zet daarna `AUTHN_TYPE=oidc` op de controller en start keycloak mee:
 `docker compose --profile oidc up -d`.
 
+## Provider-onboarding (Fase D, #724) — inway + dienst publiceren
+
+Na stap 4 draaien ook:
+
+- **inway-example-provider**: registreert zich bij de controller en levert de ingress
+  vóór `stub-upstream`. In `GET /v1/inways` verschijnt `example-provider-inway`.
+- **stub-upstream**: neutrale HTTP-echo (`hashicorp/http-echo`) die de business-app
+  vervangt; wordt de `endpoint_url` van `example-service`. De échte data-call door de
+  inway is #728.
+- **toolbox**: curl-client op het netwerk voor de twee mTLS-onboarding-calls.
+
+`smoke-publish.sh` maakt `example-service` aan (controller Administration-API `:9444`)
+en publiceert 'm met één `servicePublication`-contract (manager Internal-API `:9443`);
+de manager signt server-side en de directory auto-accept (`AUTO_SIGN_GRANTS`). De dienst
+is daarna zichtbaar in de directory-ui (`http://localhost:8080`).
+
 ## Troubleshooting
 
 - **`verify.sh` rood / certs ontbreken** → stap 2 niet (volledig) gedraaid; draai
@@ -102,7 +122,7 @@ Zet daarna `AUTHN_TYPE=oidc` op de controller en start keycloak mee:
 - **Poort bezet** (443, 8080, 8081, 8090) → stop de conflicterende dienst of pas de
   `ports`/`bind` in `docker-compose.yaml` / `haproxy.cfg` aan.
 - **Smoke faalt** → `docker compose -f deploy/local/docker-compose.yaml logs
-  manager-directory manager-magazijn-a` voor de mesh-logs.
+  manager-directory manager-example-provider` voor de mesh-logs.
 - **`migrate-*` hangt / `database "…" does not exist`** → `postgres-init.sql` draait
   alleen bij een **vers** volume. Heb je al een postgres-volume van een eerdere run en
   voeg je een database toe, maak 'm dan eenmalig aan:
@@ -120,7 +140,7 @@ De harness mount onze test-CA read-only op `/pki`. Per endpoint twee ketens:
 | `pki/out/<peer>/<endpoint>/{cert,key}.pem` | group-identity (hergebruikt voor token+contract) | `TLS_GROUP_CERT/KEY`, `TLS_GROUP_TOKEN_*`, `TLS_GROUP_CONTRACT_*` |
 | `pki/internal/<peer>/<endpoint>/{cert,key}.pem` | internal mTLS | `TLS_CERT/KEY`, `TLS_INTERNAL_UNAUTHENTICATED_*` |
 
-`<peer>` ∈ {`directory`, `magazijn-a`}; `<endpoint>` = de component (`manager` voor de
+`<peer>` ∈ {`directory`, `example-provider`}; `<endpoint>` = de component (`manager` voor de
 mesh, `directory` voor de directory-component). Internal-root is **per peer**. De mesh
 verifieert de hostname niet (auth op OIN), maar houd ze consistent met `SELF_ADDRESS`/SNI.
 

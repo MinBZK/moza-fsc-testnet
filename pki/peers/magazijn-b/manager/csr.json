@@ -1,7 +1,0 @@
-{
-  "CN": "manager.magazijn-b.fsc-test.local",
-  "key": { "algo": "rsa", "size": 4096 },
-  "hosts": ["manager.magazijn-b.fsc-test.local"],
-  "serialnumber": "00000001823288444000",
-  "names": [{ "O": "magazijn-b", "C": "NL" }]
-}
