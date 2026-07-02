@@ -193,7 +193,7 @@ Fase F (#727) documenteren: contract-bootstrap + `smoke-contract.sh` + troublesh
 
 - **Grant-hash voor token-scope**: OpenFSC-versiegevoelig; daarom best-effort in #727 en hard
   afgedekt via de native outway-egress in #728.
-- **`service`-veld in de connection-grant**: mogelijk `protocol` vereist (zoals de
-  publication-grant). Werkhypothese: niet nodig voor de connection-grant; bij een 400 op het
-  service-formaat toevoegen (gedocumenteerd in het script).
-</content>
+- **`service`-veld in de connection-grant**: **bevestigd (2026-07-02)** — het `service`-blok
+  VEREIST de discriminator `type: SERVICE_TYPE_SERVICE` (zonder → 500 "invalid service type"; de
+  publicatie-grant defaultte 'm, de connection-grant niet). `protocol` is hier niet nodig (dat
+  hoort bij de publicatie).

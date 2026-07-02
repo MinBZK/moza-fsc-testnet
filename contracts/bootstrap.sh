@@ -152,9 +152,9 @@ fi
 IV=$(cat /proc/sys/kernel/random/uuid)   # UUID v4; bij 400 op iv-formaat -> UUID v7 genereren
 NBF=$(date -u +%s)
 NAF=$((NBF + 315360000))                 # +10 jaar
-# De connection-grant heeft géén `protocol` (dat hoort bij de service-PUBLICATIE, niet bij de
-# connection) en géén `service.type` (v1.43.7 default = SERVICE_TYPE_SERVICE, zoals publish-service.sh).
-# Bij een 400 op het service-blok is `"type":"SERVICE_TYPE_SERVICE"` de eerste toevoeging om te proberen.
+# De connection-grant's `service` VEREIST de discriminator `type: SERVICE_TYPE_SERVICE` (anders
+# 500 "invalid service type"; de publicatie-grant defaultte 'm, de connection-grant niet). Géén
+# `protocol` (dat hoort bij de service-PUBLICATIE, niet bij de connection).
 echo "bootstrap: serviceConnection-contract indienen bij de consumer-manager..."
 RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: application/json' -d "{
   \"contract_content\": {
@@ -165,7 +165,7 @@ RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: applicati
     \"validity\": { \"not_before\": $((NBF - 60)), \"not_after\": $NAF },
     \"grants\": [ {
       \"type\": \"GRANT_TYPE_SERVICE_CONNECTION\",
-      \"service\": { \"peer_id\": \"$PROVIDER_OIN\", \"name\": \"$SERVICE_NAME\" },
+      \"service\": { \"type\": \"SERVICE_TYPE_SERVICE\", \"peer_id\": \"$PROVIDER_OIN\", \"name\": \"$SERVICE_NAME\" },
       \"outway\": {
         \"peer_id\": \"$CONSUMER_OIN\",
         \"identification\": {
