@@ -86,13 +86,13 @@ group-contract-cert (bewezen in `publish-service.sh` voor de `servicePublication
 
 Per fsc-core: *"de SHA-256-thumbprint van de publieke sleutel in het Outway-certificaat,
 HEX-encoded"* (64 hex-tekens). Cruciaal: het is de **publieke sleutel** (SubjectPublicKeyInfo),
-niet het hele certificaat — daardoor blijft het contract geldig bij cert-rotatie. **Bevestigd
-(2026-07-02): het is het INTERNAL-cert** (`pki/internal/example-consumer/outway/cert.pem`), niet
-het group-cert. De consumer identificeert zijn outway intern via de internal-CA (de outway spreekt
-zijn eigen manager + controller over dat cert aan), en `GetOutwayServices` matcht het grant daarop;
-met het group-thumbprint bleef `grant_links` leeg. Empirisch: de manager-actor-thumbprint in de
-audit-log == SPKI-SHA256-hex van het manager-internal-cert. Berekening **host-side** (de
-`toolbox`-image heeft geen openssl-CLI;
+niet het hele certificaat — daardoor blijft het contract geldig bij cert-rotatie. **Bevestigd via
+de OpenFSC-source (2026-07-02): het is het GROUP/mesh-cert**
+(`pki/out/example-consumer/outway/cert.pem`), niet het internal-cert. De outway registreert bij
+zijn controller met zijn group-cert (`externalCert`) en stuurt datzelfde group-thumbprint
+(`externalCert.PublicKeyThumbprint()`) naar `GetOutwayServices`; de manager matcht dat tegen
+`gsc.outway_public_key_thumbprint`. Berekening **host-side** (de `toolbox`-image heeft geen
+openssl-CLI;
 `bootstrap.sh` draait toch al host-side, net als de UUID/timestamp in `publish-service.sh`):
 
 ```bash
@@ -112,7 +112,7 @@ openssl x509 -in "$OUTWAY_CERT" -pubkey -noout \
 Spiegelt `deploy/local/publish-service.sh` (zelfde toolbox-mTLS-, idempotentie- en
 `ERRLOG`-conventies):
 
-1. **Thumbprint** van de consumer-outway-**internal**-cert berekenen (host-side openssl).
+1. **Thumbprint** van de consumer-outway-**group**-cert berekenen (host-side openssl).
 2. **Idempotentie-check** (scoped): als een eerdere run een geaccepteerd contract vastlegde
    (state-file met de `content_hash`), en die **exacte hash** staat nog op de provider →
    no-op. De check grept op de **globaal-unieke `content_hash`**, niet op servicenaam/OIN/`"accept"`

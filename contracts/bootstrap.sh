@@ -4,7 +4,7 @@
 # ServiceConnectionGrant-contract op tussen een consumer en een provider.
 #
 # Stroom (OpenFSC Manager Internal-API, bewezen patroon uit deploy/local/publish-service.sh):
-#   1. bereken de outway-INTERNAL-public-key-thumbprint (SPKI SHA-256 hex);
+#   1. bereken de outway-GROUP-public-key-thumbprint (SPKI SHA-256 hex);
 #   2. idempotentie: draagt een eerder geaccepteerd contract (state-file-hash) NOG de
 #      provider-accept op de provider? -> no-op;
 #   3. POST /v1/contracts (contract_content) op de EIGEN (consumer-)manager -> die tekent
@@ -45,13 +45,12 @@ PROVIDER_OIN="${PROVIDER_OIN:-00000000000000000030}"
 SERVICE_NAME="${SERVICE_NAME:-example-service}"
 GROUP_ID="${GROUP_ID:-moza-fbs-test}"
 
-# Outway-INTERNAL-cert (host-pad): hiervan de public-key-thumbprint voor de grant. De consumer
-# identificeert zijn outway INTERN via het internal-cert (de outway spreekt zijn eigen manager +
-# controller aan over de internal-CA; die kennen 'm dus bij zijn internal-thumbprint). Empirisch
-# bevestigd: de manager-actor-thumbprint in de audit-log == SPKI-SHA256-hex van het internal-cert.
-# Met het GROUP-cert-thumbprint bleef GetOutwayServices leeg (grant_links: []). De thumbprint blijft
-# stabiel bij cert-rotatie (het is de publieke sleutel, niet het cert).
-OUTWAY_CERT_HOST="${OUTWAY_CERT_HOST:-${REPO_ROOT}/pki/internal/example-consumer/outway/cert.pem}"
+# Outway-GROUP-cert (host-pad): hiervan de public-key-thumbprint voor de grant. BEVESTIGD via de
+# OpenFSC-source: de outway registreert bij zijn controller met zijn GROUP-cert (externalCert) en
+# stuurt datzelfde group-thumbprint (externalCert.PublicKeyThumbprint()) naar GetOutwayServices; de
+# manager matcht dat tegen gsc.outway_public_key_thumbprint. Dus het GROUP-cert, niet het internal.
+# Thumbprint = SPKI-SHA256-hex van de publieke sleutel (stabiel bij cert-rotatie).
+OUTWAY_CERT_HOST="${OUTWAY_CERT_HOST:-${REPO_ROOT}/pki/out/example-consumer/outway/cert.pem}"
 
 # Consumer-manager (indienen) + provider-manager (accepteren): Internal-API :9443, internal-certs.
 CONSUMER_MANAGER="${CONSUMER_MANAGER:-https://manager.example-consumer.fsc-test.local:9443}"
