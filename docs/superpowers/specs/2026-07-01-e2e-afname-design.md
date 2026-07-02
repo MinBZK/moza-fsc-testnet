@@ -93,6 +93,9 @@ docker-host bij de eerste run:
 
 1. **txlog serve-subcommando**: `txlog-api serve` (gespiegeld op `manager serve`). Als het image
    een ander default-commando heeft: `docker run --rm …/txlog-api:v1.43.7 --help`.
+   **Bevestigd (2026-07-02):** `migrate up` leest de DSN ALLEEN uit `--postgres-dsn` (niet uit env,
+   anders dan serve) — de `migrate-txlog-*`-commando's geven de vlag mee (zonder hangt migrate op
+   een default-DSN). `serve` leest de DSN wél uit env (`STORAGE_POSTGRES_DSN`/`POSTGRES_*`).
 2. **Grant-hash-suggestie-formaat**: `smoke-e2e.sh` grept `$1$<n>$<base64url>` (in body én headers).
    Wijkt het formaat af, pas de regex aan (dump de outway-respons op de FAIL-tak).
 3. **txlog-tabel/-kolommen**: schema-agnostisch opgezocht op kolom `transaction_id`; de correlatie

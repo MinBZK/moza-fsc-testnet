@@ -503,7 +503,10 @@ services:
   # ---- #728: transaction-log API's (per peer) -------------------------------------------------
   migrate-txlog-example-provider:
     image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
-    command: [/usr/local/bin/txlog-api, migrate, up]
+    # `migrate up` leest de DSN ALLEEN uit --postgres-dsn (niet uit env, anders dan serve) — net als
+    # de manager/controller-migrates. Zonder de vlag verbindt migrate met een default en hangt 't.
+    command: [/usr/local/bin/txlog-api, migrate, up, --postgres-dsn,
+              "postgres://postgres:postgres@postgres:5432/fsc_txlog_example_provider?sslmode=disable"]
     environment:
       <<: *txlog-common-env
       POSTGRES_DATABASE: fsc_txlog_example_provider
@@ -537,7 +540,9 @@ services:
 
   migrate-txlog-example-consumer:
     image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
-    command: [/usr/local/bin/txlog-api, migrate, up]
+    # migrate leest de DSN alléén uit --postgres-dsn (zie migrate-txlog-example-provider).
+    command: [/usr/local/bin/txlog-api, migrate, up, --postgres-dsn,
+              "postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable"]
     environment:
       <<: *txlog-common-env
       POSTGRES_DATABASE: fsc_txlog_example_consumer
