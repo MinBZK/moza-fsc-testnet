@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Genereert een lege CRL getekend door de intermediate (issuer van peer-certs) (#722).
+# Genereert een lege CRL getekend door de intermediate (issuer van peer-certs).
 #
 # cfssl 1.6.x gencrl-variant: output is base64-gecodeerde DER (geen JSON, geen rauwe bytes).
 # Decoded met `base64 -d`, geconverteerd naar PEM via `openssl crl -inform DER`.

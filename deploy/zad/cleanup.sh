@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Ruimt een ZAD-deployment op (#729) via de v2 Operations Manager API: DELETE .../{deployment}.
+# Ruimt een ZAD-deployment op via de v2 Operations Manager API: DELETE .../{deployment}.
 # Eén bron voor CLI + de workflow zad-cleanup.yml. Generiek: werkt voor de directory én voor
 # peer-projecten (parametriseer ZAD_PROJECT + de deployment-naam). Zie docs/zad-cleanup.md en
 # [[zad-deploy-api-model]]; spiegelt de idiomen van deploy/zad/upsert-directory.sh.

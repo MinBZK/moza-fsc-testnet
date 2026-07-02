@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke (#725): bewijst dat example-consumer (a) zich aanmeldt (announce) bij de directory
+# Smoke: bewijst dat example-consumer (a) zich aanmeldt (announce) bij de directory
 # ÉN (b) de door example-provider gepubliceerde example-service kan vinden (discovery).
 # Announce: pollt de directory-DB (peers.peers, zoals smoke-announce.sh). Discovery: bevraagt de
 # consumer-manager via de mesh-API (GET /v1/peers/{dir}/services, zoals smoke-publish.sh) — geen

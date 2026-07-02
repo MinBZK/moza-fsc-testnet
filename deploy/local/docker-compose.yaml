@@ -1,4 +1,4 @@
-# Lokale harness (#723). Zie deploy/local/README.md voor het cert-contract (#722).
+# Lokale harness. Zie deploy/local/README.md voor het cert-contract.
 x-manager-image: &manager-image docker.io/federatedserviceconnectivity/manager:${IMAGE_TAG:-v1.43.7}
 x-manager-common-env: &manager-common-env
   LOG_TYPE: local
@@ -10,7 +10,7 @@ x-manager-common-env: &manager-common-env
   DISABLE_CRL_CHECKS: "true"            # lokaal geen CRL-distributiepunt (zie README)
   TLS_GROUP_ROOT_CERT: /pki/ca/root.pem
 
-# #728: gedeelde txlog-api-env (image `txlog-api`; eigen DB `open_fsc_tx_log`-analoog per peer).
+# gedeelde txlog-api-env (image `txlog-api`; eigen DB `open_fsc_tx_log`-analoog per peer).
 # txlog spreekt mTLS op de INTERNAL PKI (niet de group): inway/outway/manager presenteren hun
 # internal-cert; txlog trust de per-peer internal-CA. Geen GROUP_ID (group-agnostische opslag).
 x-txlog-common-env: &txlog-common-env
@@ -52,7 +52,7 @@ services:
           - directory.fsc-test.local
           - example-provider.fsc-test.local
           - example-consumer.fsc-test.local
-          # #728: de inway-data-SNI hoort op de ROUTER (:443-passthrough), niet op de
+          # de inway-data-SNI hoort op de ROUTER (:443-passthrough), niet op de
           # inway-container zelf (die luistert op :8443). Anders round-robint docker-DNS
           # tussen router en inway en valt de helft van de calls op een dode :443.
           - inway.example-provider.fsc-test.local
@@ -123,11 +123,11 @@ services:
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://example-provider.fsc-test.local:443
-      # #728: de manager bevraagt bij token-uitgifte de eigen controller naar de dienst
+      # de manager bevraagt bij token-uitgifte de eigen controller naar de dienst
       # (/v1/groups/{group}/services/{service}); zonder dit adres faalt /token met "unsupported
       # protocol scheme". Registratie-API :9443, manager presenteert zijn internal-cert.
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
-      # #728: echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
+      # echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
       TX_LOG_API_ADDRESS: https://txlog.example-provider.fsc-test.local:9443
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
@@ -161,9 +161,9 @@ services:
 
   stub-upstream:
     # Neutrale HTTP-echo die de business-app vervangt (Spec A). Wordt de endpoint_url
-    # van example-service; in #724 niet gedialed (data-pad = #728).
+    # van example-service; in de provider-onboarding niet gedialed (data-pad = vervolgwerk).
     image: docker.io/hashicorp/http-echo:1.0
-    command: ["-listen=:8080", "-text=hello from example-provider stub-upstream (#724)"]
+    command: ["-listen=:8080", "-text=hello from example-provider stub-upstream"]
 
   inway-example-provider:
     image: docker.io/federatedserviceconnectivity/inway:${IMAGE_TAG:-v1.43.7}
@@ -187,7 +187,7 @@ services:
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
       # Eigen manager, internal-unauthenticated poort:
       MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-provider.fsc-test.local:9444
-      # #728: echte txlog-api (INTERNAL-PKI mTLS). Bij een inkomende data-call logt de inway
+      # echte txlog-api (INTERNAL-PKI mTLS). Bij een inkomende data-call logt de inway
       # hier de transactie (direction: in) met dezelfde Fsc-Transaction-Id als de outway.
       TX_LOG_API_ADDRESS: https://txlog.example-provider.fsc-test.local:9443
       TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
@@ -199,7 +199,7 @@ services:
     volumes:
       - "${PKI_DIR:?zet PKI_DIR in .env}:/pki:ro"
     # NB: géén network-alias inway.example-provider.fsc-test.local hier — die hoort op de
-    # router (:443-SNI-passthrough, zie #728). De router-backend bereikt deze container via
+    # router (:443-SNI-passthrough, zie de router-service hierboven). De router-backend bereikt deze container via
     # de compose-servicenaam `inway-example-provider:8443`.
     depends_on:
       controller-example-provider:
@@ -361,7 +361,7 @@ services:
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://example-consumer.fsc-test.local:443
-      # #728: echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
+      # echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
       TX_LOG_API_ADDRESS: https://txlog.example-consumer.fsc-test.local:9443
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
@@ -429,7 +429,7 @@ services:
       POSTGRES_PASSWORD: postgres
       PGSSLMODE: disable
       STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_controller_example_consumer?sslmode=disable
-      # Lokaal ZONDER login (AUTHN_TYPE=none); grant-admin (afnemer-toegang) begint pas in #727.
+      # Lokaal ZONDER login (AUTHN_TYPE=none); grant-admin (afnemer-toegang) komt in de contract-bootstrap.
       AUTHN_TYPE: none
       AUTHZ_TYPE: rbac
       CSRF_PROTECTION_ENABLED: "false"
@@ -464,24 +464,24 @@ services:
       # Outway = niet-adresseerbare egress-client: identificeert zich naar de provider via
       # de cert-thumbprint (FSC grant outway.identification.public_key_thumbprint), niet via
       # een SELF_ADDRESS zoals de inway. LISTEN_ADDRESS = lokale proxy-poort voor de app.
-      # #728: plain-HTTP app-ingress op :8080 (https.enabled=false in de chart), zodat de app
+      # plain-HTTP app-ingress op :8080 (https.enabled=false in de chart), zodat de app
       # (of smoke-e2e via toolbox) de outway aanroept met een `Fsc-Grant-Hash`-header.
       LISTEN_ADDRESS: 0.0.0.0:8080
       MONITORING_ADDRESS: 0.0.0.0:8081
       DISABLE_CRL_CHECKS: "true"
-      # #728 egress-config (uit de open-fsc-outway-chart): resolvet grant-hash -> service ->
+      # egress-config (uit de open-fsc-outway-chart): resolvet grant-hash -> service ->
       # inway-adres via de EIGEN manager (authenticated internal :9443) + registreert bij de
       # eigen controller. GRANT_LINKS_CACHE_TTL = Go-duration. ENABLE_GRANT_HASH_SUGGESTION
       # laat de outway de bruikbare grant-hash teruggeven bij een call zónder geldige hash
       # (zo ontdekt smoke-e2e.sh de hash).
       MANAGER_INTERNAL_ADDRESS: https://manager.example-consumer.fsc-test.local:9443
-      # Behouden als boot-presence-hedge: #725 gebruikte deze en de outway-image kan 'm nog
+      # Behouden als boot-presence-hedge: een eerdere consumer-smoke gebruikte deze en de outway-image kan 'm nog
       # presence-checken. De egress-config gebruikt de authenticated MANAGER_INTERNAL_ADDRESS.
       MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-consumer.fsc-test.local:9444
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-consumer.fsc-test.local:9443
       GRANT_LINKS_CACHE_TTL: 5s
       ENABLE_GRANT_HASH_SUGGESTION: "true"
-      # #728: echte txlog-api (INTERNAL-PKI mTLS). Bij egress logt de outway hier de transactie
+      # echte txlog-api (INTERNAL-PKI mTLS). Bij egress logt de outway hier de transactie
       # (direction: out) met de door hem gegenereerde Fsc-Transaction-Id.
       TX_LOG_API_ADDRESS: https://txlog.example-consumer.fsc-test.local:9443
       TLS_ROOT_CERT: /pki/internal/example-consumer/ca/root.pem
@@ -504,7 +504,7 @@ services:
       txlog-example-consumer:
         condition: service_started
 
-  # ---- #728: transaction-log API's (per peer) -------------------------------------------------
+  # ---- transaction-log API's (per peer) -------------------------------------------------------
   migrate-txlog-example-provider:
     image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
     # `migrate up` leest de DSN ALLEEN uit --postgres-dsn (niet uit env, anders dan serve) — net als

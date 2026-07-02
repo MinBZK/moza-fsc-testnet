@@ -1,4 +1,4 @@
-# Bouwt + pusht de manager-migrate-wrapper-image naar ghcr (#729).
+# Bouwt + pusht de manager-migrate-wrapper-image naar ghcr.
 # ZAD pullt images uit een registry; de wrapper (deploy/zad/manager-migrate, migrate->serve)
 # bestond tot nu toe alleen lokaal (docker compose build). Deze job publiceert 'm zodat
 # deploy.yml de directory-manager op ZAD kan draaien — én previews een branch-image hebben.
