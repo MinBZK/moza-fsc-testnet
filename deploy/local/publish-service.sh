@@ -58,9 +58,16 @@ if tb "$MANAGER/v1/services/publications" | grep -q "\"$SERVICE_NAME\""; then
   echo "  al gepubliceerd, skip contract."
 else
   # UUID + timestamp zijn host-lokaal (geen container-context nodig) -> host-builtins i.p.v. toolbox-exec.
-  IV=$(cat /proc/sys/kernel/random/uuid)   # UUID v4 (36 tekens); als de manager 400 geeft op het iv-formaat, genereer UUID v7
-  NBF=$(date -u +%s)
+  # UUID v4 (36 tekens): /proc is Linux-only, op macOS valt 'ie terug op uuidgen (lowercase).
+  # Als de manager 400 geeft op het iv-formaat, genereer UUID v7.
+  IV=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr '[:upper:]' '[:lower:]')
+  # Docker Desktop (macOS) draait in een VM waarvan de klok op de host kan achterlopen; de manager
+  # weigert dan created_at "in the future" (HTTP 500). Backdate met een skew-marge — op Linux is de
+  # skew ~0, dus onschadelijk. Blijft persistent falen? Herstart de Docker-VM (klok resynct).
+  NBF=$(( $(date -u +%s) - 60 ))
   NAF=$((NBF + 315360000))                 # +10 jaar
+  # --fail-with-body laat curl bij 4xx/5xx non-zero exiten MAAR print de body; vang beide (spiegelt
+  # bootstrap.sh) zodat `set -e` ons niet vóór de diagnostiek killt en de manager-respons zichtbaar is.
   RESP=$(tb -X POST "$MANAGER/v1/contracts" -H 'Content-Type: application/json' -d "{
     \"contract_content\": {
       \"iv\": \"$IV\",
@@ -74,8 +81,8 @@ else
         \"service\": { \"peer_id\": \"$PROVIDER_OIN\", \"name\": \"$SERVICE_NAME\", \"protocol\": \"PROTOCOL_TCP_HTTP_1.1\" }
       } ]
     }
-  }")
-  # --fail-with-body vangt HTTP-4xx/5xx; een 2xx zónder content_hash duidt op een geweigerd formaat.
+  }") || { echo "FAIL: POST /v1/contracts geweigerd (iv=$IV): ${RESP:-<leeg>} $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
+  # Een 2xx zónder content_hash duidt op een geweigerd formaat (iv/group_id).
   printf '%s' "$RESP" | grep -q '"content_hash"' \
     || { echo "FAIL: contract-respons zonder content_hash (mogelijk geweigerd iv/group_id-formaat): $RESP" >&2; exit 1; }
   echo "  contract ingediend (manager signt; directory auto-accept): $RESP"

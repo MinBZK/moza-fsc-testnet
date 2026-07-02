@@ -161,8 +161,13 @@ if [ -f "$STATE_FILE" ]; then
 fi
 
 # --- 2. Contract opstellen + indienen bij de eigen (consumer-)manager -------------------------
-IV=$(cat /proc/sys/kernel/random/uuid)   # UUID v4; bij 400 op iv-formaat -> UUID v7 genereren
-NBF=$(date -u +%s)
+# UUID v4: /proc is Linux-only, op macOS valt 'ie terug op uuidgen (lowercase).
+# Bij 400 op iv-formaat -> UUID v7 genereren.
+IV=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr '[:upper:]' '[:lower:]')
+# Docker Desktop (macOS) draait in een VM waarvan de klok op de host kan achterlopen; de manager
+# weigert dan created_at "in the future" (HTTP 500). Backdate met een skew-marge — op Linux is de
+# skew ~0, dus onschadelijk. Blijft persistent falen? Herstart de Docker-VM (klok resynct).
+NBF=$(( $(date -u +%s) - 60 ))
 NAF=$((NBF + 315360000))                 # +10 jaar
 # De connection-grant's `service` VEREIST de discriminator `type: SERVICE_TYPE_SERVICE` (anders
 # 500 "invalid service type"; de publicatie-grant defaultte 'm, de connection-grant niet). Géén
