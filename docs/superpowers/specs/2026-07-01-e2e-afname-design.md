@@ -109,4 +109,3 @@ docker-host bij de eerste run:
 5. **Inway-401-body**: `ERROR_CODE_ACCESS_TOKEN_MISSING` komt uit de FSC-standaard-errortabel; de
    exacte header/body van v1.43.7 kan iets afwijken. De smoke eist HTTP 401 **én** de errorcode
    (AND — een kale 401 telt niet); wijkt de errorcode-string af, pas 'm aan (FAIL-dump toont 'm).
-</content>
