@@ -67,4 +67,3 @@ export ZAD_API_KEY=...                          # niet inline
   timeout-status (geen valse "opgeruimd"). De deploy-tegenhanger `upsert-directory.sh` heeft nog de
   oudere `poll_task` (timeout → `return 0`, geen HTTP-code-check) en maskeert een gefaalde task met
   `… || { … }`; die verdient dezelfde hardening (aparte PR, raakt de #723-deploy).
-</content>
