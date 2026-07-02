@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Smoke (#725): bewijst dat example-consumer (a) zich aanmeldt (announce) bij de directory
 # ÉN (b) de door example-provider gepubliceerde example-service kan vinden (discovery).
-# Pollt de directory-DB (zoals smoke-announce.sh). Vereist dat de provider eerst publiceerde
-# (draai `publish-service.sh` of `smoke-publish.sh` vooraf).
-# NB: tabel `peers.peers` + kolom `id`/`manager_address` zijn een load-bearing schema-contract
-# (spiegelt smoke-announce.sh). De services-tabel wordt dynamisch geresolved (schema-agnostisch).
+# Announce: pollt de directory-DB (peers.peers, zoals smoke-announce.sh). Discovery: bevraagt de
+# consumer-manager via de mesh-API (GET /v1/peers/{dir}/services, zoals smoke-publish.sh) — geen
+# koppeling aan een directory-tabelnaam. Vereist dat de provider eerst publiceerde
+# (`publish-service.sh` / `smoke-publish.sh` vooraf).
+# NB: tabel `peers.peers` + kolom `id`/`manager_address` zijn een load-bearing schema-contract.
 set -euo pipefail
 
 COMPOSE=(docker compose -f "$(dirname "$0")/docker-compose.yaml")
@@ -52,25 +53,26 @@ if [ "$announced" -eq 0 ]; then
   exit 1
 fi
 
-# --- 2. Discovery: example-service vindbaar in de directory-catalogus -------------------
-# Resolve de services-tabel schema-agnostisch (directory-schema kan per versie verschillen).
-SVC_TBL=$(psqlq "SELECT format('%I.%I', table_schema, table_name)
-                 FROM information_schema.tables
-                 WHERE table_name = 'services' ORDER BY table_schema LIMIT 1;" | head -n1 || true)
-if [ -z "$SVC_TBL" ]; then
-  echo "FAIL: geen 'services'-tabel in de directory-DB (schema-contract veranderd?)." >&2
-  [ -s "$ERRLOG" ] && { echo "  -> psql-fout:" >&2; tail -n 3 "$ERRLOG" >&2; }
-  exit 1
-fi
-echo "smoke-discover: services-tabel = ${SVC_TBL}; wachten tot ${SERVICE_NAME} vindbaar is..."
+# --- 2. Discovery: example-service vindbaar via de consumer-manager (mesh-API) ----------
+# De consumer bevraagt de directory via zijn EIGEN manager (internal-cert) naar de door
+# example-provider gepubliceerde diensten — spiegelt smoke-publish.sh's vindbaarheids-check,
+# maar vanaf de consumer-kant. Robuuster dan de directory-DB pollen (geen tabelnaam-koppeling).
+PROVIDER_OIN="00000000000000000030"
+CONS_MANAGER="https://manager.example-consumer.fsc-test.local:9443"
+CERT=/pki/internal/example-consumer/manager/cert.pem
+KEY=/pki/internal/example-consumer/manager/key.pem
+CA=/pki/internal/example-consumer/ca/root.pem
 
+echo "smoke-discover: wachten tot ${SERVICE_NAME} vindbaar is via de consumer-manager..."
 elapsed=0
 while [ "$elapsed" -lt "$TIMEOUT" ]; do
-  cnt=$(psqlq "SELECT count(*) FROM ${SVC_TBL} WHERE name = '${SERVICE_NAME}';" || true)
-  if [ "${cnt:-0}" -ge 1 ] 2>/dev/null; then
-    echo "OK: ${SERVICE_NAME} is vindbaar in de directory (discovery)."
-    echo "Catalogus:"
-    psqlq "SELECT name FROM ${SVC_TBL};" || true
+  out=$("${COMPOSE[@]}" exec -T toolbox curl -s --fail-with-body \
+          --cert "$CERT" --key "$KEY" --cacert "$CA" \
+          "$CONS_MANAGER/v1/peers/$DIR_OIN/services?peer_id=$PROVIDER_OIN" 2>"$ERRLOG" || true)
+  [ -s "$ERRLOG" ] && { echo "  WARN: query-fout: $(tail -n1 "$ERRLOG")" >&2; : >"$ERRLOG"; }
+  if printf '%s' "$out" | grep -q "\"$SERVICE_NAME\""; then
+    echo "OK: ${SERVICE_NAME} is vindbaar via de consumer-manager (discovery)."
+    printf 'Catalogus: %s\n' "$out"
     echo "SMOKE-DISCOVER GROEN."
     exit 0
   fi
@@ -78,7 +80,7 @@ while [ "$elapsed" -lt "$TIMEOUT" ]; do
   echo "  ...nog niet vindbaar (${elapsed}s)"
 done
 
-echo "FAIL: ${SERVICE_NAME} niet vindbaar in de directory binnen ${TIMEOUT}s (provider gepubliceerd?)." >&2
-[ -s "$ERRLOG" ] && { echo "  -> laatste psql-fout:" >&2; tail -n 3 "$ERRLOG" >&2; }
-"${COMPOSE[@]}" logs --tail=50 manager-directory manager-example-provider >&2 || true
+echo "FAIL: ${SERVICE_NAME} niet vindbaar via de consumer-manager binnen ${TIMEOUT}s (provider gepubliceerd?)." >&2
+[ -s "$ERRLOG" ] && { echo "  -> laatste query-fout:" >&2; tail -n 3 "$ERRLOG" >&2; }
+"${COMPOSE[@]}" logs --tail=50 manager-directory manager-example-consumer manager-example-provider >&2 || true
 exit 1
