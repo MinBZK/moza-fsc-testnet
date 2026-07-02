@@ -1,6 +1,7 @@
 # Directe ZAD-API-deploy van de directory (#723) via de v2 Operations Manager API.
 # Roept deploy/zad/upsert-directory.sh aan (zelfde bron als de CLI). `validate` is read-only;
-# `apply` upsert het deployment. Model: PR = eigen deployment `pr-<PR-nummer>`; main -> deployment `test`.
+# `apply` upsert het deployment. Model: push main -> `test`; PR -> preview `pr-<PR-nummer>`
+# (open/sync = deploy, close = cleanup); workflow_dispatch = handmatige override.
 #
 # Dekt alleen de deploy-API (deployment + componenten + images + domain_format). NIET via de API
 # (UI-only): bijlagen (cert-mount), env-vars, "Publicatie op het web" (passthrough-TLS).
@@ -17,6 +18,8 @@ on:
       - "deploy/zad/manager-migrate/**"
       - "group/**"
       - ".github/workflows/zad-deploy-directory.yml"
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       mode:
@@ -45,11 +48,42 @@ permissions:
   contents: read
 
 concurrency:
-  # Bij push zijn er geen inputs -> deployment 'test'. Deploys niet halverwege killen.
-  group: zad-deploy-directory-${{ inputs.deployment || 'test' }}
+  # Eén run per deployment tegelijk: PR -> pr-<n>, push/dispatch -> test/input. Deploys niet
+  # halverwege killen (een halve ZAD-deploy laat een inconsistente staat achter).
+  group: zad-deploy-directory-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || inputs.deployment || 'test' }}
   cancel-in-progress: false
 
 jobs:
+  # Afgeleide waarden op één plek: deployment-naam, OpenFSC-basistag, manager-image-suffix.
+  meta:
+    runs-on: ubuntu-latest
+    outputs:
+      deployment: ${{ steps.m.outputs.deployment }}
+      image_base: ${{ steps.m.outputs.image_base }}
+      manager_suffix: ${{ steps.m.outputs.manager_suffix }}
+    steps:
+      - id: m
+        env:
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          INPUT_DEPLOYMENT: ${{ inputs.deployment }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          image_base="${INPUT_IMAGE_TAG:-v1.43.7}"
+          if [ "$EVENT" = "pull_request" ]; then
+            deployment="pr-${PR}"
+            manager_suffix="pr-${PR}"
+          else
+            deployment="${INPUT_DEPLOYMENT:-test}"
+            manager_suffix=""
+          fi
+          {
+            echo "deployment=${deployment}"
+            echo "image_base=${image_base}"
+            echo "manager_suffix=${manager_suffix}"
+          } >> "$GITHUB_OUTPUT"
+
   # Detecteert of de manager-migrate-wrapper (image) wijzigde, zodat de build alleen dan draait.
   # git diff in een run-step (geen marketplace-action) -> OpenSSF Scorecard blijft groen.
   changes:
