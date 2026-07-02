@@ -121,8 +121,9 @@ Gemaakte keuzes:
   vaak gemist, dan gaan we naar échte externe notificatie (Slack/mail), niet naar een
   half-oplossing. Fully-auto, géén environment-approval (conform het FBS-model).
 
-Ontwerp: `docs/superpowers/specs/2026-07-02-auto-deploy-test-design.md`. Mechaniek:
-`docs/zad-directory-deploy.md`.
+Ontwerp: `docs/superpowers/specs/2026-07-02-auto-deploy-test-design.md`. Zie ook
+`docs/superpowers/specs/2026-07-02-directory-pr-preview-design.md` voor de automatische
+PR-preview. Mechaniek: `docs/zad-directory-deploy.md`.
 
 **PR-preview-eigenschappen:** eigen deployment `pr-<PR-nummer>` met een eigen verse managed DB
 (de SoR-`test`-DB wordt niet gekloond/geleegd). Bijlagen (cert-mount) en "Publicatie op het web"

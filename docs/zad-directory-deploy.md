@@ -121,8 +121,8 @@ read -rs ZAD_API_KEY; export ZAD_API_KEY              # plak de key niet inline
 ./deploy/zad/upsert-directory.sh validate             # read-only auth/connectie-check
 ./deploy/zad/upsert-directory.sh plan  test v1.43.7   # toont alle JSON-bodies, muteert NIET (review)
 ./deploy/zad/upsert-directory.sh apply test v1.43.7   # upsert deployment + maakt componenten (env), pollt tasks
-# preview die de componenten van test erft (alleen images):
-./deploy/zad/upsert-directory.sh apply pr-123 v1.43.7 test
+# ad-hoc preview (eigen verse DB; auto-previews doen dit via de pull_request-trigger):
+./deploy/zad/upsert-directory.sh apply pr-123 v1.43.7
 ```
 
 Het script maakt het deployment (`:upsert-deployment`, `domain_format=component-deployment-project`)
@@ -137,6 +137,10 @@ zodra 'ie op `main` staat). Env (stap 4) zit nu in het script — UI-env niet me
 naar main** — een merge (CI groen) rolt de directory automatisch uit naar deployment `test`
 (besluit in `docs/ontwerpkeuzes.md`, ontwerp in `docs/superpowers/specs/`). Push-pad zet vast:
 `mode=apply`, `deployment=test`, `image_tag=v1.43.7`, `manager_tag=""` (canonieke tag).
+
+Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) automatisch een
+`pr-<PR-nummer>`-preview uit en ruimt een `cleanup-preview`-job die op bij het sluiten van de PR;
+`workflow_dispatch` blijft voor handmatige overrides.
 
 Path-filter (alleen deze paden triggeren de auto-deploy):
 `deploy/zad/upsert-directory.sh`, `deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf.
