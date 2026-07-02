@@ -8,8 +8,8 @@
 ## Aanleiding
 
 Spec A bewees de generieke **provider**-onboarding (`example-provider`: cert → announce →
-dienst publiceren → vindbaar in directory) en scoopte de **consumer**-kant expliciet uit naar
-#725. Deze spec is de tegenhanger: een neutrale afnemende peer die zich aanmeldt op de
+dienst publiceren → vindbaar in directory) en scoopte de **consumer**-kant expliciet uit
+naar #725. Deze spec is de tegenhanger: een neutrale afnemende peer die zich aanmeldt op de
 federatie en de gepubliceerde dienst terugvindt.
 
 De grenzen zijn scherp getrokken tegen de buur-issues (in #725's body vastgelegd):
