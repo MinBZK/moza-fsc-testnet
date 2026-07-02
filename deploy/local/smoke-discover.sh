@@ -12,8 +12,8 @@ COMPOSE=(docker compose -f "$(dirname "$0")/docker-compose.yaml")
 CONSUMER_OIN="00000000000000000020"
 DIR_OIN="00000000000000000010"
 SERVICE_NAME="example-service"
-TIMEOUT=120
-INTERVAL=5
+TIMEOUT=10
+INTERVAL=2
 
 # Vang psql-stderr op i.p.v. weg te gooien: een persistente DB-fout (auth, ontbrekende
 # kolom/tabel, dode container) mag niet als "nog niet vindbaar" maskeren — surface 'm op
