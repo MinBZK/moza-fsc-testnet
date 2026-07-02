@@ -3,9 +3,10 @@
 # Zet de directory op ZAD via de v2 Operations Manager API (#723). Eén bron voor CLI + de
 # workflow zad-deploy-directory.yml. Zie docs/zad-directory-deploy.md en [[zad-deploy-api-model]].
 #
-# Model: PR = eigen deployment `pr-<PR-nummer>`; main -> deployment `test`. `:upsert-deployment` REFEREERT alleen
-# bestaande componenten; componenten maak je met POST /components (incl. env_vars/services/aliases).
-# Previews kunnen `cloneFrom` een bestaande deployment (erven componenten, alleen images zetten).
+# Model: PR = eigen deployment `pr-<PR-nummer>`; main -> deployment `test`. `:upsert-deployment` zet
+# per component de {reference,image} (DAAR hangt het draaiende image van het deployment) én maakt/
+# updatet het deployment; POST /components verrijkt elke component met env_vars/port/services/aliases.
+# Previews kunnen `cloneFrom` een bestaande deployment (erven componenten; images uit de upsert-body).
 # NIET via de API (UI-only): bijlagen (cert-mount) + "Publicatie op het web" (passthrough-TLS).
 #
 # DB: ZAD's managed Postgres (`postgresql-database`-service op de manager). De connection komt uit
@@ -98,7 +99,9 @@ component_body() {  # $1=name $2=image $3=port $4=env  [$5=services_json=[]]  [$
 }
 
 DEPLOY_BODY="$(jq -n --arg d "${DEPLOYMENT}" --arg cf "${CLONE_FROM}" \
-  '{deploymentName:$d, domain_format:"component-deployment-project", components:[]}
+  --arg mgr "${MANAGER_IMAGE}" --arg ui "${UI_IMAGE}" \
+  '{deploymentName:$d, domain_format:"component-deployment-project",
+    components:[{reference:"dirmgr", image:$mgr}, {reference:"dirui", image:$ui}]}
    + (if $cf=="" then {} else {cloneFrom:$cf, forceClone:true} end)')"
 
 MANAGER_BODY="$(component_body dirmgr "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}" '["postgresql-database"]' "${MANAGER_ALIASES}")"
