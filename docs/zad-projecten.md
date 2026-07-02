@@ -63,8 +63,8 @@ Gevolgen:
    (a) welke images er per component zijn en (b) welke env-vars/mounts elke
    component nodig heeft. Zie de chart-`deployment.yaml` per component in
    [open-fsc](https://gitlab.com/rinis-oss/fsc/open-fsc) (`helm/charts/open-fsc-*`).
-2. **Configuratie = env-vars + gemounte files**, niet CLI-args (ZAD staat geen
-   component-args toe). De manager-, inway- en outway-images zijn volledig via
+2. **Configuratie = env-vars + gemounte files**, niet CLI-args (ZAD ondersteunt nog
+   geen component-args). De manager-, inway- en outway-images zijn volledig via
    env-vars te configureren.
 3. **Env wordt éénmalig per component gezet in Operations Manager** — de
    deploy-action draagt geen env. Previews erven via `clone-from: test`.
@@ -126,10 +126,11 @@ De env-var-templates (`.env.example`) worden in alle gevallen door het app-team
 - **ZAD `attachments` (cert-mount) → beschikbaar (2026-06-29).** Per-peer certs kunnen nu
   read-only gemount worden; de eerdere blocker voor #722/#723 is opgeheven. Mount group-trust +
   per-peer group/internal-certs op de gedocumenteerde paden (zie `peers/directory/manager.env.example`).
-- **DB-migraties → opgelost (wrapper-image, #723).** ZAD staat geen args/init-containers
-  toe, dus migreren zit nu in de image-entrypoint: `deploy/zad/manager-migrate/`
+- **DB-migraties → opgelost (wrapper-image, #723).** ZAD ondersteunt nog geen args/init-containers,
+  dus migreren zit nu in de image-entrypoint: `deploy/zad/manager-migrate/`
   (`migrate up && serve` in één dunne laag boven de stock-manager — geen broncode-fork).
-  De directory-job in `deploy.yml` gebruikt deze `manager-migrate`-image.
+  De directory-deploy (`deploy/zad/upsert-directory.sh` / `zad-deploy-directory.yml`) gebruikt
+  deze `manager-migrate`-image.
 - **Env is een handmatige stap.** Operations Manager-config is niet via de
   deploy-action te zetten; documenteer per component welke env nodig is. Templates:
   `peers/directory/manager.env.example`.

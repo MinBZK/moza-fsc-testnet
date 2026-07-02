@@ -100,13 +100,13 @@ Nummering = de naar ZAD gestuurde lijst (**1–4** bijlagen, **5–8** "Publicat
   certs zijn prima, geen her-uitgifte nodig.
 
 Hiermee is de cert-mount voor #723-op-ZAD volledig gespecificeerd. Resterende #723-prereqs (image
-via `build-manager-migrate.yml`, DB via `peers/directory/postgres.env.example`, env in Operations
-Manager) staan onder "Aangrenzende ZAD-prereqs".
+via `build-manager-migrate.yml`, managed Postgres via ZAD's `postgresql-database`-service, env via
+`deploy/zad/upsert-directory.sh`) staan onder "Aangrenzende ZAD-prereqs".
 
 ## Aangrenzende ZAD-prereqs (#723-deploy)
 
 - **Secrets/vars bestaan:** GitHub Actions secret `ZAD_API_KEY_DIRECTORY` + var
-  `ZAD_PROJECT_ID_DIRECTORY` (bevestigd, 2026-06-29) — `deploy.yml` gebruikt deze al.
+  `ZAD_PROJECT_ID_DIRECTORY` (bevestigd, 2026-06-29) — `zad-deploy-directory.yml` gebruikt deze.
 - **Image:** `manager-migrate` → ghcr via `.github/workflows/build-manager-migrate.yml` (#729).
-- **DB-bootstrap:** `POSTGRES_DB=fsc_directory` op directory-postgres
-  (`peers/directory/postgres.env.example`); de wrapper draait alleen `migrate up`.
+- **DB:** ZAD's managed Postgres (`postgresql-database`-service) — de DB bestaat al, dus de
+  wrapper draait alleen `migrate up` (geen CREATE DATABASE, geen eigen postgres-component).

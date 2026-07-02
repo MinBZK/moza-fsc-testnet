@@ -67,11 +67,11 @@ mTLS-passthrough is bewezen op het ODCN-prod-cluster (beide poorten, eigen cert,
 - **ZAD deployt images, geen Helm.** `zad-actions/deploy` neemt een `components:`-lijst van
   `{name, image}`. OpenFSC-charts = bron voor image- + env-namen, niet het deploy-artefact.
   Config = env-vars + gemounte certs (Operations Manager, éénmalig; previews erven via
-  `clone-from: test`). **DB-migratie (#723, opgelost):** ZAD staat geen args/init-containers
-  toe → migreren zit in een wrapper-image `deploy/zad/manager-migrate/` (`migrate up && serve`
+  `clone-from: test`). **DB-migratie (#723, opgelost):** ZAD ondersteunt nog geen args/init-containers
+  → migreren zit in een wrapper-image `deploy/zad/manager-migrate/` (`migrate up && serve`
   in de entrypoint; deploy-image, geen fork).
-- ZAD-pods configureren via **env-vars / gemounte files**, niet via CLI-args (ZAD staat geen
-  component-args toe).
+- ZAD-pods configureren via **env-vars / gemounte files**, niet via CLI-args (ZAD ondersteunt
+  nog geen component-args).
 
 ### ZAD-dependency: cert-mount (opgelost, 2026-06-29)
 
