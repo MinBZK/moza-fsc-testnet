@@ -226,7 +226,7 @@ consumer_valid() {  # 0=valid, 1=nog niet, 2=onbekend (geen jq)
 wait_valid() {  # pollt de consumer tot valid; 0=valid, 1=timeout, 2=onbekend (geen jq)
   local elapsed=0 rc
   while [ "$elapsed" -lt "$SYNC_TIMEOUT" ]; do
-    consumer_valid; rc=$?
+    rc=0; consumer_valid || rc=$?   # niet `consumer_valid; rc=$?` -> set -e killt bij non-zero
     [ "$rc" -eq 0 ] && return 0
     [ "$rc" -eq 2 ] && return 2
     sleep "$SYNC_INTERVAL"; elapsed=$((elapsed + SYNC_INTERVAL))
@@ -242,7 +242,7 @@ redistribute_accept() {  # her-push de provider-accept-sig naar de consumer (ide
 }
 
 echo "bootstrap: wachten tot de consumer-manager het contract '$HASH' als 'valid' ziet..."
-wait_valid; wv=$?
+wv=0; wait_valid || wv=$?   # niet `wait_valid; wv=$?` -> set -e killt bij non-zero return
 if [ "$wv" -eq 2 ]; then
   # Geen jq op de host -> kan de state niet lezen. Forceer één her-distributie zodat de accept-sig
   # zeker naar de consumer gaat, en ga door (installeer jq voor een harde valid-verificatie).
