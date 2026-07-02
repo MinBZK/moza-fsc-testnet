@@ -150,16 +150,19 @@ services:
       LOG_TYPE: local
       LOG_LEVEL: debug
       GROUP_ID: moza-fbs-test
-      NAME: example-provider-inway                 # geregistreerde inway-naam; SELF_ADDRESS wordt als inway_address doorgegeven bij CreateService
+      # geregistreerde inway-naam; SELF_ADDRESS wordt als inway_address doorgegeven bij CreateService
+      NAME: example-provider-inway
       SELF_ADDRESS: https://inway.example-provider.fsc-test.local:443
       LISTEN_ADDRESS: 0.0.0.0:8443
       MONITORING_ADDRESS: 0.0.0.0:8081
       DISABLE_CRL_CHECKS: "true"
-      # Registreert zich bij de controller via TLS op de controller-internal-cert (CN controller.example-provider.fsc-test.local):
+      # Registreert zich bij de controller via TLS op de controller-internal-cert
+      # (CN controller.example-provider.fsc-test.local):
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
       # Eigen manager, internal-unauthenticated poort:
       MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-provider.fsc-test.local:9444
-      # Presence-check (chart eist niet-leeg); placeholder -- inway mag crashen als de waarde gedialed wordt (dan txlog-api toevoegen, zie #728):
+      # Presence-check (chart eist niet-leeg); placeholder -- inway mag crashen als
+      # de waarde gedialed wordt (dan txlog-api toevoegen, zie #728):
       TX_LOG_API_ADDRESS: https://txlog.placeholder.invalid:7611
       TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
       TLS_CERT: /pki/internal/example-provider/inway/cert.pem
