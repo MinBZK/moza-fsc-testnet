@@ -4,8 +4,8 @@
 > peers kunnen announcen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
 > ZAD Operations Manager API (`https://zad.rijksapp.nl/openapi.json`, v2).
 >
-> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723` — nog naar het issuenummer
-> benoemd; nieuwe previews volgen `pr-<PR-nummer>`, zie Deploymodel). `migrate up` ok tegen de
+> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723` — nog met de oude
+> issuenummer-naam; auto-previews heten voortaan `pr-<PR-nummer>`). `migrate up` ok tegen de
 > managed Postgres, manager serveert, **self-announce geslaagd** (`EVENT_TYPE_CREATE_PEER`, OIN
 > `00000000000000000010`, SUCCEEDED). Cert-mount (ontwerp A) + managed DB bewezen op ODCN-prod.
 >
@@ -51,8 +51,9 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 > (`pr-<PR-nummer>`, bv. `pr-42`) — niet naar het issuenummer; wat naar `main` gaat landt in
 > deployment **`test`**. De directory = 2 componenten (`dirmgr` + `dirui`) op ZAD's managed
 > Postgres; een upsert van `test` vervangt de bestaande placeholder-component `directory` (image
-> leeg). Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een
-> PR-preview gebruikt zijn eigen `pr-<PR-nummer>`-deployment i.p.v. `test`.
+> leeg). Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR rolt
+> **automatisch** een preview `pr-<PR-nummer>` uit (`pull_request`-trigger); bij het sluiten van de
+> PR wordt die weer opgeruimd. `pr-<PR-nummer>` = het PR-nummer, niet het issuenummer.
 
 ## Stappen
 
