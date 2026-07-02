@@ -475,7 +475,7 @@ services:
       # presence-checken. De egress-config gebruikt de authenticated MANAGER_INTERNAL_ADDRESS.
       MANAGER_INTERNAL_UNAUTHENTICATED_ADDRESS: https://manager.example-consumer.fsc-test.local:9444
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-consumer.fsc-test.local:9443
-      GRANT_LINKS_CACHE_TTL: 30s
+      GRANT_LINKS_CACHE_TTL: 5s
       ENABLE_GRANT_HASH_SUGGESTION: "true"
       # #728: echte txlog-api (INTERNAL-PKI mTLS). Bij egress logt de outway hier de transactie
       # (direction: out) met de door hem gegenereerde Fsc-Transaction-Id.

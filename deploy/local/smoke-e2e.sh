@@ -30,7 +30,7 @@ GKEY=/pki/out/example-consumer/outway/key.pem
 GROOT=/pki/ca/root.pem
 TXDB_CONSUMER="${TXDB_CONSUMER:-fsc_txlog_example_consumer}"
 TXDB_PROVIDER="${TXDB_PROVIDER:-fsc_txlog_example_provider}"
-DISCOVER_TIMEOUT="${DISCOVER_TIMEOUT:-45}"; TXLOG_TIMEOUT="${TXLOG_TIMEOUT:-30}"; INTERVAL=3
+DISCOVER_TIMEOUT="${DISCOVER_TIMEOUT:-10}"; TXLOG_TIMEOUT="${TXLOG_TIMEOUT:-10}"; INTERVAL=2
 
 ERRLOG=$(mktemp); trap 'rm -f "$ERRLOG"' EXIT
 
@@ -48,7 +48,7 @@ bash "${REPO_ROOT}/contracts/bootstrap.sh"
 # Zonder geldige Fsc-Grant-Hash geeft de outway (met ENABLE_GRANT_HASH_SUGGESTION) de bruikbare
 # grant-hash(es) terug. Grant-hash-formaat: `$1$<n>$<base64url>` (zie open-fsc walkthrough).
 # `-i` neemt de headers mee, mocht de outway de suggestie in een header i.p.v. de body zetten.
-echo "smoke-e2e: grant-hash ontdekken via de outway (max ${DISCOVER_TIMEOUT}s; grant-links-cache-TTL=30s)..."
+echo "smoke-e2e: grant-hash ontdekken via de outway (max ${DISCOVER_TIMEOUT}s; grant-links-cache-TTL=5s)..."
 GH=""; elapsed=0
 while [ "$elapsed" -lt "$DISCOVER_TIMEOUT" ]; do
   SUGG=$(tbx -i "$OUTWAY/" -H 'Fsc-Grant-Hash: discover' || true)
