@@ -23,11 +23,13 @@
 ### Task 1: PKI-CSR's voor example-consumer
 
 **Files:**
+
 - Create: `pki/peers/example-consumer/manager/csr.json`
 - Create: `pki/peers/example-consumer/outway/csr.json`
 - Create: `pki/peers/example-consumer/controller/csr.json`
 
 **Interfaces:**
+
 - Produces: group-certs `pki/out/example-consumer/{manager,outway,controller}/{cert,key}.pem` en internal-certs `pki/internal/example-consumer/{ca,manager,outway,controller}/...`, geconsumeerd door de compose-services in Task 4/5. Cert-hostnamen (SAN): `manager.example-consumer.fsc-test.local` (+ `example-consumer.fsc-test.local`), `outway.example-consumer.fsc-test.local`, `controller.example-consumer.fsc-test.local`.
 
 - [ ] **Step 1: Schrijf de drie CSR-bestanden**
@@ -97,9 +99,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 2: Peer-template `values.example.yaml`
 
 **Files:**
+
 - Create: `peers/example-consumer/values.example.yaml`
 
 **Interfaces:**
+
 - Consumes: OIN `00000000000000000020` (lockstep met Task 1).
 - Produces: documentatie-template (niet gedeployd door de lokale harness; source-of-truth voor ZAD #729). Geen downstream code-afhankelijkheid.
 
@@ -152,9 +156,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 3: Consumer-DB's in `postgres-init.sql`
 
 **Files:**
+
 - Modify: `deploy/local/postgres-init.sql`
 
 **Interfaces:**
+
 - Produces: databases `fsc_example_consumer` (peer-manager) en `fsc_controller_example_consumer` (consumer-controller), geconsumeerd door Task 5.
 
 - [ ] **Step 1: Lees het bestand om het bestaande patroon te matchen**
@@ -183,14 +189,17 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 4: Provider-controller hernoemen voor symmetrie
 
 **Files:**
+
 - Modify: `deploy/local/docker-compose.yaml`
 
 **Interfaces:**
+
 - Produces: compose-service-keys `controller-example-provider` + `migrate-controller-example-provider` (was `controller` / `migrate-controller`). De network-alias blijft `controller.example-provider.fsc-test.local`; smoke-scripts reiken de controller via `toolbox`-curl op die hostnaam, dus geen scriptwijziging.
 
 - [ ] **Step 1: Hernoem de twee service-keys en hun onderlinge `depends_on`**
 
 In `deploy/local/docker-compose.yaml`:
+
 - service-key `migrate-controller:` → `migrate-controller-example-provider:`
 - service-key `controller:` → `controller-example-provider:`
 - in `controller-example-provider.depends_on`: `migrate-controller` → `migrate-controller-example-provider`
@@ -222,9 +231,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 5: Consumer-services in docker-compose
 
 **Files:**
+
 - Modify: `deploy/local/docker-compose.yaml`
 
 **Interfaces:**
+
 - Consumes: certs uit Task 1 (`/pki/out/example-consumer/...`, `/pki/internal/example-consumer/...`), DB's uit Task 3, controller-rename uit Task 4.
 - Produces: services `migrate-example-consumer`, `manager-example-consumer`, `migrate-controller-example-consumer`, `controller-example-consumer`, `outway-example-consumer`; router-alias `example-consumer.fsc-test.local`. Manager-hostnaam-SAN `manager.example-consumer.fsc-test.local` geconsumeerd door de controller/outway; peer-mesh-hostnaam `example-consumer.fsc-test.local` door HAProxy (Task 6).
 
@@ -422,9 +433,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 6: HAProxy SNI-backend voor de consumer-mesh
 
 **Files:**
+
 - Modify: `deploy/local/haproxy.cfg`
 
 **Interfaces:**
+
 - Consumes: manager-service `manager-example-consumer:8443` (Task 5), SAN `example-consumer.fsc-test.local` (Task 1).
 - Produces: SNI-route `example-consumer.fsc-test.local` → consumer-manager op `:443` (passthrough). De outway is client → geen inbound-route nodig.
 
@@ -470,9 +483,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 7: Smoke-script `smoke-discover.sh`
 
 **Files:**
+
 - Create: `deploy/local/smoke-discover.sh`
 
 **Interfaces:**
+
 - Consumes: draaiende compose (kern + provider gepubliceerd + consumer), directory-DB `fsc_directory`, consumer-OIN `00000000000000000020`, service-naam `example-service`.
 - Produces: exit 0 = announce + discovery groen; exit 1 met stderr op FAIL.
 
@@ -554,10 +569,12 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ### Task 8: Documentatie
 
 **Files:**
+
 - Modify: `deploy/local/README.md`
 - Modify: `docs/topologie.md` (alleen als de consumer-kant nog FBS-namen bevat)
 
 **Interfaces:**
+
 - Consumes: alle voorgaande tasks (namen, poorten, smoke-volgorde).
 - Produces: bijgewerkte lokale-harness-uitleg.
 
