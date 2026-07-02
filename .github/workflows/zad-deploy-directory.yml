@@ -84,42 +84,71 @@ jobs:
             echo "manager_suffix=${manager_suffix}"
           } >> "$GITHUB_OUTPUT"
 
-  # Detecteert of de manager-migrate-wrapper (image) wijzigde, zodat de build alleen dan draait.
-  # git diff in een run-step (geen marketplace-action) -> OpenSSF Scorecard blijft groen.
+  # Bepaalt of er gedeployd moet worden (run) + of de manager-migrate-wrapper wijzigde
+  # (build nodig). PR: via de bestandenlijst (docs-only skip, fork skip, close skip).
+  # push: git diff. dispatch: run=true, changed=false (geef desnoods manager_tag mee).
   changes:
     runs-on: ubuntu-latest
     outputs:
-      manager_migrate_changed: ${{ steps.diff.outputs.changed }}
+      run: ${{ steps.c.outputs.run }}
+      manager_migrate_changed: ${{ steps.c.outputs.changed }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           fetch-depth: 0
-
-      - name: Detecteer manager-migrate-wijziging
-        id: diff
+      - name: Classificeer de run
+        id: c
         env:
           EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # Alleen push (main) bouwt automatisch; dispatch bouwt niet (geef anders manager_tag mee).
-          if [ "${EVENT}" != "push" ]; then
-            echo "changed=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          # Eerste push / onbekende basis (all-zero SHA) -> veilig bouwen.
-          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
-            echo "changed=true" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          if git diff --name-only "${BEFORE}" "${SHA}" | grep -q '^deploy/zad/manager-migrate/'; then
-            echo "changed=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "changed=false" >> "${GITHUB_OUTPUT}"
-          fi
+          emit() { { echo "run=$1"; echo "changed=$2"; } >> "$GITHUB_OUTPUT"; }
+
+          case "$EVENT" in
+            workflow_dispatch)
+              # Handmatig: deploy wat de operator vraagt; bouw niet automatisch.
+              emit true false; exit 0 ;;
+            pull_request)
+              # Close = teardown (geen deploy; cleanup-job handelt dit af).
+              [ "$ACTION" = "closed" ] && { emit false false; exit 0; }
+              # Fork-PR heeft geen secrets -> deploy zou falen; skip luid.
+              if [ "$IS_FORK" = "true" ]; then
+                echo "::warning::Fork-PR — preview overgeslagen (geen secrets)."
+                emit false false; exit 0
+              fi
+              # Bestandenlijst; fail-safe: niet op te halen -> tóch deployen + bouwen.
+              if ! files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename'); then
+                echo "::warning::Kon gewijzigde bestanden niet ophalen — fail-safe deploy."
+                emit true true; exit 0
+              fi
+              # run: iets anders dan docs/*.md gewijzigd?
+              if printf '%s\n' "$files" | grep -qvE '(^docs/|\.md$)'; then run=true; else run=false; fi
+              # changed: raakt de wrapper?
+              if printf '%s\n' "$files" | grep -q '^deploy/zad/manager-migrate/'; then changed=true; else changed=false; fi
+              emit "$run" "$changed"; exit 0 ;;
+            push)
+              # main: altijd deployen. Wrapper gewijzigd sinds vorige push?
+              if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+                emit true true; exit 0
+              fi
+              if git diff --name-only "$BEFORE" "$SHA" | grep -q '^deploy/zad/manager-migrate/'; then
+                emit true true
+              else
+                emit true false
+              fi
+              exit 0 ;;
+            *)
+              emit true false; exit 0 ;;
+          esac
 
   # Bouwt + pusht de manager-migrate-image (canonieke v1.43.7) vóór de deploy. Alleen bij een
   # image-wijziging; anders geskipt en herbruikt deploy de bestaande tag. Reusable workflow =
