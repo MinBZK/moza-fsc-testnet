@@ -173,6 +173,9 @@ jobs:
           && needs.changes.result == 'success'
           && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -192,3 +195,32 @@ jobs:
           # Previews klonen NIET (SoR-DB uitgezonderd); dispatch mag clone_from meegeven.
           CLONE_FROM: ${{ github.event_name == 'workflow_dispatch' && inputs.clone_from || '' }}
         run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}" "${CLONE_FROM}"
+
+      - name: Preview-URL als PR-comment (upsert)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
+          PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          BASE_DOMAIN: ${{ vars.ZAD_BASE_DOMAIN || 'rig.prd1.gn2.quattro.rijksapps.nl' }}
+        run: |
+          set -euo pipefail
+          marker="<!-- fsc-directory-preview -->"
+          ui="https://dirui-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
+          mgr="https://dirmgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
+          body="${marker}
+          ### FSC directory-preview \`${DEPLOYMENT}\`
+          - directory-ui: ${ui}
+          - manager (SNI): ${mgr}
+          _Wordt automatisch opgeruimd bij het sluiten van deze PR._"
+          # Bestaand marker-comment zoeken en updaten; anders een nieuw comment plaatsen.
+          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+                --jq "map(select(.body | startswith(\"$marker\"))) | .[0].id // empty")
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+          fi
+          echo "Preview: $ui"
