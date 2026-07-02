@@ -108,7 +108,7 @@ HAVE_JQ=0; command -v jq >/dev/null 2>&1 && HAVE_JQ=1
 accept_state() {  # $1=json $2=content_hash $3=oin
   [ "$HAVE_JQ" -eq 1 ] || { echo unknown; return; }
   printf '%s' "$1" | jq -r --arg h "$2" --arg oin "$3" '
-    [.. | objects | select((.content_hash? // .content?.content_hash?) == $h)] as $c
+    [.. | objects | select((.hash? // .content_hash? // .content?.content_hash?) == $h)] as $c
     | if ($c | length) == 0 then "unknown"
       elif ([ $c[] | .signatures?.accept? | objects ] | length) == 0 then "unknown"
       elif ($c | any((.signatures?.accept? // {}) | has($oin))) then "yes"
@@ -120,7 +120,7 @@ accept_state() {  # $1=json $2=content_hash $3=oin
 contract_state() {  # $1=json $2=content_hash
   [ "$HAVE_JQ" -eq 1 ] || { echo unknown; return; }
   printf '%s' "$1" | jq -r --arg h "$2" '
-    [.. | objects | select((.content_hash? // .content?.content_hash?) == $h) | .state?]
+    [.. | objects | select((.hash? // .content_hash? // .content?.content_hash?) == $h) | .state?]
     | map(select(. != null)) | (first // "unknown") | ascii_downcase' 2>/dev/null || echo unknown
 }
 
@@ -180,10 +180,7 @@ RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: applicati
       \"service\": { \"type\": \"SERVICE_TYPE_SERVICE\", \"peer_id\": \"$PROVIDER_OIN\", \"name\": \"$SERVICE_NAME\" },
       \"outway\": {
         \"peer_id\": \"$CONSUMER_OIN\",
-        \"identification\": {
-          \"type\": \"OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT\",
-          \"public_key_thumbprint\": \"$THUMB\"
-        }
+        \"public_key_thumbprint\": \"$THUMB\"
       }
     } ]
   }
@@ -246,7 +243,7 @@ wv=0; wait_valid || wv=$?   # niet `wait_valid; wv=$?` -> set -e killt bij non-z
 if [ "$wv" -eq 2 ]; then
   # Geen jq op de host -> kan de state niet lezen. Forceer één her-distributie zodat de accept-sig
   # zeker naar de consumer gaat, en ga door (installeer jq voor een harde valid-verificatie).
-  echo "WARN: jq afwezig → kan contract-state niet verifiëren; forceer her-distributie. Installeer jq voor een harde check." >&2
+  echo "WARN: kan contract-state niet lezen (geen jq, of onbekende JSON-vorm) → forceer her-distributie. Installeer jq / check de contract-shape voor een harde verificatie." >&2
   redistribute_accept
 elif [ "$wv" -ne 0 ]; then
   # Wel jq, maar niet valid binnen de timeout -> gestrande push. Her-distribueer en poll opnieuw.

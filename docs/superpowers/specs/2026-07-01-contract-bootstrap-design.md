@@ -69,18 +69,21 @@ group-contract-cert (bewezen in `publish-service.sh` voor de `servicePublication
     "validity": { "not_before": <epoch-60>, "not_after": <epoch+10j> },
     "grants": [ {
       "type": "GRANT_TYPE_SERVICE_CONNECTION",
-      "service": { "peer_id": "<provider-OIN>", "name": "example-service" },
+      "service": { "type": "SERVICE_TYPE_SERVICE", "peer_id": "<provider-OIN>", "name": "example-service" },
       "outway": {
         "peer_id": "<consumer-OIN>",
-        "identification": {
-          "type": "OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT",
-          "public_key_thumbprint": "<sha256-hex van de outway-group-publieke-sleutel>"
-        }
+        "public_key_thumbprint": "<sha256-hex van de outway-group-publieke-sleutel>"
       }
     } ]
   }
 }
 ```
+
+> **Let op — platte vorm (v1.43.7 protojson).** De v1.43.7-REST-binding verwacht
+> `outway.public_key_thumbprint` **direct** (de proto-`oneof` wordt plat geserialiseerd), NIET
+> genest onder `identification` zoals de fsc-core-spec toont. Met de geneste vorm slikt de manager
+> de thumbprint stil in → opgeslagen als `""` → de outway matcht nooit. Idem `service.type` (zie
+> boven, verplicht). Bevestigd tegen de live `GET /v1/contracts`-respons.
 
 ### `public_key_thumbprint`
 
