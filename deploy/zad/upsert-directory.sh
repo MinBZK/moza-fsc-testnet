@@ -3,9 +3,10 @@
 # Zet de directory op ZAD via de v2 Operations Manager API (#723). Eén bron voor CLI + de
 # workflow zad-deploy-directory.yml. Zie docs/zad-directory-deploy.md en [[zad-deploy-api-model]].
 #
-# Model: PR = eigen deployment; main -> deployment `test`. `:upsert-deployment` REFEREERT alleen
-# bestaande componenten; componenten maak je met POST /components (incl. env_vars/services/aliases).
-# Previews kunnen `cloneFrom` een bestaande deployment (erven componenten, alleen images zetten).
+# Model: PR = eigen deployment `pr-<PR-nummer>`; main -> deployment `test`. `:upsert-deployment` zet
+# per component de {reference,image} (DAAR hangt het draaiende image van het deployment) én maakt/
+# updatet het deployment; POST /components verrijkt elke component met env_vars/port/services/aliases.
+# Previews kunnen `cloneFrom` een bestaande deployment (erven componenten; images uit de upsert-body).
 # NIET via de API (UI-only): bijlagen (cert-mount) + "Publicatie op het web" (passthrough-TLS).
 #
 # DB: ZAD's managed Postgres (`postgresql-database`-service op de manager). De connection komt uit
@@ -73,9 +74,11 @@ MANAGER_ENV="$(printf '%s\n' \
 
 # Aliases = env-vars met ZAD-substitutievars ($DEPLOYMENT_NAME voor de eigen hostnaam, $DATABASE_*
 # voor de managed Postgres). \$ houdt ze letterlijk (ZAD vult ze per deployment in, niet de shell).
+# :443 = de mesh-poort (ingress SNI-passthrough -> pod :8443). OpenFSC eist een expliciete poort in
+# het manager-adres ("missing port in manager address" -> Fatal in create-self-peer) — dus niet weglaten.
 MANAGER_ALIASES="$(printf '%s\n' \
-  "SELF_ADDRESS=https://${SELF_HOST}" \
-  "DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}" \
+  "SELF_ADDRESS=https://${SELF_HOST}:443" \
+  "DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}:443" \
   "STORAGE_POSTGRES_DSN=postgres://\$DATABASE_SERVER_USER:\$DATABASE_PASSWORD@\$DATABASE_SERVER_HOST:5432/\$DATABASE_DB?sslmode=${PG_SSLMODE}")"
 
 UI_ENV="$(printf '%s\n' \
@@ -86,7 +89,7 @@ UI_ENV="$(printf '%s\n' \
   "TLS_GROUP_ROOT_CERT=/etc/fsc/ca/root.pem" \
   "TLS_GROUP_CERT=/etc/fsc/out/directory/directory/cert.pem" \
   "TLS_GROUP_KEY=/etc/fsc/out/directory/directory/key.pem")"
-UI_ALIASES="DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}"
+UI_ALIASES="DIRECTORY_MANAGER_ADDRESS=https://${SELF_HOST}:443"
 
 # component-body (AddComponentRequest) via jq -> correcte JSON-escaping.
 component_body() {  # $1=name $2=image $3=port $4=env  [$5=services_json=[]]  [$6=aliases=""]
@@ -98,7 +101,9 @@ component_body() {  # $1=name $2=image $3=port $4=env  [$5=services_json=[]]  [$
 }
 
 DEPLOY_BODY="$(jq -n --arg d "${DEPLOYMENT}" --arg cf "${CLONE_FROM}" \
-  '{deploymentName:$d, domain_format:"component-deployment-project", components:[]}
+  --arg mgr "${MANAGER_IMAGE}" --arg ui "${UI_IMAGE}" \
+  '{deploymentName:$d, domain_format:"component-deployment-project",
+    components:[{reference:"dirmgr", image:$mgr}, {reference:"dirui", image:$ui}]}
    + (if $cf=="" then {} else {cloneFrom:$cf, forceClone:true} end)')"
 
 MANAGER_BODY="$(component_body dirmgr "${MANAGER_IMAGE}" 8443 "${MANAGER_ENV}" '["postgresql-database"]' "${MANAGER_ALIASES}")"

@@ -1,29 +1,28 @@
-# Bouwt + pusht de manager-migrate-wrapper-image naar ghcr (#729).
+# Bouwt + pusht de manager-migrate-wrapper-image naar ghcr.
 # ZAD pullt images uit een registry; de wrapper (deploy/zad/manager-migrate, migrate->serve)
-# bestond tot nu toe alleen lokaal (docker compose build). Deze job publiceert 'm zodat
-# deploy.yml de directory-manager op ZAD kan draaien — én previews een branch-image hebben.
+# bestond tot nu toe alleen lokaal (docker compose build). Deze reusable workflow publiceert 'm
+# zodat deploy.yml de directory-manager op ZAD kan draaien — én previews een eigen image hebben.
 #
-# Triggert op push naar ELKE branch (path-gefilterd op de wrapper), zodat een PR-preview een
-# eigen branch-getagde image krijgt en de image niet pas vanaf main bestaat. Geen marketplace
-# docker-actions: docker + buildx op de runner in run-steps, zodat er geen extra action-SHA te
-# pinnen is (alleen checkout) en Scorecard Pinned-Dependencies groen blijft.
+# Alleen workflow_dispatch/workflow_call, geen push-trigger: aanroepers geven de tag expliciet
+# mee via image_suffix (main -> canoniek, PR -> pr-<n>). Geen marketplace docker-actions: docker
+# + buildx op de runner in run-steps, zodat er geen extra action-SHA te pinnen is (alleen
+# checkout) en Scorecard Pinned-Dependencies groen blijft.
 name: build-manager-migrate
 
 on:
-  # `main` bouwt via de reusable-call in zad-deploy-directory (build->deploy in één run,
-  # geen dubbele build + geen concurrency-clash). Hier alleen branch-previews.
-  push:
-    branches-ignore: [main]
-    paths:
-      - "deploy/zad/manager-migrate/**"
-      - ".github/workflows/build-manager-migrate.yml"
+  # Aangeroepen door zad-deploy-directory (build-job) vóór een deploy: main -> canonieke tag,
+  # PR -> pr-<n>-suffix. De losse branch-push-build is vervallen: previews bouwen nu via deze
+  # workflow_call (ordering-veilig in één run), dus een aparte push-build zou dubbel bouwen.
   workflow_dispatch:
     inputs:
       image_tag:
         description: "OpenFSC manager-basisversie (build-arg IMAGE_TAG + image-tag)"
         required: false
         default: "v1.43.7"
-  # Aangeroepen door zad-deploy-directory (build-job) vóór de deploy naar test.
+      image_suffix:
+        description: "optioneel: tag-suffix (bv. pr-42); leeg = canonieke tag"
+        required: false
+        default: ""
   workflow_call:
     inputs:
       image_tag:
@@ -31,6 +30,11 @@ on:
         required: false
         type: string
         default: "v1.43.7"
+      image_suffix:
+        description: "optioneel: tag-suffix (bv. pr-42); leeg = canonieke tag"
+        required: false
+        type: string
+        default: ""
 
 # Top-level read-only; write-scope alleen op de job die pusht (Scorecard Token-Permissions).
 permissions:
@@ -57,26 +61,22 @@ jobs:
           # Lowercase image-pad, exact zoals deploy.yml de canonieke tag consumeert.
           IMAGE: ghcr.io/minbzk/moza-fsc-testnet/manager-migrate
           IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
-          REF_NAME: ${{ github.ref_name }}
+          IMAGE_SUFFIX: ${{ inputs.image_suffix }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
-          # Branch-slug voor een preview-tag; main krijgt daarnaast de canonieke tag.
-          slug="$(printf '%s' "$REF_NAME" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_.-' '-')"
-          tags="--tag ${IMAGE}:${IMAGE_TAG}-${slug}"
-          main_extra=""
-          if [ "$REF_NAME" = "main" ]; then
-            tags="$tags --tag ${IMAGE}:${IMAGE_TAG}"
-            main_extra=" + ${IMAGE}:${IMAGE_TAG}"
+          if [ -n "$IMAGE_SUFFIX" ]; then
+            tag="${IMAGE_TAG}-${IMAGE_SUFFIX}"
+          else
+            tag="${IMAGE_TAG}"
           fi
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
-          # shellcheck disable=SC2086
           docker buildx build \
             --build-arg "IMAGE_TAG=${IMAGE_TAG}" \
-            $tags \
+            --tag "${IMAGE}:${tag}" \
             --label "org.opencontainers.image.source=https://github.com/${REPO}" \
             --push \
             deploy/zad/manager-migrate
-          echo "Gepusht: ${IMAGE}:${IMAGE_TAG}-${slug}${main_extra}"
+          echo "Gepusht: ${IMAGE}:${tag}"

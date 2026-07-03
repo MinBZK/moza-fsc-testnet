@@ -4,7 +4,8 @@
 > peers kunnen announcen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
 > ZAD Operations Manager API (`https://zad.rijksapp.nl/openapi.json`, v2).
 >
-> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723`). `migrate up` ok tegen de
+> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723` — nog met de oude
+> issuenummer-naam; auto-previews heten voortaan `pr-<PR-nummer>`). `migrate up` ok tegen de
 > managed Postgres, manager serveert, **self-announce geslaagd** (`EVENT_TYPE_CREATE_PEER`, OIN
 > `00000000000000000010`, SUCCEEDED). Cert-mount (ontwerp A) + managed DB bewezen op ODCN-prod.
 >
@@ -46,11 +47,13 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 - Cluster = `odcn-production` (prod). Voorbeeld bestaande URL: `directory-test-mft-tp9.<base_domain>`.
 - De manager-hostnaam is de **SNI-hostnaam** voor `SELF_ADDRESS` / `DIRECTORY_MANAGER_ADDRESS` (zie env).
 
-> **Deploymodel:** een PR krijgt een eigen deployment; wat naar `main` gaat landt in deployment
-> **`test`**. De directory = 2 componenten (`dirmgr` + `dirui`) op ZAD's managed Postgres; een
-> upsert van `test` vervangt de bestaande placeholder-component `directory` (image leeg).
-> Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR-preview
-> gebruikt zijn eigen deployment-naam i.p.v. `test`.
+> **Deploymodel:** een PR krijgt een eigen deployment, benoemd naar het **PR-nummer**
+> (`pr-<PR-nummer>`, bv. `pr-42`) — niet naar het issuenummer; wat naar `main` gaat landt in
+> deployment **`test`**. De directory = 2 componenten (`dirmgr` + `dirui`) op ZAD's managed
+> Postgres; een upsert van `test` vervangt de bestaande placeholder-component `directory` (image
+> leeg). Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR rolt
+> **automatisch** een preview `pr-<PR-nummer>` uit (`pull_request`-trigger); bij het sluiten van de
+> PR wordt die weer opgeruimd. `pr-<PR-nummer>` = het PR-nummer, niet het issuenummer.
 
 ## Stappen
 
@@ -118,8 +121,8 @@ read -rs ZAD_API_KEY; export ZAD_API_KEY              # plak de key niet inline
 ./deploy/zad/upsert-directory.sh validate             # read-only auth/connectie-check
 ./deploy/zad/upsert-directory.sh plan  test v1.43.7   # toont alle JSON-bodies, muteert NIET (review)
 ./deploy/zad/upsert-directory.sh apply test v1.43.7   # upsert deployment + maakt componenten (env), pollt tasks
-# preview die de componenten van test erft (alleen images):
-./deploy/zad/upsert-directory.sh apply pr-123 v1.43.7 test
+# ad-hoc preview (eigen verse DB; auto-previews doen dit via de pull_request-trigger):
+./deploy/zad/upsert-directory.sh apply pr-123 v1.43.7
 ```
 
 Het script maakt het deployment (`:upsert-deployment`, `domain_format=component-deployment-project`)
@@ -135,6 +138,10 @@ naar main** — een merge (CI groen) rolt de directory automatisch uit naar depl
 (besluit in `docs/ontwerpkeuzes.md`, ontwerp in `docs/superpowers/specs/`). Push-pad zet vast:
 `mode=apply`, `deployment=test`, `image_tag=v1.43.7`, `manager_tag=""` (canonieke tag).
 
+Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) automatisch een
+`pr-<PR-nummer>`-preview uit en ruimt een `cleanup-preview`-job die op bij het sluiten van de PR;
+`workflow_dispatch` blijft voor handmatige overrides.
+
 Path-filter (alleen deze paden triggeren de auto-deploy):
 `deploy/zad/upsert-directory.sh`, `deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf.
 Docs- en peer-merges blijven dus stil.
@@ -148,9 +155,10 @@ Drie jobs voorkomen de build-deploy-race:
 | `deploy` | ná build-succes, óf meteen als build geskipt | `upsert-directory.sh apply test` |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór `apply`). Config/group-change
-→ build skip → deploy herbruikt de bestaande tag. `build-manager-migrate` bouwt op main **niet**
-meer zelfstandig (`branches-ignore: [main]`) — main bouwt via de reusable-call, wat een dubbele
-build + concurrency-clash voorkomt; z'n eigen `push`-trigger blijft voor branch-previews.
+→ build skip → deploy herbruikt de bestaande tag. De manager-migrate-image bouwt via de reusable
+`workflow_call` in `zad-deploy-directory.yml` (build → deploy in één run, ordering-veilig).
+`build-manager-migrate.yml` heeft géén eigen `push`-trigger meer; een preview krijgt zijn image
+(`v1.43.7-pr-<n>`) uit die call, main de canonieke `v1.43.7`.
 
 Faalt de deploy, dan is dat een **kale rode run** in de Actions-tab (bewust, geen auto-issue).
 Handmatige/preview-deploys en `validate`/`plan` blijven via `workflow_dispatch` (zie stap 6).
