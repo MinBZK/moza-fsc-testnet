@@ -3,7 +3,7 @@
 #
 # Deze repo bevat geen applicatie-dependencies (config-only). We houden alleen de
 # GitHub Actions up-to-date. Voeg hier later docker/helm toe zodra OpenFSC-images
-# of charts in deze repo gepind worden (#723/#729).
+# of charts in deze repo gepind worden.
 version: 2
 updates:
   - package-ecosystem: "github-actions"

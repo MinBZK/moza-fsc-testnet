@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Zet de directory op ZAD via de v2 Operations Manager API (#723). Eén bron voor CLI + de
+# Zet de directory op ZAD via de v2 Operations Manager API. Eén bron voor CLI + de
 # workflow zad-deploy-directory.yml. Zie docs/zad-directory-deploy.md en [[zad-deploy-api-model]].
 #
 # Model: PR = eigen deployment `pr-<PR-nummer>`; main -> deployment `test`. `:upsert-deployment` zet

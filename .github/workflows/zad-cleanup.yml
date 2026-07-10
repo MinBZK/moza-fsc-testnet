@@ -1,4 +1,4 @@
-# ZAD-cleanup (#729): ruimt een deployment op via de v2 Operations Manager API (DELETE .../{deployment}).
+# ZAD-cleanup: ruimt een deployment op via de v2 Operations Manager API (DELETE .../{deployment}).
 # Roept deploy/zad/cleanup.sh aan (zelfde bron als de CLI) — het tegenovergestelde van
 # zad-deploy-directory.yml. `validate` is read-only, `plan` toont, `apply` verwijdert + pollt.
 #

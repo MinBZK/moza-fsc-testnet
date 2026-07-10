@@ -1,4 +1,4 @@
-# Spike #723 — manager-mesh op poort 443 via SNI-passthrough (HAProxy).
+# Spike — manager-mesh op poort 443 via SNI-passthrough (HAProxy).
 #
 # Bewijst: managers authenticeren op OIN (niet hostname), dus de mesh werkt op
 # 443 achter een SNI-passthrough-router — geen 8443/MetalLB-IP nodig.

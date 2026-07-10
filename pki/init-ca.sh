@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Genereert root + intermediate test-CA (#722). NIET voor productie.
+# Genereert root + intermediate test-CA. NIET voor productie.
 set -euo pipefail
 
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Issued per-endpoint peer-certs uit pki/peers/*/*/csr.json (#722). -f = forceer her-uitgifte.
+# Issued per-endpoint peer-certs uit pki/peers/*/*/csr.json. -f = forceer her-uitgifte.
 #
 # Twee cert-ketens per endpoint (gegrond op open-fsc `modd.conf`):
 #   - GROUP (extern): getekend door de group-intermediate -> pki/out/<peer>/<endpoint>/

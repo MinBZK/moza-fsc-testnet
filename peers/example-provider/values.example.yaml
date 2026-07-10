@@ -1,4 +1,4 @@
-# Helm-values voor de neutrale voorbeeld-provider-peer (Spec A, #724).
+# Helm-values voor de neutrale voorbeeld-provider-peer (Spec A).
 # Consumeert de OpenFSC Helm-charts (https://gitlab.com/rinis-oss/fsc/open-fsc, helm/charts).
 #
 # example-provider = neutraal voorbeeld dat de generieke provider-onboarding bewijst.
@@ -16,7 +16,7 @@ inway:
   directoryRegistrationAddress: "directory-manager:8443"
   upstream: "example-upstream:8080"              # neutrale stub-upstream (geen FBS-app)
 
-# TODO(#724): dit skelet toont alleen de hoofd-adressen. Een werkende OpenFSC-deploy
+# TODO: dit skelet toont alleen de hoofd-adressen. Een werkende OpenFSC-deploy
 # vereist daarnaast (zie open-fsc helm/charts), uitgewerkt in vervolgplannen:
 #   - certificaten: certificates.group.* + certificates.internal.* +
 #     certificates.internalUnauthenticated.* (inter-component mTLS, manager<->inway);

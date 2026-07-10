@@ -1,4 +1,4 @@
-# Directe ZAD-API-deploy van de directory (#723) via de v2 Operations Manager API.
+# Directe ZAD-API-deploy van de directory via de v2 Operations Manager API.
 # Roept deploy/zad/upsert-directory.sh aan (zelfde bron als de CLI). `validate` is read-only;
 # `apply` upsert het deployment. Model: push main -> `test`; PR -> preview `pr-<PR-nummer>`
 # (open/sync = deploy, close = cleanup); workflow_dispatch = handmatige override.

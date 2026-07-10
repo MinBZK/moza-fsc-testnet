@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Host-runner (#727+): draait de VOLLEDIGE bewijs-keten van de lokale harness in één klap, zodat
+# Host-runner: draait de VOLLEDIGE bewijs-keten van de lokale harness in één klap, zodat
 # je een PR host-side kunt verifiëren. Groeit per issue mee (nieuwe smokes onderaan toevoegen).
 #
 #   certs (indien afwezig) -> .env -> docker compose up -d --build -> smokes op volgorde
@@ -88,11 +88,11 @@ echo ">> docker compose up -d ${BUILD} --remove-orphans ${RECREATE}..."
 # --- 4. Smokes op volgorde (elke stap fail-hard). Groeit per issue. ----------------------------
 run() { echo; echo "======== $1 ========"; bash "${HERE}/$1" || fail "$1 rood."; }
 
-run smoke-announce.sh    # #723/#724 — provider announce
-run smoke-publish.sh     # #724     — dienst publiceren + vindbaar
-run smoke-discover.sh    # #725     — consumer announce + discovery
-run smoke-contract.sh    # #727     — wederzijds ondertekend serviceConnection-contract
-run smoke-e2e.sh         # #728     — echte data-call + token-afdwinging + tx-log-correlatie
+run smoke-announce.sh    # provider announce
+run smoke-publish.sh     # dienst publiceren + vindbaar
+run smoke-discover.sh    # consumer announce + discovery
+run smoke-contract.sh    # wederzijds ondertekend serviceConnection-contract
+run smoke-e2e.sh         # echte data-call + token-afdwinging + tx-log-correlatie
 
 echo; echo "==================================================="
 echo "ALLE SMOKES GROEN."
