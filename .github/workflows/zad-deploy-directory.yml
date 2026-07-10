@@ -1,6 +1,7 @@
 # Directe ZAD-API-deploy van de directory via de v2 Operations Manager API.
 # Roept deploy/zad/upsert-directory.sh aan (zelfde bron als de CLI). `validate` is read-only;
-# `apply` upsert het deployment. Model: PR = eigen deployment; main -> deployment `test`.
+# `apply` upsert het deployment. Model: push main -> `test`; PR -> preview `pr-<PR-nummer>`
+# (open/sync = deploy, close = cleanup); workflow_dispatch = handmatige override.
 #
 # Dekt alleen de deploy-API (deployment + componenten + images + domain_format). NIET via de API
 # (UI-only): bijlagen (cert-mount), env-vars, "Publicatie op het web" (passthrough-TLS).
@@ -17,6 +18,8 @@ on:
       - "deploy/zad/manager-migrate/**"
       - "group/**"
       - ".github/workflows/zad-deploy-directory.yml"
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       mode:
@@ -25,7 +28,7 @@ on:
         options: [validate, plan, apply]
         default: validate
       deployment:
-        description: "deployment-naam (main -> test; PR -> eigen naam)"
+        description: "deployment-naam (main -> test; PR -> pr-<PR-nummer>)"
         required: false
         default: "test"
       image_tag:
@@ -45,69 +48,137 @@ permissions:
   contents: read
 
 concurrency:
-  # Bij push zijn er geen inputs -> deployment 'test'. Deploys niet halverwege killen.
-  group: zad-deploy-directory-${{ inputs.deployment || 'test' }}
+  # Eén run per deployment tegelijk: PR -> pr-<n>, push/dispatch -> test/input. Deploys niet
+  # halverwege killen (een halve ZAD-deploy laat een inconsistente staat achter).
+  group: zad-deploy-directory-${{ github.event.pull_request.number && format('pr-{0}', github.event.pull_request.number) || inputs.deployment || 'test' }}
   cancel-in-progress: false
 
 jobs:
-  # Detecteert of de manager-migrate-wrapper (image) wijzigde, zodat de build alleen dan draait.
-  # git diff in een run-step (geen marketplace-action) -> OpenSSF Scorecard blijft groen.
-  changes:
+  # Afgeleide waarden op één plek: deployment-naam, OpenFSC-basistag, manager-image-suffix.
+  meta:
     runs-on: ubuntu-latest
     outputs:
-      manager_migrate_changed: ${{ steps.diff.outputs.changed }}
+      deployment: ${{ steps.m.outputs.deployment }}
+      image_base: ${{ steps.m.outputs.image_base }}
+      manager_suffix: ${{ steps.m.outputs.manager_suffix }}
+    steps:
+      - id: m
+        env:
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          INPUT_DEPLOYMENT: ${{ inputs.deployment }}
+          INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          image_base="${INPUT_IMAGE_TAG:-v1.43.7}"
+          if [ "$EVENT" = "pull_request" ]; then
+            deployment="pr-${PR}"
+            manager_suffix="pr-${PR}"
+          else
+            deployment="${INPUT_DEPLOYMENT:-test}"
+            manager_suffix=""
+          fi
+          {
+            echo "deployment=${deployment}"
+            echo "image_base=${image_base}"
+            echo "manager_suffix=${manager_suffix}"
+          } >> "$GITHUB_OUTPUT"
+
+  # Bepaalt of er gedeployd moet worden (run) + of de manager-migrate-wrapper wijzigde
+  # (build nodig). PR: via de bestandenlijst (docs-only skip, fork skip, close skip).
+  # push: git diff. dispatch: run=true, changed=false (geef desnoods manager_tag mee).
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.c.outputs.run }}
+      manager_migrate_changed: ${{ steps.c.outputs.changed }}
     steps:
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
           fetch-depth: 0
-
-      - name: Detecteer manager-migrate-wijziging
-        id: diff
+      - name: Classificeer de run
+        id: c
         env:
           EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
           BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          # Alleen push (main) bouwt automatisch; dispatch bouwt niet (geef anders manager_tag mee).
-          if [ "${EVENT}" != "push" ]; then
-            echo "changed=false" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          # Eerste push / onbekende basis (all-zero SHA) -> veilig bouwen.
-          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
-            echo "changed=true" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          if git diff --name-only "${BEFORE}" "${SHA}" | grep -q '^deploy/zad/manager-migrate/'; then
-            echo "changed=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "changed=false" >> "${GITHUB_OUTPUT}"
-          fi
+          emit() { { echo "run=$1"; echo "changed=$2"; } >> "$GITHUB_OUTPUT"; }
+
+          case "$EVENT" in
+            workflow_dispatch)
+              # Handmatig: deploy wat de operator vraagt; bouw niet automatisch.
+              emit true false; exit 0 ;;
+            pull_request)
+              # Close = teardown (geen deploy; cleanup-job handelt dit af).
+              [ "$ACTION" = "closed" ] && { emit false false; exit 0; }
+              # Fork-PR heeft geen secrets -> deploy zou falen; skip luid.
+              if [ "$IS_FORK" = "true" ]; then
+                echo "::warning::Fork-PR — preview overgeslagen (geen secrets)."
+                emit false false; exit 0
+              fi
+              # Bestandenlijst; fail-safe: niet op te halen -> tóch deployen + bouwen.
+              if ! files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename'); then
+                echo "::warning::Kon gewijzigde bestanden niet ophalen — fail-safe deploy."
+                emit true true; exit 0
+              fi
+              # run: iets anders dan docs/*.md gewijzigd?
+              if printf '%s\n' "$files" | grep -qvE '(^docs/|\.md$)'; then run=true; else run=false; fi
+              # changed: raakt de wrapper?
+              if printf '%s\n' "$files" | grep -q '^deploy/zad/manager-migrate/'; then changed=true; else changed=false; fi
+              emit "$run" "$changed"; exit 0 ;;
+            push)
+              # main: altijd deployen. Wrapper gewijzigd sinds vorige push?
+              if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+                emit true true; exit 0
+              fi
+              if git diff --name-only "$BEFORE" "$SHA" | grep -q '^deploy/zad/manager-migrate/'; then
+                emit true true
+              else
+                emit true false
+              fi
+              exit 0 ;;
+            *)
+              emit true false; exit 0 ;;
+          esac
 
   # Bouwt + pusht de manager-migrate-image (canonieke v1.43.7) vóór de deploy. Alleen bij een
   # image-wijziging; anders geskipt en herbruikt deploy de bestaande tag. Reusable workflow =
   # één bron voor de build-logica.
   build:
-    needs: changes
-    if: ${{ needs.changes.outputs.manager_migrate_changed == 'true' }}
+    needs: [meta, changes]
+    if: ${{ needs.changes.outputs.run == 'true' && needs.changes.outputs.manager_migrate_changed == 'true' }}
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/build-manager-migrate.yml
     with:
-      image_tag: ${{ inputs.image_tag || 'v1.43.7' }}
+      image_tag: ${{ needs.meta.outputs.image_base }}
+      image_suffix: ${{ needs.meta.outputs.manager_suffix }}
 
   # Rolt de directory uit. Draait ná build-succes, of meteen als de build geskipt is
   # (config/group-only) -> de image bestaat gegarandeerd vóór apply.
   deploy:
-    needs: [changes, build]
+    needs: [meta, changes, build]
     if: >-
-      ${{ always() && needs.changes.result == 'success'
+      ${{ always() && needs.changes.outputs.run == 'true'
+          && needs.changes.result == 'success' && needs.meta.result == 'success'
           && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -118,10 +189,81 @@ jobs:
         env:
           ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          # Push naar main = altijd apply/test; dispatch gebruikt zijn inputs.
-          MODE: ${{ github.event_name == 'push' && 'apply' || inputs.mode }}
-          DEPLOYMENT: ${{ inputs.deployment || 'test' }}
-          IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
-          ZAD_MANAGER_TAG: ${{ inputs.manager_tag }}
-          CLONE_FROM: ${{ inputs.clone_from }}
+          # push/PR = altijd apply; dispatch gebruikt zijn mode-input.
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'apply' }}
+          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
+          IMAGE_TAG: ${{ needs.meta.outputs.image_base }}
+          # PR met gewijzigde wrapper -> de zojuist gebouwde pr-<n>-image; anders leeg (canoniek).
+          ZAD_MANAGER_TAG: ${{ (github.event_name == 'pull_request' && needs.changes.outputs.manager_migrate_changed == 'true') && format('{0}-{1}', needs.meta.outputs.image_base, needs.meta.outputs.manager_suffix) || inputs.manager_tag }}
+          # Previews klonen NIET (SoR-DB uitgezonderd); dispatch mag clone_from meegeven.
+          CLONE_FROM: ${{ github.event_name == 'workflow_dispatch' && inputs.clone_from || '' }}
         run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}" "${CLONE_FROM}"
+
+      - name: Preview-URL als PR-comment (upsert)
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
+          PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          BASE_DOMAIN: ${{ vars.ZAD_BASE_DOMAIN || 'rig.prd1.gn2.quattro.rijksapps.nl' }}
+        run: |
+          set -euo pipefail
+          marker="<!-- fsc-directory-preview -->"
+          ui="https://dirui-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
+          mgr="https://dirmgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
+          body="${marker}
+          ### FSC directory-preview \`${DEPLOYMENT}\`
+          - directory-ui: ${ui}
+          - manager (SNI): ${mgr}
+          _Wordt automatisch opgeruimd bij het sluiten van deze PR._"
+          # Bestaand marker-comment zoeken en updaten; anders een nieuw comment plaatsen.
+          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+                --jq "map(select(.body | startswith(\"$marker\"))) | .[0].id // empty")
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
+          fi
+          echo "Preview: $ui"
+
+  # PR gesloten -> preview opruimen. Onafhankelijk van changes/deploy (die skippen op close).
+  cleanup-preview:
+    if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed'
+            && github.event.pull_request.head.repo.full_name == github.repository }}
+    needs: meta
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Ruim de preview-deployment op
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
+        run: ./deploy/zad/cleanup.sh apply "${DEPLOYMENT}"
+      - name: Verwijder de ghcr preview-image-tag (idempotent)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SUFFIX: ${{ needs.meta.outputs.manager_suffix }}
+          IMAGE_BASE: ${{ needs.meta.outputs.image_base }}
+        run: |
+          set -euo pipefail
+          tag="${IMAGE_BASE}-${SUFFIX}"
+          # Version-id van de tag opzoeken in het org-package; niet gevonden = niets te doen.
+          vid=$(gh api --paginate \
+            "orgs/minbzk/packages/container/moza-fsc-testnet%2Fmanager-migrate/versions" \
+            --jq "map(select(.metadata.container.tags[]? == \"$tag\")) | .[0].id // empty" || true)
+          if [ -n "$vid" ]; then
+            gh api -X DELETE "orgs/minbzk/packages/container/moza-fsc-testnet%2Fmanager-migrate/versions/$vid" && \
+              echo "ghcr-tag $tag verwijderd" || echo "::warning::ghcr-tag $tag niet verwijderd (rechten?)"
+          else
+            echo "geen ghcr-tag $tag — niets op te ruimen"
+          fi

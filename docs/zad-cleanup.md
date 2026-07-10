@@ -28,6 +28,10 @@ Zie `docs/zad-directory-deploy.md`. Kort: `zad-deploy-directory.yml` (workflow_d
 
 ## Cleanup (directory)
 
+Bij het **sluiten van een PR** ruimt `zad-deploy-directory.yml` (job `cleanup-preview`) de
+`pr-<PR-nummer>`-deployment automatisch op via ditzelfde `cleanup.sh`. Handmatig
+(`zad-cleanup.yml` / CLI) blijft mogelijk voor overige gevallen:
+
 `zad-cleanup.yml` (workflow_dispatch) roept `deploy/zad/cleanup.sh` aan:
 
 ```bash
@@ -43,7 +47,7 @@ export ZAD_API_KEY=...                          # niet inline
   veilig herhaalbaar is (bv. na een gefaalde PR-preview).
 - **Beschermde namen** (`test`, `main`, `production`, …) weigeren tenzij `ALLOW_PROTECTED=1` /
   de workflow-input `allow_protected`. Het cluster is **odcn-production** — dit voorkomt dat een
-  losse hand de gedeelde `test`-singleton sloopt. Previews (`pr-<n>`) ruim je vrij op.
+  losse hand de gedeelde `test`-singleton sloopt. Previews (`pr-<PR-nummer>`) ruim je vrij op.
 
 ## Beveiliging & versievastlegging
 

@@ -103,8 +103,10 @@ hier.
 Gemaakte keuzes:
 
 - **Bestaande workflow uitbreiden** (niet een nieuwe file): `zad-deploy-directory.yml` krijgt náást
-  `workflow_dispatch` een `push`-trigger op main. `upsert-directory.sh` is al de gedeelde bron;
-  het push-pad zet enkel `apply`/`test`. `workflow_dispatch` blijft voor PR-previews.
+  `workflow_dispatch` een `push`-trigger op main én een `pull_request`-trigger. Een PR
+  (`opened`/`synchronize`/`reopened`) rolt automatisch een preview `pr-<PR-nummer>` uit; bij
+  `closed` ruimt een `cleanup-preview`-job die op. `workflow_dispatch` blijft voor handmatige
+  overrides. `upsert-directory.sh`/`cleanup.sh` zijn de gedeelde bron.
 - **Eén workflow, 3 jobs** (`changes` → `build` → `deploy`) tegen de build-deploy-race: een
   image-wijziging bouwt éérst (`build-manager-migrate` als reusable `workflow_call`), pas dán
   deployt `apply`. Een config/group-only merge skipt de build en herbruikt de bestaande tag.
@@ -119,5 +121,11 @@ Gemaakte keuzes:
   vaak gemist, dan gaan we naar échte externe notificatie (Slack/mail), niet naar een
   half-oplossing. Fully-auto, géén environment-approval (conform het FBS-model).
 
-Ontwerp: `docs/superpowers/specs/2026-07-02-auto-deploy-test-design.md`. Mechaniek:
-`docs/zad-directory-deploy.md`.
+Ontwerp: `docs/superpowers/specs/2026-07-02-auto-deploy-test-design.md`. Zie ook
+`docs/superpowers/specs/2026-07-02-directory-pr-preview-design.md` voor de automatische
+PR-preview. Mechaniek: `docs/zad-directory-deploy.md`.
+
+**PR-preview-eigenschappen:** eigen deployment `pr-<PR-nummer>` met een eigen verse managed DB
+(de SoR-`test`-DB wordt niet gekloond/geleegd). Bijlagen (cert-mount) en "Publicatie op het web"
+zitten op project/component-niveau en worden per deployment automatisch geërfd — geen handwerk per
+PR. Fork-PR's worden geskipt (geen secrets). Docs-only PR's deployen niet.
