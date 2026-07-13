@@ -12,8 +12,12 @@
 name: build-migrate-images
 
 on:
+  # LET OP: `chore/prebuild-migrate-images` staat hier tijdelijk zodat een push naar die
+  # wegwerp-branch de images alvast bouwt+pusht (v1.43.7), zonder te wachten op merge naar
+  # main. Deze branch NIET mergen — sluit de PR en gooi de branch weg. Alleen `main` hoort
+  # hier structureel thuis.
   push:
-    branches: [main]
+    branches: [main, chore/prebuild-migrate-images]
     paths:
       - "deploy/zad/controller-migrate/**"
       - "deploy/zad/txlog-migrate/**"
