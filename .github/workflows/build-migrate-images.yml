@@ -1,0 +1,81 @@
+# Bouwt + pusht de controller-migrate- en txlog-migrate-wrapper-images naar ghcr.
+# Deze componenten draaien NIET in deze repo (ze deployen per-peer bij de app), maar
+# deze repo is de source-of-truth voor de wrapper-images (deploy/zad/*-migrate,
+# migrate->serve). Door ze hier centraal te bouwen kunnen de app-repo's ze uit ghcr
+# pullen i.p.v. elk een eigen wrapper te onderhouden.
+#
+# Parallel aan build-manager-migrate.yml, maar zonder deploy-caller: de manager wordt
+# hier wél gedeployd (directory) en bouwt via workflow_call vanuit die deploy; controller/
+# txlog niet, dus die bouwen op push-naar-main (pad-gefilterd) + handmatig via dispatch.
+# Geen marketplace docker-actions: docker + buildx in run-steps, zodat er geen extra
+# action-SHA te pinnen is (alleen checkout) en Scorecard Pinned-Dependencies groen blijft.
+name: build-migrate-images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/zad/controller-migrate/**"
+      - "deploy/zad/txlog-migrate/**"
+      - ".github/workflows/build-migrate-images.yml"
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "OpenFSC-basisversie (build-arg IMAGE_TAG + image-tag)"
+        required: false
+        default: "v1.43.7"
+      image_suffix:
+        description: "optioneel: tag-suffix (bv. pr-42); leeg = canonieke tag"
+        required: false
+        default: ""
+
+# Top-level read-only; write-scope alleen op de job die pusht (Scorecard Token-Permissions).
+permissions:
+  contents: read
+
+concurrency:
+  group: build-migrate-images-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      # Eén component-fout mag de andere niet afbreken (onafhankelijke images).
+      fail-fast: false
+      matrix:
+        component: [controller, txlog]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Build en push ${{ matrix.component }}-migrate naar ghcr
+        env:
+          # Lowercase image-pad, exact zoals build-manager-migrate.yml.
+          IMAGE: ghcr.io/minbzk/moza-fsc-testnet/${{ matrix.component }}-migrate
+          CONTEXT: deploy/zad/${{ matrix.component }}-migrate
+          IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
+          IMAGE_SUFFIX: ${{ inputs.image_suffix }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          if [ -n "$IMAGE_SUFFIX" ]; then
+            tag="${IMAGE_TAG}-${IMAGE_SUFFIX}"
+          else
+            tag="${IMAGE_TAG}"
+          fi
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+          docker buildx build \
+            --build-arg "IMAGE_TAG=${IMAGE_TAG}" \
+            --tag "${IMAGE}:${tag}" \
+            --label "org.opencontainers.image.source=https://github.com/${REPO}" \
+            --push \
+            "$CONTEXT"
+          echo "Gepusht: ${IMAGE}:${tag}"
