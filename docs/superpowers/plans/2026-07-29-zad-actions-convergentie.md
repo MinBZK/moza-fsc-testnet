@@ -23,13 +23,15 @@ markdownlint-cli2.
 - **Action-pin:** `RijksICTGilde/zad-actions/<deploy|cleanup>@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6`
   — SHA-gepind, met de versie als comment (Scorecard Pinned-Dependencies, zoals elders in dit repo).
 - **Taal:** commentaar en documentatie in het Nederlands; code/technische termen in het Engels.
-- **Git:** nooit direct naar `main`. Branch `feature/zad-actions-convergentie` (bestaat al, bevat de
-  spec-commit). Geen reviewer toevoegen bij het aanmaken van de PR.
+- **Git:** nooit direct naar `main`. Het werk gebeurt op de bestaande branch
+  `fix/zad-component-attach` (PR #35), die van component-fix wordt **omgevormd** naar deze
+  oplossing — die PR niet vooraf mergen, dat zou code repareren die hier verdwijnt. De branchnaam
+  dekt de lading niet meer; hernoemen zou de PR sluiten, dus laat 'm staan en pas titel + body aan.
 - **Vereiste checks:** `lint` (markdownlint + yamllint + actionlint) en `Analyze (actions)`.
 - **Geen secrets in `run:`-blokken**; inputs via `env:` en gequote.
-- **Voorwaarde vooraf:** PR #35 is gemerged in `main`. Zo niet: eerst mergen, dan deze branch op
-  `main` rebasen. De scriptwijziging uit #35 verdwijnt hier weer (het script gaat weg), maar #35
-  repareert intussen `main` → `test`.
+- **Erfenis in de branch:** #35 wijzigde `upsert-directory.sh` en `cleanup.sh`; Taak 4 verwijdert
+  beide, dus die commits worden vanzelf ingehaald. `main` → `test` is tot de merge kapot (de
+  `already exists`-fout) — dat is het bewuste gevolg van niet vooraf mergen.
 - **Projectwaarden:** project `mft-tp9` (uit `vars.ZAD_PROJECT_ID_DIRECTORY`), key uit
   `secrets.ZAD_API_KEY_DIRECTORY`, base_domain `rig.prd1.gn2.quattro.rijksapps.nl`, componenten
   `dirmgr` + `dirui`, stock-tag `v1.43.7`.
@@ -552,22 +554,24 @@ git commit -m "docs(zad): projectconfig in de UI, deploy via zad-actions"
 
 - [ ] **Step 1: Push en open de PR**
 
+PR #35 bestaat al op deze branch; alleen pushen en de PR omtitelen:
+
 ```bash
-git push -u origin feature/zad-actions-convergentie
-gh pr create --base main --head feature/zad-actions-convergentie \
-  --title "feat(ci): deploy en cleanup via zad-actions" \
-  --body "Implementeert docs/superpowers/specs/2026-07-29-zad-actions-convergentie-design.md — CI deployt images via RijksICTGilde/zad-actions, projectconfig staat in de Operations Manager UI, eigen ZAD-scripts vervallen."
+git push
+gh api -X PATCH repos/MinBZK/moza-fsc-testnet/pulls/35 \
+  -f title='feat(ci): deploy en cleanup via zad-actions' \
+  -f body='Implementeert docs/superpowers/specs/2026-07-29-zad-actions-convergentie-design.md — CI deployt images via RijksICTGilde/zad-actions, projectconfig staat in de Operations Manager UI, eigen ZAD-scripts vervallen. Vervangt de eerdere component-koppelfix in deze PR: die repareerde een script dat hier verdwijnt.'
 ```
 
 - [ ] **Step 2: Wacht op de deploy-run en lees de uitkomst**
 
 ```bash
-PR=$(gh pr view --json number --jq .number)
-until [ "$(gh run list --branch feature/zad-actions-convergentie \
+PR=35
+until [ "$(gh run list --branch fix/zad-component-attach \
   --workflow zad-deploy-directory.yml --limit 1 --json status --jq '.[0].status')" = "completed" ]; do
   sleep 20
 done
-gh run list --branch feature/zad-actions-convergentie --workflow zad-deploy-directory.yml \
+gh run list --branch fix/zad-component-attach --workflow zad-deploy-directory.yml \
   --limit 1 --json databaseId,conclusion --jq '.[]|[.conclusion,.databaseId]|@tsv'
 ```
 
@@ -579,7 +583,7 @@ action-inputs zit (herstelbaar) of in de aanname dat een vers deployment de proj
 - [ ] **Step 3: Controleer de preview functioneel**
 
 ```bash
-PR=$(gh pr view --json number --jq .number)
+PR=35
 curl -sS -o /dev/null -w '%{http_code}\n' \
   "https://dirui-pr-${PR}-mft-tp9.rig.prd1.gn2.quattro.rijksapps.nl/"
 ```
@@ -594,7 +598,7 @@ staat op SUCCEEDED.
 - [ ] **Step 4: Leg de uitkomst vast op de PR**
 
 ```bash
-gh pr comment "$PR" --body "Preview-verificatie: deploy-run groen, dirui-URL HTTP 200, migrate up + self-announce SUCCEEDED op pr-<n>."
+gh pr comment 35 --body "Preview-verificatie: deploy-run groen, dirui-URL HTTP 200, migrate up + self-announce SUCCEEDED op pr-<n>."
 ```
 
 Pas de tekst aan op wat je werkelijk zag — neem geen resultaten over die je niet hebt gecontroleerd.
