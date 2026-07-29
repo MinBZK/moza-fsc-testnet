@@ -19,13 +19,23 @@ on:
 permissions:
   contents: read
 
+env:
+  # Eén bron voor de ZAD-API-basis: zowel de zad-actions-call hieronder (api-base-url) als de
+  # verificatie-curl wijzen hierop, zodat ze nooit stilzwijgend uiteen kunnen lopen. Zónder
+  # /api-suffix: de action-input wil die erbij, de curl bouwt zelf /api/v2/... — elke aanroep
+  # plakt 'm apart aan, anders eindig je op /api/api/v2.
+  ZAD_API_BASE: https://zad.rijksapp.nl
+
 concurrency:
-  group: zad-cleanup-${{ inputs.deployment }}
+  # Group-sleutel gedeeld met zad-deploy-directory.yml (project + deployment): een handmatige
+  # cleanup van bv. `test` mag niet gelijktijdig lopen met een deploy van `test` vanaf main.
+  group: zad-directory-${{ vars.ZAD_PROJECT_ID_DIRECTORY }}-${{ inputs.deployment }}
   cancel-in-progress: false
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       # Vangrail uit het verwijderde cleanup.sh: beschermde deployments niet per ongeluk slopen.
       - name: Weiger beschermde deployment-namen
@@ -48,59 +58,68 @@ jobs:
           esac
 
       - name: Cleanup via zad-actions
+        id: cleanup
         uses: RijksICTGilde/zad-actions/cleanup@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
         with:
           api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
           deployment-name: ${{ inputs.deployment }}
+          api-base-url: ${{ env.ZAD_API_BASE }}/api
           delete-github-env: 'false'
           delete-container: 'false'
+          # Upstream default (300s) is krap voor een ArgoCD-sync; bij een timeout degradeert de
+          # action een mislukte delete tot ::warning:: en gaat groen door — de verificatiestap
+          # hieronder ziet dan een deployment die nog volop aan het verdwijnen is.
+          task-timeout: '600'
+
+      - name: Waarschuw als de deployment mogelijk nooit bestond
+        # --ignore-not-found-achtig gedrag: een typo in de deployment-naam levert hier ook een
+        # groene stap op (er was niets te verwijderen). zad-deleted != 'true' is het enige signaal
+        # dat onderscheidt "verwijderd" van "nooit bestaan" — meld dat expliciet, want de rest van
+        # de job (inclusief de verificatie hieronder) ziet beide gevallen als succes.
+        if: steps.cleanup.outputs.zad-deleted != 'true'
+        run: |
+          echo "::warning::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ inputs.deployment }}' — de naam bestond mogelijk niet (typo?), of de delete is niet gelukt. Controleer desgewenst de Operations Manager UI."
 
       - name: Verifieer dat de deployment echt weg is
         # De action rapporteert een mislukte delete als ::warning:: en faalt de step niet (zie
         # zad-common.sh) — zonder harde verificatie hier zou een 401 (bv. na key-rotatie) of 5xx
         # een groene run opleveren terwijl de deployment nog live staat op het productiecluster.
+        # Scoped endpoint (GET .../deployments/{deployment}) i.p.v. de lijst: die laatste is
+        # cluster-gefilterd ("Returns only deployments targeting the current cluster" — ZAD
+        # OpenAPI) en DeploymentListResponse.required is enkel ["project","cluster"], dus
+        # `deployments` mag legitiem ontbreken/null zijn — afwezigheid in die lijst bewijst dus
+        # niets. De scoped endpoint geeft gewoon 404 (weg) of 2xx (bestaat nog).
         env:
           ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
           DEPLOYMENT: ${{ inputs.deployment }}
         run: |
           set -euo pipefail
-          base="https://zad.rijksapp.nl"
-          http_code=$(curl -sS -o /tmp/zad-deployments.json -w '%{http_code}' \
-            -H "X-API-Key: $ZAD_API_KEY" \
-            "$base/api/v2/projects/$ZAD_PROJECT/deployments")
+          attempts=6
+          interval=10
+          for attempt in $(seq 1 "$attempts"); do
+            http_code=$(curl -sS -o /tmp/zad-deployment.json -w '%{http_code}' \
+              --connect-timeout 10 --max-time 30 \
+              -H "X-API-Key: $ZAD_API_KEY" \
+              "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments/$DEPLOYMENT" \
+              || echo "000")
 
-          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            echo "::error::Kon deployment-lijst niet ophalen (HTTP $http_code) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
+            if [ "$http_code" = "404" ]; then
+              echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts)."
+              exit 0
+            fi
+
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+              if [ "$attempt" -lt "$attempts" ]; then
+                echo "Deployment '$DEPLOYMENT' nog aanwezig (HTTP $http_code, poging $attempt/$attempts) — delete kan nog async lopen, over ${interval}s opnieuw proberen."
+                sleep "$interval"
+                continue
+              fi
+              echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup (HTTP $http_code, na $attempts pogingen) — check de Operations Manager UI."
+              exit 1
+            fi
+
+            echo "::error::Onverwachte HTTP-status $http_code bij het ophalen van '$DEPLOYMENT' — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
             exit 1
-          fi
-          if ! jq empty /tmp/zad-deployments.json 2>/dev/null; then
-            echo "::error::Onverwachte respons (geen geldige JSON) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
-            exit 1
-          fi
-          # Vorm eerst afdwingen: zonder deze check maakt `.deployments[]?` van elke onverwachte
-          # respons-vorm (schema-wijziging, `{}`, een proxy-foutbody) stilzwijgend "niet aanwezig"
-          # — dan meldt deze stap de deployment weg terwijl hij nog kan draaien.
-          if ! jq -e '(.deployments | type) == "array"' /tmp/zad-deployments.json >/dev/null 2>&1; then
-            echo "::error::Onverwachte respons-vorm (.deployments is geen array) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
-            exit 1
-          fi
-          # Géén `?` op .deployments[]: die is hierboven al als array bevestigd, dus een `?` zou
-          # hier alleen nog echte jq-fouten (bv. een niet-object element) verbergen. Exit-code apart
-          # afhandelen: `jq -e` geeft 0 (gevonden), 1 (niet gevonden) én 5 (jq-fout) — zonder dat
-          # onderscheid leest exit 5 als "niet gevonden" en zou een groene run opleveren.
-          set +e
-          match=$(jq -e --arg d "$DEPLOYMENT" 'any(.deployments[]; .name == $d)' /tmp/zad-deployments.json 2>&1)
-          jq_exit=$?
-          set -e
-          case "$jq_exit" in
-            0)
-              echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup — check de Operations Manager UI."
-              exit 1 ;;
-            1)
-              echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer." ;;
-            *)
-              echo "::error::jq-fout bij verificatie (exit $jq_exit): $match — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
-              exit 1 ;;
-          esac
+          done
