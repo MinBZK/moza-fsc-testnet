@@ -107,6 +107,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           ACTION: ${{ github.event.action }}
           IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
@@ -126,6 +127,13 @@ jobs:
               # Fork-PR heeft geen secrets -> deploy zou falen; skip luid.
               if [ "$IS_FORK" = "true" ]; then
                 echo "::warning::Fork-PR — preview overgeslagen (geen secrets)."
+                emit false false; exit 0
+              fi
+              # Dependabot-PR's draaien tegen de Dependabot-secretstore, niet die van het repo:
+              # secrets.ZAD_API_KEY_DIRECTORY is er leeg -> upsert faalt. Een actions-versiebump
+              # heeft ook geen preview nodig; skip luid i.p.v. rood.
+              if [ "$PR_AUTHOR" = "dependabot[bot]" ]; then
+                echo "::warning::Dependabot-PR — preview overgeslagen (geen repo-secrets)."
                 emit false false; exit 0
               fi
               # Bestandenlijst; fail-safe: niet op te halen -> tóch deployen + bouwen.
@@ -229,9 +237,11 @@ jobs:
           echo "Preview: $ui"
 
   # PR gesloten -> preview opruimen. Onafhankelijk van changes/deploy (die skippen op close).
+  # Dependabot-PR's uitgesloten: die kregen nooit een preview én hebben geen repo-secrets.
   cleanup-preview:
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed'
-            && github.event.pull_request.head.repo.full_name == github.repository }}
+            && github.event.pull_request.head.repo.full_name == github.repository
+            && github.event.pull_request.user.login != 'dependabot[bot]' }}
     needs: meta
     runs-on: ubuntu-latest
     permissions:
