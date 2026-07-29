@@ -196,7 +196,8 @@ jobs:
               {"name": "dirui", "image": "docker.io/federatedserviceconnectivity/directory-ui:${{ needs.meta.outputs.image_base }}"}
             ]
 
-  # PR gesloten -> preview opruimen. Onafhankelijk van changes/deploy (die skippen op close).
+  # PR gesloten -> preview opruimen (deployment + de ghcr-preview-tag). Onafhankelijk van
+  # changes/deploy (die skippen op close). Gén GitHub-environment, dus geen GH_ADMIN_TOKEN nodig.
   cleanup-preview:
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed'
             && github.event.pull_request.head.repo.full_name == github.repository }}
@@ -206,32 +207,15 @@ jobs:
       contents: read
       packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Ruim de preview op via zad-actions
+        uses: RijksICTGilde/zad-actions/cleanup@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
         with:
-          persist-credentials: false
-      - name: Ruim de preview-deployment op
-        env:
-          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
-          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
-        run: ./deploy/zad/cleanup.sh apply "${DEPLOYMENT}"
-      - name: Verwijder de ghcr preview-image-tag (idempotent)
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SUFFIX: ${{ needs.meta.outputs.manager_suffix }}
-          IMAGE_BASE: ${{ needs.meta.outputs.image_base }}
-        run: |
-          set -euo pipefail
-          tag="${IMAGE_BASE}-${SUFFIX}"
-          # Version-id van de tag opzoeken in het org-package; niet gevonden = niets te doen.
-          vid=$(gh api --paginate \
-            "orgs/minbzk/packages/container/moza-fsc-testnet%2Fmanager-migrate/versions" \
-            --jq "map(select(.metadata.container.tags[]? == \"$tag\")) | .[0].id // empty" || true)
-          if [ -n "$vid" ]; then
-            gh api -X DELETE "orgs/minbzk/packages/container/moza-fsc-testnet%2Fmanager-migrate/versions/$vid" && \
-              echo "ghcr-tag $tag verwijderd" || echo "::warning::ghcr-tag $tag niet verwijderd (rechten?)"
-          else
-            echo "geen ghcr-tag $tag — niets op te ruimen"
-          fi
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          deployment-name: ${{ needs.meta.outputs.deployment }}
+          delete-github-env: 'false'
+          delete-container: 'true'
+          containers: |
+            [
+              {"org": "minbzk", "name": "moza-fsc-testnet/manager-migrate", "tag": "${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}"}
+            ]
