@@ -1,10 +1,10 @@
-# Directe ZAD-API-deploy van de directory (#723) via de v2 Operations Manager API.
-# Roept deploy/zad/upsert-directory.sh aan (zelfde bron als de CLI). `validate` is read-only;
-# `apply` upsert het deployment. Model: push main -> `test`; PR -> preview `pr-<PR-nummer>`
+# Deploy van de directory (#723) via RijksICTGilde/zad-actions — zelfde mechanisme als
+# moza-poc-fbs-berichtenbox. Model: push main -> deployment `test`; PR -> preview `pr-<PR-nummer>`
 # (open/sync = deploy, close = cleanup); workflow_dispatch = handmatige override.
 #
-# Dekt alleen de deploy-API (deployment + componenten + images + domain_format). NIET via de API
-# (UI-only): bijlagen (cert-mount), env-vars, "Publicatie op het web" (passthrough-TLS).
+# De action zet deployment + componenten + images. Projectconfig (env_vars, aliases, services,
+# bijlagen/cert-mount, "Publicatie op het web") staat in de Operations Manager UI en geldt voor
+# ALLE deployments via deploy-variabelen ($DEPLOYMENT_NAME, $DATABASE_*).
 name: zad-deploy-directory
 
 on:
@@ -14,7 +14,6 @@ on:
   push:
     branches: [main]
     paths:
-      - "deploy/zad/upsert-directory.sh"
       - "deploy/zad/manager-migrate/**"
       - "group/**"
       - ".github/workflows/zad-deploy-directory.yml"
@@ -22,11 +21,6 @@ on:
     types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
-      mode:
-        description: "validate=auth-check; plan=toon bodies; apply=muteren + pollen"
-        type: choice
-        options: [validate, plan, apply]
-        default: validate
       deployment:
         description: "deployment-naam (main -> test; PR -> pr-<PR-nummer>)"
         required: false
@@ -37,10 +31,6 @@ on:
         default: "v1.43.7"
       manager_tag:
         description: "ghcr manager-migrate-tag (bv. branch-tag); leeg = image_tag"
-        required: false
-        default: ""
-      clone_from:
-        description: "optioneel: erf componenten van deze deployment (bv. test)"
         required: false
         default: ""
 
@@ -167,8 +157,10 @@ jobs:
       image_tag: ${{ needs.meta.outputs.image_base }}
       image_suffix: ${{ needs.meta.outputs.manager_suffix }}
 
-  # Rolt de directory uit. Draait ná build-succes, of meteen als de build geskipt is
-  # (config/group-only) -> de image bestaat gegarandeerd vóór apply.
+  # Rolt de directory uit via de upstream-action (zelfde mechanisme als moza-poc-fbs-berichtenbox).
+  # Draait ná build-succes, of meteen als de build geskipt is -> de image bestaat gegarandeerd.
+  # De action zet ALLEEN images + deployment; env/services/bijlagen/web-publicatie zijn projectconfig
+  # in de Operations Manager UI (zie docs/zad-directory-deploy.md).
   deploy:
     needs: [meta, changes, build]
     if: >-
@@ -180,53 +172,29 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Deploy directory via zad-actions
+        uses: RijksICTGilde/zad-actions/deploy@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
         with:
-          persist-credentials: false
-
-      - name: Upsert directory via ZAD v2-API
-        env:
-          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
-          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          # push/PR = altijd apply; dispatch gebruikt zijn mode-input.
-          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'apply' }}
-          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
-          IMAGE_TAG: ${{ needs.meta.outputs.image_base }}
-          # PR met gewijzigde wrapper -> de zojuist gebouwde pr-<n>-image; anders leeg (canoniek).
-          ZAD_MANAGER_TAG: ${{ (github.event_name == 'pull_request' && needs.changes.outputs.manager_migrate_changed == 'true') && format('{0}-{1}', needs.meta.outputs.image_base, needs.meta.outputs.manager_suffix) || inputs.manager_tag }}
-          # Previews klonen NIET (SoR-DB uitgezonderd); dispatch mag clone_from meegeven.
-          CLONE_FROM: ${{ github.event_name == 'workflow_dispatch' && inputs.clone_from || '' }}
-        run: ./deploy/zad/upsert-directory.sh "${MODE}" "${DEPLOYMENT}" "${IMAGE_TAG}" "${CLONE_FROM}"
-
-      - name: Preview-URL als PR-comment (upsert)
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
-          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
-          PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          BASE_DOMAIN: ${{ vars.ZAD_BASE_DOMAIN || 'rig.prd1.gn2.quattro.rijksapps.nl' }}
-        run: |
-          set -euo pipefail
-          marker="<!-- fsc-directory-preview -->"
-          ui="https://dirui-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
-          mgr="https://dirmgr-${DEPLOYMENT}-${PROJECT}.${BASE_DOMAIN}"
-          body="${marker}
-          ### FSC directory-preview \`${DEPLOYMENT}\`
-          - directory-ui: ${ui}
-          - manager (SNI): ${mgr}
-          _Wordt automatisch opgeruimd bij het sluiten van deze PR._"
-          # Bestaand marker-comment zoeken en updaten; anders een nieuw comment plaatsen.
-          id=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
-                --jq "map(select(.body | startswith(\"$marker\"))) | .[0].id // empty")
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" >/dev/null
-          else
-            gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$body" >/dev/null
-          fi
-          echo "Preview: $ui"
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          deployment-name: ${{ needs.meta.outputs.deployment }}
+          # Previews erven de projectconfig van `test`; `test` zelf kloont niets.
+          clone-from: ${{ github.event_name == 'pull_request' && 'test' || '' }}
+          # Previews horen op ELKE PR te draaien, ook een Dependabot-bump (de key staat daarvoor
+          # ook in de Dependabot-secretstore). Zonder dit skipt de action bot-PR's stilzwijgend.
+          skip-bot-prs: 'false'
+          # De action curlt één health-endpoint per component; dirmgr is mTLS-only en geeft daar
+          # nooit 2xx -> de wachtlus zou altijd time-outen.
+          wait-for-ready: 'false'
+          # Verse preview-provisioning duurt structureel langer dan een update (300s is te krap).
+          task-timeout: '600'
+          comment-on-pr: ${{ github.event_name == 'pull_request' }}
+          domain-format: component-deployment-project
+          components: |
+            [
+              {"name": "dirmgr", "image": "ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${{ inputs.manager_tag != '' && inputs.manager_tag || ((github.event_name == 'pull_request' && needs.changes.outputs.manager_migrate_changed == 'true') && format('{0}-{1}', needs.meta.outputs.image_base, needs.meta.outputs.manager_suffix) || needs.meta.outputs.image_base) }}"},
+              {"name": "dirui", "image": "docker.io/federatedserviceconnectivity/directory-ui:${{ needs.meta.outputs.image_base }}"}
+            ]
 
   # PR gesloten -> preview opruimen. Onafhankelijk van changes/deploy (die skippen op close).
   cleanup-preview:
