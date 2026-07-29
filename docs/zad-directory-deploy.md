@@ -111,8 +111,10 @@ De env staat op `dirmgr`/`dirui` in de Operations Manager UI (project `mft-tp9`)
 Waarden ter referentie:
 
 - `dirmgr`: de waarden uit `peers/directory/manager.env.example`, met:
-  - `SELF_ADDRESS=https://dirmgr-test-mft-tp9.<base_domain>` (of de PR-deployment)
-  - `DIRECTORY_MANAGER_ADDRESS=` idem (directory wijst naar zichzelf)
+  - `SELF_ADDRESS=https://dirmgr-test-mft-tp9.<base_domain>:443` (of de PR-deployment) — de
+    `:443` is verplicht: OpenFSC faalt fataal op "missing port in manager address" zonder
+    expliciete poort, en `:443` is de mesh-poort (ingress SNI-passthrough naar pod-poort 8443).
+  - `DIRECTORY_MANAGER_ADDRESS=` idem, incl. `:443` (directory wijst naar zichzelf)
   - `STORAGE_POSTGRES_DSN` uit de managed-Postgres-substitutievars (`$DATABASE_*`) — geen eigen
     postgres-component.
   - `DISABLE_CRL_CHECKS=true` als **interim** (lege CRL, geen distributiepunt). `TODO(#722)`:
