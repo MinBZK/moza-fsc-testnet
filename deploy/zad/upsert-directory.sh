@@ -5,7 +5,9 @@
 #
 # Model: PR = eigen deployment `pr-<PR-nummer>`; main -> deployment `test`. `:upsert-deployment` zet
 # per component de {reference,image} (DAAR hangt het draaiende image van het deployment) én maakt/
-# updatet het deployment; POST /components verrijkt elke component met env_vars/port/services/aliases.
+# updatet het deployment; POST /components maakt een component (env_vars/port/services/aliases) en
+# is project-uniek op naam — een volgend deployment KOPPELT die bestaande component via
+# POST /deployments/{deployment}/components.
 # Previews kunnen `cloneFrom` een bestaande deployment (erven componenten; images uit de upsert-body).
 # NIET via de API (UI-only): bijlagen (cert-mount) + "Publicatie op het web" (passthrough-TLS).
 #
@@ -115,6 +117,8 @@ if [ "${MODE}" = plan ]; then
   if [ -z "${CLONE_FROM}" ]; then
     echo "### component dirmgr (manager + managed Postgres)"; echo "${MANAGER_BODY}"
     echo "### component dirui";                               echo "${UI_BODY}"
+    echo "(bestaat de componentnaam al in het project — die is project-uniek — dan koppelt apply 'm"
+    echo " aan dit deployment via POST /deployments/${DEPLOYMENT}/components i.p.v. aan te maken)"
   else
     echo "(cloneFrom=${CLONE_FROM} -> componenten geërfd; geen POST /components)"
   fi
@@ -160,6 +164,34 @@ post() {  # $1=label $2=path $3=body
   fi
 }
 
+# Componentstaat: de v2-API heeft geen GET /components, maar elke component hangt aan minstens één
+# deployment (`deployment_names` heeft minItems 1) -> de deployments-lijst geeft zowel de
+# project-brede set als wat er al in DÍT deployment zit.
+read_state() {
+  local code
+  code="$(curl -sS "${hdr[@]}" -o "${resp}" -w '%{http_code}' "${API}/deployments")"
+  [ "${code}" = 200 ] || { echo "kan deployments niet lezen (HTTP ${code})"; cat "${resp}"; return 1; }
+  PROJECT_COMPONENTS="$(jq -r '[.deployments[]?.components[]?.reference] | unique | .[]' "${resp}")"
+  DEPLOYMENT_COMPONENTS="$(jq -r --arg d "${DEPLOYMENT}" \
+    '[.deployments[]? | select(.name == $d) | .components[]?.reference] | .[]' "${resp}")"
+}
+
+in_set() { printf '%s\n' "${2}" | grep -qxF "${1}"; }
+
+ensure_component() {  # $1=name $2=image $3=create-body
+  if ! in_set "${1}" "${PROJECT_COMPONENTS}"; then
+    post "${1}" "/components" "${3}"
+  elif ! in_set "${1}" "${DEPLOYMENT_COMPONENTS}"; then
+    post "${1}" "/deployments/${DEPLOYMENT}/components" \
+      "$(jq -n --arg n "${1}" --arg i "${2}" '{component_name:$n, image:$i}')"
+  else
+    # Bestaat al in dit deployment; het draaiende image komt uit de :upsert-deployment hierboven.
+    # TODO(#723): env/poort van een bestaande component bijwerken kan via PATCH /components/{name}
+    # (UpdateComponentRequest) — nu nog UI-werk, POST /components deed dit sowieso nooit.
+    echo "component '${1}' zit al in deployment '${DEPLOYMENT}' — niets te koppelen"
+  fi
+}
+
 # ---- apply ----
 echo "== validate =="
 code="$(curl -sS "${hdr[@]}" -o "${resp}" -w '%{http_code}' "${API}/deployments")"
@@ -172,9 +204,14 @@ echo "== upsert deployment '${DEPLOYMENT}' =="
 post "deployment" "/:upsert-deployment" "${DEPLOY_BODY}"
 
 if [ -z "${CLONE_FROM}" ]; then
-  echo "== componenten aanmaken =="
-  post "dirmgr" "/components" "${MANAGER_BODY}"
-  post "dirui"  "/components" "${UI_BODY}"
+  echo "== componenten koppelen =="
+  # Componentnamen zijn PROJECT-uniek: `POST /components` MAAKT er één en faalt op een bestaande
+  # naam ("Component 'dirmgr' already exists in project 'mft-tp9'"). Een tweede deployment koppelt
+  # de bestaande component dus via `POST /deployments/{d}/components` ("add an existing component to
+  # a deployment that doesn't yet include it"), met zijn eigen image.
+  read_state
+  ensure_component "dirmgr" "${MANAGER_IMAGE}" "${MANAGER_BODY}"
+  ensure_component "dirui"  "${UI_IMAGE}"      "${UI_BODY}"
 else
   echo "== cloneFrom=${CLONE_FROM}: componenten geërfd =="
 fi

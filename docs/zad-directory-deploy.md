@@ -20,6 +20,10 @@
 - **Via `deploy/zad/upsert-directory.sh` (ZAD-API, secret `ZAD_API_KEY_DIRECTORY`):** deployment +
   componenten + images **+ env_vars**. `:upsert-deployment` maakt het deployment; `POST /components`
   maakt elke component mét env + poort. Het script bevat de poorten + env (uit de lokale harness).
+  **Componentnamen zijn project-uniek**: bestaat `dirmgr`/`dirui` al (dus bij elk nieuw
+  `pr-<n>`-deployment), dan koppelt het script de bestaande component via
+  `POST /deployments/<deployment>/components` in plaats van 'm opnieuw aan te maken — anders faalt
+  de task met `Component 'dirmgr' already exists in project 'mft-tp9'`.
 - **Alleen in de Operations Manager UI** (niet in de deploy-API): **bijlagen** (cert-mount, ontwerp A)
   en **"Publicatie op het web"** (passthrough-TLS, modus 2).
 
@@ -126,7 +130,8 @@ read -rs ZAD_API_KEY; export ZAD_API_KEY              # plak de key niet inline
 ```
 
 Het script maakt het deployment (`:upsert-deployment`, `domain_format=component-deployment-project`)
-en de 2 componenten (`dirmgr` + `dirui`) met poorten + env (`POST /components`), en pollt elke task. `plan` toont eerst
+en de 2 componenten (`dirmgr` + `dirui`) met poorten + env (`POST /components`, of een koppeling aan
+het deployment als de component al bestaat), en pollt elke task. `plan` toont eerst
 de exacte bodies. **Daarna nog handmatig (UI, stappen 3 + 5):** bijlagen (certs) + Publicatie op het
 web modus 2 op `directory-manager`. Via CI: `zad-deploy-directory.yml` (zelfde script; beschikbaar
 zodra 'ie op `main` staat). Env (stap 4) zit nu in het script — UI-env niet meer nodig.
