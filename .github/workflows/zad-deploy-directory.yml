@@ -17,8 +17,17 @@ on:
       - "deploy/zad/manager-migrate/**"
       - "group/**"
       - ".github/workflows/zad-deploy-directory.yml"
+  # Zelfde path-filter als de push-trigger hierboven — een PR die alleen peers/** of pki/**
+  # raakt, provisioneert geen preview op het productiecluster. Kanttekening: het filter geldt óók
+  # voor het closed-event, dus een PR waarvan de diff niet (meer) in deze paths valt triggert geen
+  # cleanup-job; in dat geval gaat opruimen handmatig via zad-cleanup.yml.
   pull_request:
     types: [opened, synchronize, reopened, closed]
+    branches: [main]
+    paths:
+      - "deploy/zad/manager-migrate/**"
+      - "group/**"
+      - ".github/workflows/zad-deploy-directory.yml"
   workflow_dispatch:
     inputs:
       deployment:
@@ -53,11 +62,13 @@ jobs:
       manager_suffix: ${{ steps.m.outputs.manager_suffix }}
     steps:
       # Vangrail uit het verwijderde upsert-directory.sh: ruwe workflow_dispatch-inputs niet
-      # ongevalideerd in de components-JSON (manager_tag) of als deployment-naam laten belanden.
+      # ongevalideerd in de components-JSON (manager_tag, image_tag) of als deployment-naam
+      # laten belanden.
       - name: Valideer workflow_dispatch-inputs
         env:
           INPUT_DEPLOYMENT: "${{ inputs.deployment }}"
           INPUT_MANAGER_TAG: "${{ inputs.manager_tag }}"
+          INPUT_IMAGE_TAG: "${{ inputs.image_tag }}"
         run: |
           set -euo pipefail
           # Zelfde default als de volgende stap (push/PR hebben geen inputs -> "test").
@@ -72,6 +83,15 @@ jobs:
             case "$INPUT_MANAGER_TAG" in
               *[!A-Za-z0-9._-]*)
                 echo "::error::ongeldige manager_tag '$INPUT_MANAGER_TAG' (alleen A-Za-z0-9._-)"; exit 1 ;;
+            esac
+          fi
+          # image_tag mag leeg zijn (dan valt de volgende stap terug op v1.43.7); alléén
+          # valideren als er iets is ingevuld — komt terecht in de components-JSON (dirmgr,
+          # dirui) én de cleanup-containers-tag.
+          if [ -n "$INPUT_IMAGE_TAG" ]; then
+            case "$INPUT_IMAGE_TAG" in
+              *[!A-Za-z0-9._-]*)
+                echo "::error::ongeldige image_tag '$INPUT_IMAGE_TAG' (alleen A-Za-z0-9._-)"; exit 1 ;;
             esac
           fi
 
