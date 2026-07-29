@@ -1,4 +1,4 @@
-# Deploy van de directory (#723) via RijksICTGilde/zad-actions — zelfde mechanisme als
+# Deploy van de directory via RijksICTGilde/zad-actions — zelfde mechanisme als
 # moza-poc-fbs-berichtenbox. Model: push main -> deployment `test`; PR -> preview `pr-<PR-nummer>`
 # (open/sync = deploy, close = cleanup); workflow_dispatch = handmatige override.
 #
@@ -17,17 +17,14 @@ on:
       - "deploy/zad/manager-migrate/**"
       - "group/**"
       - ".github/workflows/zad-deploy-directory.yml"
-  # Zelfde path-filter als de push-trigger hierboven — een PR die alleen peers/** of pki/**
-  # raakt, provisioneert geen preview op het productiecluster. Kanttekening: het filter geldt óók
-  # voor het closed-event, dus een PR waarvan de diff niet (meer) in deze paths valt triggert geen
-  # cleanup-job; in dat geval gaat opruimen handmatig via zad-cleanup.yml.
+  # Géén paths-filter hier (in tegenstelling tot de push-trigger hierboven): dat filter zou ook
+  # het closed-event raken, en dan triggert een PR waarvan de diff niet (meer) in de bewaakte
+  # paths valt geen cleanup-job — de preview blijft dan op het productiecluster staan. De
+  # `changes`-job hieronder bepaalt daarom zelf, via de PR-bestandenlijst, of er gedeployd moet
+  # worden; closed-events lopen altijd door naar cleanup-preview.
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches: [main]
-    paths:
-      - "deploy/zad/manager-migrate/**"
-      - "group/**"
-      - ".github/workflows/zad-deploy-directory.yml"
   workflow_dispatch:
     inputs:
       deployment:
@@ -166,8 +163,14 @@ jobs:
                 echo "::warning::Kon gewijzigde bestanden niet ophalen — fail-safe deploy."
                 emit true true; exit 0
               fi
-              # run: iets anders dan docs/*.md gewijzigd?
-              if printf '%s\n' "$files" | grep -qvE '(^docs/|\.md$)'; then run=true; else run=false; fi
+              # run: raakt de wijziging deploy/zad/manager-migrate/, group/ of deze workflow zelf?
+              # (voorheen een paths-filter op de trigger; nu hier, zodat het closed-event er niet
+              # meer door geblokkeerd wordt — zie de trigger-comment hierboven.)
+              if printf '%s\n' "$files" | grep -qE '^(deploy/zad/manager-migrate/|group/|\.github/workflows/zad-deploy-directory\.yml$)'; then
+                run=true
+              else
+                run=false
+              fi
               # changed: raakt de wrapper?
               if printf '%s\n' "$files" | grep -q '^deploy/zad/manager-migrate/'; then changed=true; else changed=false; fi
               emit "$run" "$changed"; exit 0 ;;
@@ -176,7 +179,13 @@ jobs:
               if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
                 emit true true; exit 0
               fi
-              if git diff --name-only "$BEFORE" "$SHA" | grep -q '^deploy/zad/manager-migrate/'; then
+              # Fail-safe: git diff kan falen (onbereikbare $BEFORE na force-push/GC) — dan tóch
+              # bouwen, i.p.v. `test` stilzwijgend op een stale image laten staan.
+              if ! diff_files=$(git diff --name-only "$BEFORE" "$SHA" 2>&1); then
+                echo "::warning::git diff faalde ($BEFORE..$SHA) — fail-safe build."
+                emit true true; exit 0
+              fi
+              if printf '%s\n' "$diff_files" | grep -q '^deploy/zad/manager-migrate/'; then
                 emit true true
               else
                 emit true false
@@ -223,9 +232,10 @@ jobs:
           deployment-name: ${{ needs.meta.outputs.deployment }}
           # Previews erven de projectconfig van `test`; `test` zelf kloont niets.
           clone-from: ${{ github.event_name == 'pull_request' && 'test' || '' }}
-          # Previews horen op ELKE PR te draaien, ook een Dependabot-bump (de key staat daarvoor
-          # ook in de Dependabot-secretstore). Zonder dit skipt de action bot-PR's stilzwijgend.
-          skip-bot-prs: 'false'
+          # Dependabot-PR's worden niet functioneel getest, dus een preview voegt weinig toe — en
+          # deployen zou een nog niet gereviewde gebumpte action-versie draaien met de
+          # productie-API-key. Projectbesluit: bot-PR's overslaan.
+          skip-bot-prs: 'true'
           # De action curlt één health-endpoint per component; dirmgr is mTLS-only en geeft daar
           # nooit 2xx -> de wachtlus zou altijd time-outen.
           wait-for-ready: 'false'
@@ -260,11 +270,76 @@ jobs:
           project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
           deployment-name: ${{ needs.meta.outputs.deployment }}
           delete-github-env: 'false'
-          delete-container: 'true'
-          # Moet spiegelen met de deploy-job hierboven: default 'true' zou een Dependabot-PR
-          # stilzwijgend overslaan -> de preview blijft dan permanent op het productiecluster staan.
-          skip-bot-prs: 'false'
-          containers: |
-            [
-              {"org": "minbzk", "name": "moza-fsc-testnet-manager-migrate", "tag": "${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}"}
-            ]
+          # De action verwijdert bij een 409 ("last tagged version") het HELE package i.p.v. de
+          # tag — riskant, want moza-fsc-testnet-manager-migrate heeft momenteel maar één versie
+          # (v1.43.7, waar de gedeelde `test`-deployment op draait). Zelf afhandelen, zie de stap
+          # hieronder.
+          delete-container: 'false'
+          # Moet spiegelen met de deploy-job hierboven: als deploy Dependabot-PR's overslaat en
+          # cleanup niet, blijft de preview van een eerdere (wél gedeployde) bot-PR permanent op
+          # het productiecluster staan zodra het beleid weer omgezet wordt.
+          skip-bot-prs: 'true'
+
+      - name: Verifieer dat de deployment echt weg is
+        # De action rapporteert een mislukte delete als ::warning:: en faalt de step niet (zie
+        # zad-common.sh) — zonder harde verificatie hier zou een 401 (bv. na key-rotatie) of 5xx
+        # een groene run opleveren terwijl de preview nog live staat op het productiecluster.
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
+        run: |
+          set -euo pipefail
+          base="https://zad.rijksapp.nl"
+          http_code=$(curl -sS -o /tmp/zad-deployments.json -w '%{http_code}' \
+            -H "X-API-Key: $ZAD_API_KEY" \
+            "$base/api/v2/projects/$ZAD_PROJECT/deployments")
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Kon deployment-lijst niet ophalen (HTTP $http_code) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
+            exit 1
+          fi
+          if ! jq empty /tmp/zad-deployments.json 2>/dev/null; then
+            echo "::error::Onverwachte respons (geen geldige JSON) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
+            exit 1
+          fi
+          if jq -e --arg d "$DEPLOYMENT" 'any(.deployments[]?; .name == $d)' /tmp/zad-deployments.json >/dev/null; then
+            echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup — check de Operations Manager UI."
+            exit 1
+          fi
+          echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer."
+
+      - name: Verwijder de ghcr preview-tag (indien niet gedeeld)
+        # Zelfde reden als hierboven bij delete-container: de action verwijdert het hele package
+        # zodra dit de laatst getagde versie is. Alleen verwijderen als de preview-tag een eigen,
+        # ongedeelde versie heeft; deelt de versie tags met bv. v1.43.7 (byte-identieke rebuild),
+        # dan blijft de package staan.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}
+        run: |
+          set -euo pipefail
+          org="minbzk"
+          package="moza-fsc-testnet-manager-migrate"
+
+          versions=$(gh api "orgs/${org}/packages/container/${package}/versions")
+
+          version_id=$(echo "$versions" | jq -r --arg tag "$TAG" \
+            '.[] | select(.metadata.container.tags // [] | index($tag)) | .id' | head -n1)
+
+          if [ -z "$version_id" ]; then
+            echo "Geen package-version gevonden met tag '$TAG' — niets op te ruimen (preview heeft nooit een eigen image gebouwd)."
+            exit 0
+          fi
+
+          tag_count=$(echo "$versions" | jq -r --arg id "$version_id" \
+            '.[] | select((.id | tostring) == $id) | (.metadata.container.tags // []) | length')
+
+          if [ "$tag_count" -gt 1 ]; then
+            echo "::warning::Package-version $version_id (tag '$TAG') deelt tags met een andere image (bv. v1.43.7) — package NIET verwijderd."
+            exit 0
+          fi
+
+          if ! gh api "orgs/${org}/packages/container/${package}/versions/${version_id}" -X DELETE; then
+            echo "::warning::Kon package-version $version_id (tag '$TAG') niet verwijderen — de ZAD-deployment is al weg, dat is het belangrijkste."
+          fi

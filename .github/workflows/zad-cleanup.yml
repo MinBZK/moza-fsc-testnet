@@ -1,4 +1,4 @@
-# ZAD-cleanup (#729) via RijksICTGilde/zad-actions/cleanup: verwijdert een deployment uit het
+# ZAD-cleanup via RijksICTGilde/zad-actions/cleanup: verwijdert een deployment uit het
 # directory-project (project uit vars.ZAD_PROJECT_ID_DIRECTORY, key uit
 # secrets.ZAD_API_KEY_DIRECTORY). Het PR-pad ruimt zichzelf op in zad-deploy-directory.yml;
 # deze workflow is voor handmatige gevallen. Een peer-deployment ruim je op bij de app-repo met
@@ -55,3 +55,32 @@ jobs:
           deployment-name: ${{ inputs.deployment }}
           delete-github-env: 'false'
           delete-container: 'false'
+
+      - name: Verifieer dat de deployment echt weg is
+        # De action rapporteert een mislukte delete als ::warning:: en faalt de step niet (zie
+        # zad-common.sh) — zonder harde verificatie hier zou een 401 (bv. na key-rotatie) of 5xx
+        # een groene run opleveren terwijl de deployment nog live staat op het productiecluster.
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: |
+          set -euo pipefail
+          base="https://zad.rijksapp.nl"
+          http_code=$(curl -sS -o /tmp/zad-deployments.json -w '%{http_code}' \
+            -H "X-API-Key: $ZAD_API_KEY" \
+            "$base/api/v2/projects/$ZAD_PROJECT/deployments")
+
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "::error::Kon deployment-lijst niet ophalen (HTTP $http_code) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
+            exit 1
+          fi
+          if ! jq empty /tmp/zad-deployments.json 2>/dev/null; then
+            echo "::error::Onverwachte respons (geen geldige JSON) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
+            exit 1
+          fi
+          if jq -e --arg d "$DEPLOYMENT" 'any(.deployments[]?; .name == $d)' /tmp/zad-deployments.json >/dev/null; then
+            echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup — check de Operations Manager UI."
+            exit 1
+          fi
+          echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer."
