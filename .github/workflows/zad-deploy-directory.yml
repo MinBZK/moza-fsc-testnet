@@ -192,12 +192,12 @@ jobs:
           domain-format: component-deployment-project
           components: |
             [
-              {"name": "dirmgr", "image": "ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${{ inputs.manager_tag != '' && inputs.manager_tag || ((github.event_name == 'pull_request' && needs.changes.outputs.manager_migrate_changed == 'true') && format('{0}-{1}', needs.meta.outputs.image_base, needs.meta.outputs.manager_suffix) || needs.meta.outputs.image_base) }}"},
+              {"name": "dirmgr", "image": "ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:${{ inputs.manager_tag != '' && inputs.manager_tag || ((github.event_name == 'pull_request' && needs.changes.outputs.manager_migrate_changed == 'true') && format('{0}-{1}', needs.meta.outputs.image_base, needs.meta.outputs.manager_suffix) || needs.meta.outputs.image_base) }}"},
               {"name": "dirui", "image": "docker.io/federatedserviceconnectivity/directory-ui:${{ needs.meta.outputs.image_base }}"}
             ]
 
   # PR gesloten -> preview opruimen (deployment + de ghcr-preview-tag). Onafhankelijk van
-  # changes/deploy (die skippen op close). Gén GitHub-environment, dus geen GH_ADMIN_TOKEN nodig.
+  # changes/deploy (die skippen op close). Gee GitHub-environment, dus geen GH_ADMIN_TOKEN nodig.
   cleanup-preview:
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed'
             && github.event.pull_request.head.repo.full_name == github.repository }}
@@ -217,5 +217,5 @@ jobs:
           delete-container: 'true'
           containers: |
             [
-              {"org": "minbzk", "name": "moza-fsc-testnet/manager-migrate", "tag": "${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}"}
+              {"org": "minbzk", "name": "moza-fsc-testnet-manager-migrate", "tag": "${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}"}
             ]

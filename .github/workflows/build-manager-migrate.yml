@@ -58,8 +58,8 @@ jobs:
 
       - name: Build en push manager-migrate naar ghcr
         env:
-          # Lowercase image-pad, exact zoals deploy.yml de canonieke tag consumeert.
-          IMAGE: ghcr.io/minbzk/moza-fsc-testnet/manager-migrate
+          # Lowercase image-pad zonder slash: zad-actions/cleanup weigert `/` in een containernaam.
+          IMAGE: ghcr.io/minbzk/moza-fsc-testnet-manager-migrate
           IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
           IMAGE_SUFFIX: ${{ inputs.image_suffix }}
           REPO: ${{ github.repository }}
