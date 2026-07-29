@@ -554,10 +554,31 @@ Vervang in de sectie "ZAD / OpenShift (uit #720 — GO)" de alinea die begint me
   een wrapper-image `deploy/zad/manager-migrate/` (`migrate up && serve` in de entrypoint).
 ```
 
+- [ ] **Step 4b: Werk het image-pad in de docs bij**
+
+De wrapper-image is hernoemd naar `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate` (zie Global
+Constraints). Vervang elk voorkomen van het oude pad met slash:
+
+```bash
+grep -rn "moza-fsc-testnet/manager-migrate" docs/ CLAUDE.md
+```
+
+Werk elke treffer bij naar `moza-fsc-testnet-manager-migrate`. In
+`docs/superpowers/specs/2026-07-29-zad-actions-convergentie-design.md` staat het pad in het
+YAML-voorbeeld van Besl. B; werk dat bij én voeg direct onder dat codeblok één regel toe:
+
+```markdown
+> Naschrift (2026-07-29): de ghcr-image is hernoemd van `moza-fsc-testnet/manager-migrate` naar
+> `moza-fsc-testnet-manager-migrate` — `zad-actions/cleanup` valideert containernamen op
+> `^[a-zA-Z0-9._-]+$` en weigert dus een repo-scoped naam met `/`.
+```
+
+Herhaal de grep na afloop; verwacht: geen treffers meer met slash.
+
 - [ ] **Step 5: Lint**
 
 ```bash
-npx --yes markdownlint-cli2 docs/zad-directory-deploy.md docs/zad-cleanup.md CLAUDE.md
+npx --yes markdownlint-cli2 docs/zad-directory-deploy.md docs/zad-cleanup.md CLAUDE.md docs/superpowers/specs/2026-07-29-zad-actions-convergentie-design.md
 ```
 
 Verwacht: `Summary: 0 issues in 0 files`.
@@ -565,7 +586,7 @@ Verwacht: `Summary: 0 issues in 0 files`.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add docs/zad-directory-deploy.md docs/zad-cleanup.md CLAUDE.md
+git add docs/zad-directory-deploy.md docs/zad-cleanup.md CLAUDE.md docs/superpowers/specs/2026-07-29-zad-actions-convergentie-design.md
 git commit -m "docs(zad): projectconfig in de UI, deploy via zad-actions"
 ```
 
