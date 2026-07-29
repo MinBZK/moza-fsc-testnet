@@ -48,7 +48,9 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
 
 - **SHA-pinned actions** (Scorecard Pinned-Dependencies): `zad-deploy-directory.yml` en
   `zad-cleanup.yml` gebruiken `RijksICTGilde/zad-actions/deploy` resp. `/cleanup`, beide
-  SHA-gepind (`@13434cd4…` # v4.0.6), plus `actions/checkout` (al SHA-gepind).
+  SHA-gepind (`@13434cd4…` # v4.0.6). `zad-deploy-directory.yml` checkt daarnaast de repo uit
+  met `actions/checkout` (al SHA-gepind, nodig voor `git diff` in de `changes`-job);
+  `zad-cleanup.yml` heeft geen checkout-stap — die praat alleen met de ZAD-API.
 - **Geen secrets in de workflow-`run`**: de API-key gaat als action-input (`api-key:
   ${{ secrets.ZAD_API_KEY_DIRECTORY }}`), niet als losse env-var in een `run:`-stap; de
   `if`-guard in `zad-cleanup.yml` valideert de deployment-naam (`[a-z0-9-]`) tegen injectie vóór
@@ -67,5 +69,6 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   even reproduceerbaar, en er is niets meer te vendoren.
 - **Task-timeout**: de deploy-actie gebruikt `task-timeout: '600'` (zie `zad-deploy-directory.yml`)
   — dezelfde ruimte als `PREVIEW_TASK_TIMEOUT` in `moza-poc-fbs-berichtenbox`, want verse
-  preview-provisioning duurt langer dan een update. `zad-actions/cleanup` kent zelf geen
-  timeout-knop; falen daar is direct zichtbaar als rode run in de Actions-tab.
+  preview-provisioning duurt langer dan een update. De cleanup-aanroepen in dit repo zetten
+  `task-timeout` niet en draaien dus op de default van `zad-actions/cleanup` zelf (`300`); een
+  cleanup heeft geen verse provisioning nodig, dus dat is bewust ongewijzigd gelaten.
