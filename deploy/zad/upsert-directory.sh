@@ -21,7 +21,8 @@
 #   ./deploy/zad/upsert-directory.sh plan   [deployment] [tag] [clone_from]   # toont bodies, muteert niet
 #   ./deploy/zad/upsert-directory.sh apply  [deployment] [tag] [clone_from]   # muteert + pollt tasks
 # Env: ZAD_API_KEY (verplicht), ZAD_PROJECT (mft-tp9), ZAD_BASE (zad.rijksapp.nl),
-#      ZAD_BASE_DOMAIN (rig.prd1...), ZAD_MANAGER_TAG (ghcr manager-tag), ZAD_PG_SSLMODE (disable).
+#      ZAD_BASE_DOMAIN (rig.prd1...), ZAD_MANAGER_TAG (ghcr manager-tag), ZAD_PG_SSLMODE (disable),
+#      ZAD_TASK_TIMEOUT (600s per async task; overschrijden = fataal).
 set -euo pipefail
 
 MODE="${1:?usage: upsert-directory.sh <validate|plan|apply> [deployment=test] [tag=v1.43.7] [clone_from]}"
@@ -33,12 +34,14 @@ PROJECT="${ZAD_PROJECT:-mft-tp9}"
 BASE="${ZAD_BASE:-https://zad.rijksapp.nl}"
 BASE_DOMAIN="${ZAD_BASE_DOMAIN:-rig.prd1.gn2.quattro.rijksapps.nl}"
 PG_SSLMODE="${ZAD_PG_SSLMODE:-disable}"          # managed DB intra-cluster: plaintext (zoals berichtenbox-JDBC)
+TASK_TIMEOUT="${ZAD_TASK_TIMEOUT:-600}"          # seconden per async task; overschrijden = fataal
 
 case "${MODE}" in validate|plan|apply) ;; *) echo "mode = validate | plan | apply"; exit 1 ;; esac
 case "${DEPLOYMENT}" in ""|*[!a-z0-9-]*) echo "ongeldige deployment: '${DEPLOYMENT}'"; exit 1 ;; esac
 case "${IMAGE_TAG}" in ""|*[!A-Za-z0-9._-]*) echo "ongeldige image_tag: '${IMAGE_TAG}'"; exit 1 ;; esac
 case "${MANAGER_TAG}" in ""|*[!A-Za-z0-9._-]*) echo "ongeldige ZAD_MANAGER_TAG: '${MANAGER_TAG}'"; exit 1 ;; esac
 case "${CLONE_FROM}" in *[!a-z0-9-]*) echo "ongeldige clone_from: '${CLONE_FROM}'"; exit 1 ;; esac
+case "${TASK_TIMEOUT}" in ""|*[!0-9]*) echo "ongeldige ZAD_TASK_TIMEOUT: '${TASK_TIMEOUT}'"; exit 1 ;; esac
 [ "${MODE}" = apply ] && : "${ZAD_API_KEY:?zet ZAD_API_KEY in je env}"
 
 MANAGER_IMAGE="ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:${MANAGER_TAG}"
@@ -130,12 +133,16 @@ API="${BASE}/api/v2/projects/${PROJECT}"
 resp="$(mktemp)"; trap 'rm -f "${resp}"' EXIT
 hdr=(-H "X-API-Key: ${ZAD_API_KEY}")
 
+# Timeout = fataal: doorgaan op een half-gesyncte deployment liet de vervolgstappen op onzichtbare
+# staat werken. Ruim (600s, gelijk aan PREVIEW_TASK_TIMEOUT in moza-poc-fbs-berichtenbox), want
+# verse preview-provisioning (nieuwe volumes + ingress) duurt structureel langer dan een update.
 poll_task() {  # $1=task_id
-  local id="$1" i status
-  for i in $(seq 1 45); do
+  local id="$1" status deadline
+  deadline=$(( $(date +%s) + TASK_TIMEOUT ))
+  while [ "$(date +%s)" -lt "${deadline}" ]; do
     # --fail: HTTP 4xx/5xx op de tasks-API mag niet als "nog bezig" (status=null) tellen; retry.
     if ! curl -sS --fail "${hdr[@]}" "${BASE}/api/tasks/${id}" -o "${resp}"; then
-      echo "  task ${id}: tasks-API HTTP-fout (poging ${i}/45) — retry" >&2
+      echo "  task ${id}: tasks-API HTTP-fout — retry" >&2
       sleep 2; continue
     fi
     status="$(jq -r '.status' "${resp}")"
@@ -145,8 +152,8 @@ poll_task() {  # $1=task_id
       *)         sleep 2 ;;
     esac
   done
-  echo "  task ${id}: nog bezig na ~90s (async ArgoCD-sync) — niet geblokkeerd, check later met 'validate'." >&2
-  return 0
+  echo "  task ${id}: niet afgerond binnen ${TASK_TIMEOUT}s (async ArgoCD-sync) — check met 'validate'." >&2
+  return 1
 }
 
 post() {  # $1=label $2=path $3=body

@@ -67,7 +67,6 @@ export ZAD_API_KEY=...                          # niet inline
 - Een gedeelde **reusable `workflow_call`-cleanup** is bewust niet gedaan: dispatch (repo-secret)
   en call (doorgegeven secret) mengen in één workflow botst met de secrets-context. Het kopiëren van
   `cleanup.sh` + een dunne dispatch-workflow bij de app is simpeler en even reproduceerbaar.
-- **Follow-up**: `cleanup.sh`'s `poll_task` checkt de HTTP-code + faalt hard op een onbekende/
-  timeout-status (geen valse "opgeruimd"). De deploy-tegenhanger `upsert-directory.sh` heeft nog de
-  oudere `poll_task` (timeout → `return 0`, geen HTTP-code-check) en maskeert een gefaalde task met
-  `… || { … }`; die verdient dezelfde hardening (aparte PR, raakt de #723-deploy).
+- Beide scripts pollen nu gelijk: HTTP-code gated, timeout **fataal**, en `ZAD_TASK_TIMEOUT`
+  (default 600s) als knop — dezelfde ruimte als `PREVIEW_TASK_TIMEOUT` in
+  `moza-poc-fbs-berichtenbox`, want verse preview-provisioning duurt langer dan een update.

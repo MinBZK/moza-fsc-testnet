@@ -17,7 +17,8 @@
 #   ./deploy/zad/cleanup.sh apply  <deployment>       # DELETE + pollt de task
 # NB: anders dan upsert-directory.sh's offline `plan`, checkt `plan`/`apply` hier de live-staat
 # (bestaat de deployment?) -> ook `plan` vereist de API-key.
-# Env: ZAD_API_KEY (verplicht), ZAD_PROJECT (mft-tp9), ZAD_BASE (zad.rijksapp.nl), ALLOW_PROTECTED.
+# Env: ZAD_API_KEY (verplicht), ZAD_PROJECT (mft-tp9), ZAD_BASE (zad.rijksapp.nl), ALLOW_PROTECTED,
+#      ZAD_TASK_TIMEOUT (600s per async task).
 set -euo pipefail
 
 MODE="${1:?usage: cleanup.sh <validate|plan|apply> [deployment]}"
@@ -25,6 +26,8 @@ DEPLOYMENT="${2:-}"
 PROJECT="${ZAD_PROJECT:-mft-tp9}"
 BASE="${ZAD_BASE:-https://zad.rijksapp.nl}"
 ALLOW_PROTECTED="${ALLOW_PROTECTED:-0}"
+TASK_TIMEOUT="${ZAD_TASK_TIMEOUT:-600}"   # seconden per async task; zelfde default als upsert-directory.sh
+case "${TASK_TIMEOUT}" in ""|*[!0-9]*) echo "ongeldige ZAD_TASK_TIMEOUT: '${TASK_TIMEOUT}'"; exit 1 ;; esac
 
 case "${MODE}" in validate|plan|apply) ;; *) echo "mode = validate | plan | apply"; exit 1 ;; esac
 if [ "${MODE}" != validate ]; then
@@ -49,10 +52,11 @@ poll_task() {  # $1=task_id ; return 0=completed, 1=failed/cancelled/HTTP-fout/o
   # BEWUST: `code` los declareren van de `code="$(curl…)"` hieronder. `local code="$(curl…)"` zou
   # `local` het commando maken en de substitutie-exitcode voor `set -e` maskeren (fail-open bij een
   # netwerkfout tijdens pollen). Niet samenvoegen.
-  local id="$1" status code
-  for _ in $(seq 1 45); do
+  local id="$1" status code deadline
+  deadline=$(( $(date +%s) + TASK_TIMEOUT ))
+  while [ "$(date +%s)" -lt "${deadline}" ]; do
     # HTTP-code hard checken (zoals de rest van dit script): zonder deze gate valt een 5xx/401-
-    # errorbody als lege status in de pending-lus en pollt ~90s stil door tot een dubbelzinnige
+    # errorbody als lege status in de pending-lus en pollt tot de timeout stil door tot een dubbelzinnige
     # "niet bevestigd" (return 2), i.p.v. de echte HTTP-fout meteen te tonen (fail-fast).
     code="$(curl -sS "${hdr[@]}" -o "${resp}" -w '%{http_code}' "${BASE}/api/tasks/${id}")"
     case "${code}" in 2*) ;; *) echo "  task ${id}: poll HTTP ${code}"; jq . "${resp}" 2>/dev/null || cat "${resp}"; return 1 ;; esac
@@ -65,7 +69,7 @@ poll_task() {  # $1=task_id ; return 0=completed, 1=failed/cancelled/HTTP-fout/o
       *)         echo "  task ${id}: onverwachte status '${status}':"; jq . "${resp}" 2>/dev/null || cat "${resp}"; return 1 ;;
     esac
   done
-  echo "  task ${id}: niet 'completed' binnen ~90s (async ArgoCD-sync)." >&2
+  echo "  task ${id}: niet 'completed' binnen ${TASK_TIMEOUT}s (async ArgoCD-sync)." >&2
   return 2
 }
 
