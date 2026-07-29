@@ -113,9 +113,10 @@ Gemaakte keuzes:
 - **`git diff` in een run-step** detecteert de image-wijziging — geen marketplace-action, dus geen
   extra action-SHA te pinnen → OpenSSF Scorecard blijft groen. Om dezelfde reden verliest
   `build-manager-migrate.yml` z'n eigen `push`-trigger helemaal: het wordt alleen nog aangeroepen
-  via `workflow_dispatch` (handmatig) of `workflow_call` (de reusable-call vanuit main's
-  `deploy`-job) — geen dubbele build en geen concurrency-clash.
-- **Trigger-paths:** `deploy/zad/manager-migrate/**`, `group/**` en de workflow zelf. `group/**`
+  via `workflow_dispatch` (handmatig) of `workflow_call` (de reusable-call vanuit de `build`-job,
+  zowel op main als op een PR) — geen dubbele build en geen concurrency-clash.
+- **Trigger-paths:** `deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf én
+  `build-manager-migrate.yml` (de build-recipe zelf raakt dus ook de deploy-trigger). `group/**`
   erbij voor zichtbaarheid, al is een group-wijziging via de API meestal een no-op
   (trust-anchor/certs zijn UI-only bijlagen).
 - **Failure = kale rode workflow-run** in de Actions-tab. Bewust geen auto-issue: wordt dit ooit te

@@ -158,7 +158,8 @@ géén automatisme voor élke PR. Dependabot-PR's worden altijd overgeslagen (`s
 
 Path-filter (alleen deze paden triggeren de auto-deploy, en een docs-only wijziging — `^docs/` of
 `*.md` — telt nooit mee, ook niet binnen zo'n pad): `deploy/zad/manager-migrate/**`, `group/**`, de
-workflow zelf. Docs- en peer-merges blijven dus stil. Voor `push` staat dat pad-filter ook in de
+workflow zelf én `build-manager-migrate.yml` (de build-recipe zelf). Docs- en peer-merges blijven
+dus stil. Voor `push` staat dat pad-filter ook in de
 trigger-`paths:` van de workflow zelf; de docs-uitzondering zit daar niet bij (de docs-only-conjunctie
 loopt alleen via de `changes`-job — zie hieronder). Voor `pull_request` zit de hele filter (paden +
 docs-uitzondering) in de `changes`-job, op basis van de bestandenlijst uit de GitHub PR-API (niet
@@ -172,7 +173,7 @@ Drie jobs voorkomen de build-deploy-race:
 | Job | Wanneer | Doet |
 |-----|---------|------|
 | `changes` | elke push mét pad-match, én elke PR (open/sync/reopened/closed) | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
-| `build` | alleen als `manager-migrate/**` non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
+| `build` | alleen als `manager-migrate/**` óf `build-manager-migrate.yml` zelf non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
 | `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór de deploy-stap). Config/group-change

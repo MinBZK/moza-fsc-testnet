@@ -90,6 +90,15 @@ jobs:
         # OpenAPI) en DeploymentListResponse.required is enkel ["project","cluster"], dus
         # `deployments` mag legitiem ontbreken/null zijn — afwezigheid in die lijst bewijst dus
         # niets. De scoped endpoint geeft gewoon 404 (weg) of 2xx (bestaat nog).
+        # Een kale 404 is echter GEEN bewijs op zichzelf: live tegen de API geprobeerd, komt
+        # diezelfde 404 ook terug op een onbekend pad én op een leeg project-segment — zónder dat
+        # de key ooit gecontroleerd wordt. Staat `vars.ZAD_PROJECT_ID_DIRECTORY` ooit leeg/fout, of
+        # verandert het endpoint-pad upstream, dan zou deze stap voorheen permanent "opgeruimd"
+        # melden terwijl de deployment op het productiecluster blijft draaien. Daarom telt een 404
+        # pas als de key/project ook aantoonbaar kloppen: het lijst-endpoint (zonder /{deployment})
+        # is authenticated + project-scoped, dus een verkeerde key geeft 401 en een verkeerd
+        # project geeft geen 200 — alléén een 200 daar bevestigt dat de 404 hierboven betekent
+        # "weg" i.p.v. "onbevoegd/verkeerd pad".
         env:
           ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
@@ -99,15 +108,39 @@ jobs:
           attempts=6
           interval=10
           for attempt in $(seq 1 "$attempts"); do
+            # `|| true` (i.p.v. `|| echo "000"`): curl schrijft de -w-uitvoer ('000' bij een
+            # connect-/timeout-fout) zelf al naar stdout vóórdat het faalt; een aparte
+            # `|| echo "000"` erachter plakte daar een tweede '000' aan vast ("HTTP 000000"), en
+            # liet de numerieke vergelijkingen hieronder struikelen op "integer expression
+            # expected". De case-normalisatie hierna is het sluitstuk: elke uitkomst die geen
+            # drie cijfers is (leeg, of iets onverwachts) wordt hard '000'.
             http_code=$(curl -sS -o /tmp/zad-deployment.json -w '%{http_code}' \
               --connect-timeout 10 --max-time 30 \
               -H "X-API-Key: $ZAD_API_KEY" \
               "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments/$DEPLOYMENT" \
-              || echo "000")
+              || true)
+            case "$http_code" in
+              [0-9][0-9][0-9]) ;;
+              *) http_code="000" ;;
+            esac
 
             if [ "$http_code" = "404" ]; then
-              echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts)."
-              exit 0
+              list_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                --connect-timeout 10 --max-time 30 \
+                -H "X-API-Key: $ZAD_API_KEY" \
+                "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments" \
+                || true)
+              case "$list_code" in
+                [0-9][0-9][0-9]) ;;
+                *) list_code="000" ;;
+              esac
+
+              if [ "$list_code" = "200" ]; then
+                echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts; key/project bevestigd via het lijst-endpoint)."
+                exit 0
+              fi
+              echo "::error::404 op '$DEPLOYMENT', maar het lijst-endpoint gaf HTTP $list_code i.p.v. 200 — key/project kon niet bevestigd worden, dus deze 404 telt niet als bewijs dat de cleanup gelukt is. Controleer ZAD_API_KEY_DIRECTORY/ZAD_PROJECT_ID_DIRECTORY en de Operations Manager UI."
+              exit 1
             fi
 
             if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
@@ -117,6 +150,20 @@ jobs:
                 continue
               fi
               echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup (HTTP $http_code, na $attempts pogingen) — check de Operations Manager UI."
+              exit 1
+            fi
+
+            # Tijdelijke transport-/serverfouten (connectiefout/timeout = '000', of 5xx) krijgen
+            # dezelfde begrensde herhaling als "nog aanwezig": één 502 of een netwerk-hikje mag een
+            # verder correcte cleanup niet meteen rood laten uitslaan. Andere statussen (401, 403,
+            # overige 4xx, ...) zijn niet transiënt en falen wél meteen, hieronder.
+            if [ "$http_code" = "000" ] || { [ "$http_code" -ge 500 ] && [ "$http_code" -lt 600 ]; }; then
+              if [ "$attempt" -lt "$attempts" ]; then
+                echo "Tijdelijke fout (HTTP $http_code) bij het verifiëren van '$DEPLOYMENT' (poging $attempt/$attempts) — over ${interval}s opnieuw proberen."
+                sleep "$interval"
+                continue
+              fi
+              echo "::error::Herhaalde tijdelijke fouten (laatst HTTP $http_code) bij het verifiëren van '$DEPLOYMENT' na $attempts pogingen — cleanup NIET geverifieerd."
               exit 1
             fi
 
