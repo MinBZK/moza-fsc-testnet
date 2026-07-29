@@ -26,8 +26,9 @@
   deploy-variabelen gebruikt (`$DEPLOYMENT_NAME`, `$DATABASE_*`) — een nieuw `pr-<n>` erft 'm dus
   zonder handwerk.
 
-> Git dwingt de env **niet** af: `peers/directory/manager.env.example` is de referentie van wat er
-> in de UI hoort te staan. De v2-API kan env alleen bij het *aanmaken* van een component zetten
+> Git dwingt de env **niet** af: `peers/directory/manager.env.example` (dirmgr) en
+> `peers/directory/dirui.env.example` (dirui) zijn de referentie van wat er in de UI hoort te
+> staan. De v2-API kan env alleen bij het *aanmaken* van een component zetten
 > (`AddComponentRequest`), niet bijwerken (`UpdateComponentRequest` heeft geen `env_vars`/`aliases`).
 > Er loopt een feature request bij ZAD-beheer om dat te openen.
 
@@ -72,8 +73,10 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 
 Draai `build-manager-migrate.yml` (Actions → workflow_dispatch, `image_tag=v1.43.7`), of merge een
 wrapper-wijziging naar `main`. Resultaat: `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:v1.43.7`
-(en/of `…:v1.43.7-<branch>` voor previews). Controleer dat het package zichtbaar is voor het
-ZAD-pull-mechanisme (ghcr-package → repo-linked via de `org.opencontainers.image.source`-label).
+(en/of `…:v1.43.7-pr-<n>` voor previews — de `image_suffix`-input van de reusable
+`workflow_call` hangt het PR-nummer achter de tag, geen branch-slug). Controleer dat het package
+zichtbaar is voor het ZAD-pull-mechanisme (ghcr-package → repo-linked via de
+`org.opencontainers.image.source`-label).
 
 ### 2. Certs + upload-set genereren (jouw host)
 
@@ -114,8 +117,8 @@ Waarden ter referentie:
     postgres-component.
   - `DISABLE_CRL_CHECKS=true` als **interim** (lege CRL, geen distributiepunt). `TODO(#722)`:
     CRL-pad mounten + `DISABLE_CRL_CHECKS` weghalen vóór go-live (zie `manager.env.example`).
-- `dirui`: zie de `directory-ui`-env in `deploy/local/docker-compose.yaml` (adres-namen naar de
-  ZAD-hostnaam).
+- `dirui`: de waarden uit `peers/directory/dirui.env.example`, met dezelfde
+  `DIRECTORY_MANAGER_ADDRESS`-alias (naar dirmgr op dezelfde deployment) als hierboven.
 
 ### 5. "Publicatie op het web" → modus 2 (UI)
 

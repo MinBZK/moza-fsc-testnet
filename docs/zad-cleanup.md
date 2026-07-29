@@ -48,10 +48,18 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   verwijderen over (anders verdwijnt de gedeelde versie mee). `zad-cleanup.yml` heeft géén eigen
   ghcr-stap — een preview-image die je daarmee handmatig opruimt, blijft dus staan tot een latere
   `cleanup-preview`-run 'm meepakt, of tot handmatig opruimen via de package-UI.
-- **Een mislukte delete is geen rode run**: de action degradeert een gefaalde **deployment**-delete
-  tot een `::warning::` en sluit af met exit 0 (zie `zad_delete_deployment` in `zad-common.sh`) — een
-  groene job bewijst dus niet dat het deployment weg is. Daarom controleren beide workflows ná de
-  action de live deployment-lijst en falen hard als het deployment er nog staat.
+- **Een mislukte delete faalt de step niet**: `zad_delete_deployment` (in `zad-common.sh`) logt bij
+  een fout eerst een `::warning::`, en laat `report_zad_error` daarna — als de CLI een
+  gestructureerde diagnose teruggaf — ook `::error::`-annotaties zien; geen van beide doet de step
+  `exit` met een fout, dus de job blijft groen. Een groene job bewijst dus niet dat het deployment
+  weg is, ook al staan er soms error-annotaties in de run. Daarom verifiëren beide workflows ná de
+  action met een gerichte call naar de **scoped** endpoint
+  `GET /api/v2/projects/{project}/deployments/{deployment}`: een 404 bevestigt dat het deployment
+  weg is; een 2xx betekent dat het er nog staat (job faalt hard); elke andere respons telt als
+  "niet geverifieerd" (job faalt eveneens). De list-endpoint (`GET .../deployments`) wordt hier
+  bewust niet voor gebruikt: die *"Returns only deployments targeting the current cluster"*
+  (`openapi.json`) — afwezigheid in die lijst bewijst dus niets over verwijdering op een ander
+  cluster.
 - **Beschermde namen** (`test`, `main`, `master`, `production`, `prod`) weigeren tenzij de
   workflow-input `allow_protected` aanstaat. Dat is een `if`-guard-stap vóór de action in
   `zad-cleanup.yml` — de action kent zelf geen beschermde-namen-check. Het cluster is

@@ -691,7 +691,7 @@ heeft 'm opgeruimd).
 - **Spec-dekking:** Besl. A → Taak 4; Besl. B → Taak 1; Besl. C → Taken 2 + 3; Besl. D → Taak 5;
   verificatie-sectie → Taak 6; risicotabel → beoordelingspunt in Taak 6 Step 2.
 - **Niet gedekt, bewust:** de eenmalige UI-config hoeft niet te veranderen (spec, sectie
-  "Wat er níét verandert") en de `manager-migrate`-build blijft ongemoeid.
+  "Wat er níet verandert") en de `manager-migrate`-build blijft ongemoeid.
 - **Namen die over taken heen consistent moeten zijn:** `needs.meta.outputs.deployment`,
   `needs.meta.outputs.image_base`, `needs.meta.outputs.manager_suffix`,
   `needs.changes.outputs.run`, `needs.changes.outputs.manager_migrate_changed` — alle vijf bestaan

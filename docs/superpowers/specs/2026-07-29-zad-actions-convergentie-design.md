@@ -125,7 +125,7 @@ staan als referentie, met de expliciete kanttekening dat git hier documenteert e
 `docs/zad-cleanup.md` beschrijft nu ook dat peer-repo's `cleanup.sh` vendoren; dat wordt "peer-repo's
 gebruiken dezelfde action". Daarmee vervalt de reden om het script te bewaren.
 
-## Wat er níét verandert
+## Wat er níet verandert
 
 - Preview-model: `pr-<PR-nummer>`, deploy op open/sync, cleanup on close, docs-only-skip en
   fork-skip in de `changes`-job.

@@ -109,11 +109,12 @@ Gemaakte keuzes:
   overrides. `RijksICTGilde/zad-actions` (`/deploy` en `/cleanup`) is de gedeelde bron.
 - **Eén workflow, 3 jobs** (`changes` → `build` → `deploy`) tegen de build-deploy-race: een
   image-wijziging bouwt éérst (`build-manager-migrate` als reusable `workflow_call`), pas dán
-  deployt `apply`. Een config/group-only merge skipt de build en herbruikt de bestaande tag.
+  deployt de `deploy`-job. Een config/group-only merge skipt de build en herbruikt de bestaande tag.
 - **`git diff` in een run-step** detecteert de image-wijziging — geen marketplace-action, dus geen
-  extra action-SHA te pinnen → OpenSSF Scorecard blijft groen. Om dezelfde reden stopt
-  `build-manager-migrate` z'n eigen `push`-build op main (`branches-ignore: [main]`): main bouwt
-  via de reusable-call (geen dubbele build + geen concurrency-clash).
+  extra action-SHA te pinnen → OpenSSF Scorecard blijft groen. Om dezelfde reden verliest
+  `build-manager-migrate.yml` z'n eigen `push`-trigger helemaal: het wordt alleen nog aangeroepen
+  via `workflow_dispatch` (handmatig) of `workflow_call` (de reusable-call vanuit main's
+  `deploy`-job) — geen dubbele build en geen concurrency-clash.
 - **Trigger-paths:** `deploy/zad/manager-migrate/**`, `group/**` en de workflow zelf. `group/**`
   erbij voor zichtbaarheid, al is een group-wijziging via de API meestal een no-op
   (trust-anchor/certs zijn UI-only bijlagen).
@@ -128,4 +129,25 @@ PR-preview. Mechaniek: `docs/zad-directory-deploy.md`.
 **PR-preview-eigenschappen:** eigen deployment `pr-<PR-nummer>` met een eigen verse managed DB
 (de SoR-`test`-DB wordt niet gekloond/geleegd). Bijlagen (cert-mount) en "Publicatie op het web"
 zitten op project/component-niveau en worden per deployment automatisch geërfd — geen handwerk per
-PR. Fork-PR's worden geskipt (geen secrets). Docs-only PR's deployen niet.
+PR. Drie categorieën deployen nooit een preview: fork-PR's (geen secrets), docs-only PR's, en
+bot-PR's (`skip-bot-prs: 'true'` op zowel de deploy- als de cleanup-aanroep) — die laatste
+uitzondering is permanent en geldt ook als de diff van een bot-PR wél in de trigger-paden valt.
+
+### Projectconfig verhuisd naar de Operations Manager UI (#723/#729)
+
+`env_vars`, `aliases`, `services` (managed Postgres) en bijlagen (cert-mount) werden voorheen
+(gedeeltelijk) opgebouwd door `deploy/zad/upsert-directory.sh` — dat script is met deze wijziging
+verwijderd. Projectconfig leeft nu **uitsluitend** in de Operations Manager UI, net als "Publicatie
+op het web" dat al deed.
+
+- **Waarom:** de v2-API kan env alleen zetten bij het *aanmaken* van een component
+  (`AddComponentRequest`); `UpdateComponentRequest` heeft geen `env_vars`/`aliases`-velden. Een
+  script kan een bestaand component dus niet idempotent bijwerken zonder het te slopen en opnieuw
+  op te bouwen — dat risico weegt zwaarder dan het gemak van een script. Er loopt een feature
+  request bij ZAD-beheer om `UpdateComponentRequest` uit te breiden.
+- **Compensatie:** `peers/directory/manager.env.example` en `peers/directory/dirui.env.example`
+  leggen de referentiewaarden vast in git, samen met het runbook (`docs/zad-directory-deploy.md`,
+  stap 4) dat uitlegt hoe je ze in de UI invoert.
+- **Geaccepteerde kosten:** git **documenteert** de config, het **handhaaft** 'm niet — een
+  UI-wijziging die afwijkt van de `.example`-bestanden wordt niet automatisch gedetecteerd of
+  teruggedraaid.
