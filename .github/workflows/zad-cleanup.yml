@@ -1,25 +1,16 @@
-# ZAD-cleanup (#729): ruimt een deployment op via de v2 Operations Manager API (DELETE .../{deployment}).
-# Roept deploy/zad/cleanup.sh aan (zelfde bron als de CLI) — het tegenovergestelde van
-# zad-deploy-directory.yml. `validate` is read-only, `plan` toont, `apply` verwijdert + pollt.
-#
-# Dit ruimt dít repo's onderdeel op: de centrale DIRECTORY (project uit vars.ZAD_PROJECT_ID_DIRECTORY,
-# key uit secrets.ZAD_API_KEY_DIRECTORY). Een PEER-deployment ruim je op bij de app-repo — dat repo
-# vendort deze `deploy/zad/cleanup.sh` en draait 'm met het eigen project + de eigen key (het
-# script is volledig env-gedreven). Zie docs/zad-cleanup.md + docs/zad-projecten.md (deploy bij de app).
+# ZAD-cleanup (#729) via RijksICTGilde/zad-actions/cleanup: verwijdert een deployment uit het
+# directory-project (project uit vars.ZAD_PROJECT_ID_DIRECTORY, key uit
+# secrets.ZAD_API_KEY_DIRECTORY). Het PR-pad ruimt zichzelf op in zad-deploy-directory.yml;
+# deze workflow is voor handmatige gevallen. Een peer-deployment ruim je op bij de app-repo met
+# dezelfde action en het eigen project + de eigen key. Zie docs/zad-cleanup.md.
 name: zad-cleanup
 
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: "validate=auth-check; plan=toon; apply=verwijderen + pollen"
-        type: choice
-        options: [validate, plan, apply]
-        default: validate
       deployment:
-        description: "deployment-naam om op te ruimen (leeg bij validate; bv. een pr-preview)"
-        required: false
-        default: ""
+        description: "deployment-naam om op te ruimen (bv. een pr-preview)"
+        required: true
       allow_protected:
         description: "sta het verwijderen van beschermde namen (test/main/...) toe"
         type: boolean
@@ -36,16 +27,31 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Cleanup directory via ZAD v2-API
+      # Vangrail uit het verwijderde cleanup.sh: beschermde deployments niet per ongeluk slopen.
+      - name: Weiger beschermde deployment-namen
         env:
-          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
-          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          ALLOW_PROTECTED: ${{ inputs.allow_protected && '1' || '0' }}
-          MODE: ${{ inputs.mode }}
           DEPLOYMENT: ${{ inputs.deployment }}
-        run: ./deploy/zad/cleanup.sh "${MODE}" "${DEPLOYMENT}"
+          ALLOW_PROTECTED: ${{ inputs.allow_protected }}
+        run: |
+          set -euo pipefail
+          case "$DEPLOYMENT" in
+            ""|*[!a-z0-9-]*)
+              echo "::error::ongeldige deployment-naam '$DEPLOYMENT' (alleen a-z0-9-)"; exit 1 ;;
+          esac
+          case "$DEPLOYMENT" in
+            test|main|master|production|prod)
+              if [ "$ALLOW_PROTECTED" != "true" ]; then
+                echo "::error::'$DEPLOYMENT' is beschermd; zet allow_protected aan om te forceren."
+                exit 1
+              fi
+              echo "::warning::beschermde deployment '$DEPLOYMENT' wordt verwijderd (allow_protected)." ;;
+          esac
+
+      - name: Cleanup via zad-actions
+        uses: RijksICTGilde/zad-actions/cleanup@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
+        with:
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          deployment-name: ${{ inputs.deployment }}
+          delete-github-env: 'false'
+          delete-container: 'false'
