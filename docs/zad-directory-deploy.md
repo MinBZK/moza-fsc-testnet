@@ -144,12 +144,16 @@ Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) automatisch 
 
 #### Dependabot-PR's
 
-Previews horen óók op een Dependabot-PR te draaien. Daarvoor staat **"Dependabot on Actions
-runners"** aan (Settings → Code security), net als in `moza-poc-fbs-berichtenbox`: de runlog zegt
-dan `Secret source: Actions` in plaats van `Secret source: Dependabot`. Staat die uit, dan is
-`secrets.ZAD_API_KEY_DIRECTORY` leeg op zo'n run en stopt de deploy op `zet ZAD_API_KEY in je env`.
-Een kopie van de key in de Dependabot-store werkt ook, maar geeft rotatie-drift — niet doen.
-Een **fork**-PR heeft geen secrets en wordt in de `changes`-job luid geskipt.
+Previews draaien óók op een Dependabot-PR. Zo'n run (`actor = dependabot[bot]`, ook na een re-run
+door een mens) leest secrets uit de **Dependabot**-store — `Secret source: Dependabot` in de
+runlog. `ZAD_API_KEY_DIRECTORY` staat daarom in beide stores
+(`gh secret set ZAD_API_KEY_DIRECTORY --app dependabot`); **rotatie = beide bijwerken**, anders
+breekt precies één van de twee. `vars` zijn niet gesplitst, dus `ZAD_PROJECT_ID_DIRECTORY` komt er
+altijd door — een lege `ZAD_API_KEY` naast een gevulde `ZAD_PROJECT` is dus dít symptoom.
+
+Bewuste afwijking van `moza-poc-fbs-berichtenbox`: `zad-actions/deploy` skipt daar bot-PR's
+(`skip-bot-prs`, default `true` → groene job, geen deploy). Een **fork**-PR heeft geen van beide
+stores en wordt in de `changes`-job luid geskipt.
 
 Path-filter (alleen deze paden triggeren de auto-deploy):
 `deploy/zad/upsert-directory.sh`, `deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf.
