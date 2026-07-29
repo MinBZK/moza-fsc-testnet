@@ -32,6 +32,10 @@ markdownlint-cli2.
 - **Erfenis in de branch:** #35 wijzigde `upsert-directory.sh` en `cleanup.sh`; Taak 4 verwijdert
   beide, dus die commits worden vanzelf ingehaald. `main` → `test` is tot de merge kapot (de
   `already exists`-fout) — dat is het bewuste gevolg van niet vooraf mergen.
+- **Image-naam:** de wrapper-image heet voortaan `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate`
+  (koppelteken, géén slash). Reden: `zad-actions/cleanup` valideert containernamen op
+  `^[a-zA-Z0-9._-]+$` en weigert dus een repo-scoped naam met `/`. Besluit van de opdrachtgever
+  (2026-07-29) na de review van Taak 2.
 - **Projectwaarden:** project `mft-tp9` (uit `vars.ZAD_PROJECT_ID_DIRECTORY`), key uit
   `secrets.ZAD_API_KEY_DIRECTORY`, base_domain `rig.prd1.gn2.quattro.rijksapps.nl`, componenten
   `dirmgr` + `dirui`, stock-tag `v1.43.7`.
@@ -232,24 +236,48 @@ git commit -m "feat(ci): deploy directory via zad-actions i.p.v. eigen script"
           delete-container: 'true'
           containers: |
             [
-              {"org": "minbzk", "name": "moza-fsc-testnet/manager-migrate", "tag": "${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}"}
+              {"org": "minbzk", "name": "moza-fsc-testnet-manager-migrate", "tag": "${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}"}
             ]
 ```
 
-- [ ] **Step 2: Lint**
+- [ ] **Step 2: Hernoem de ghcr-image naar een naam zonder slash**
+
+`zad-actions/cleanup` valideert `containers[].name` op `^[a-zA-Z0-9._-]+$` en `exit 1`t op een
+repo-scoped naam met `/`. De image wordt daarom platgeslagen. Wijzig in
+`.github/workflows/build-manager-migrate.yml` de `IMAGE`-env:
+
+```yaml
+          # Lowercase image-pad zonder slash: zad-actions/cleanup weigert `/` in een containernaam.
+          IMAGE: ghcr.io/minbzk/moza-fsc-testnet-manager-migrate
+```
+
+Wijzig in `.github/workflows/zad-deploy-directory.yml` de `dirmgr`-regel in de components-JSON van
+de `deploy`-job zo dat het image-pad `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:` wordt — laat
+de tag-expressie erachter exact zoals 'ie staat.
+
+Controleer daarna dat er nergens in `.github/` en `deploy/` nog een verwijzing met slash staat:
 
 ```bash
-yamllint .github/workflows/zad-deploy-directory.yml
-actionlint .github/workflows/zad-deploy-directory.yml
+grep -rn "moza-fsc-testnet/manager-migrate" .github/ deploy/
+```
+
+Verwacht: **geen** treffers. (Treffers in `docs/**` pakt Taak 5; `deploy/zad/upsert-directory.sh`
+verdwijnt in Taak 4 — als die nog bestaat en een treffer geeft, laat 'm dan staan.)
+
+- [ ] **Step 3: Lint**
+
+```bash
+yamllint .github/workflows/zad-deploy-directory.yml .github/workflows/build-manager-migrate.yml
+actionlint .github/workflows/zad-deploy-directory.yml .github/workflows/build-manager-migrate.yml
 ```
 
 Verwacht: geen output.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add .github/workflows/zad-deploy-directory.yml
-git commit -m "feat(ci): cleanup-preview via zad-actions"
+git add .github/workflows/zad-deploy-directory.yml .github/workflows/build-manager-migrate.yml
+git commit -m "feat(ci): cleanup-preview via zad-actions, image-naam zonder slash"
 ```
 
 ---
@@ -579,6 +607,24 @@ Verwacht: `success`. Bij `failure`: haal de joblog op met
 `gh api repos/MinBZK/moza-fsc-testnet/actions/jobs/<id>/logs` en beoordeel of de fout in de
 action-inputs zit (herstelbaar) of in de aanname dat een vers deployment de projectconfig erft
 (dan is de spec weerlegd — meld dat en stop).
+
+- [ ] **Step 2b: Controleer dat ZAD de nieuwe ghcr-package kan pullen**
+
+De hernoemde image (`moza-fsc-testnet-manager-migrate`) is een **nieuwe** package; de eerste push
+maakt 'm aan met de standaard-zichtbaarheid van de org. Kan ZAD 'm niet pullen, dan crashloopt
+`dirmgr` met een pull-fout terwijl de deploy-task zelf slaagt.
+
+```bash
+gh api "orgs/minbzk/packages/container/moza-fsc-testnet-manager-migrate" \
+  --jq '{visibility, repository: .repository.full_name}'
+```
+
+Verwacht: dezelfde zichtbaarheid als de oude package
+(`gh api "orgs/minbzk/packages/container/moza-fsc-testnet%2Fmanager-migrate" --jq .visibility`) en
+`repository: MinBZK/moza-fsc-testnet` (via het `org.opencontainers.image.source`-label). Wijkt het
+af, meld het — dat is handwerk in de package-instellingen, geen code.
+
+De oude package blijft met zijn bestaande tags achter; die opruimen is een aparte, handmatige actie.
 
 - [ ] **Step 3: Controleer de preview functioneel**
 
