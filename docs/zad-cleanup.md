@@ -12,61 +12,60 @@ draaien bij hun app** (co-located in het app-project). Deploy/cleanup volgen die
 
 | Onderdeel | Deploy | Cleanup | Beheerd vanuit |
 |-----------|--------|---------|----------------|
-| directory | `zad-deploy-directory.yml` → `deploy/zad/upsert-directory.sh` | `zad-cleanup.yml` → `deploy/zad/cleanup.sh` | **dit repo** |
-| peer (magazijn/uitvraag/…) | app-repo's `deploy.yml` (peer náást de app) | app-repo kopieert `deploy/zad/cleanup.sh` | bij de app |
+| directory | `zad-deploy-directory.yml` → `zad-actions/deploy` | `zad-cleanup.yml` → `zad-actions/cleanup` | **dit repo** |
+| peer (magazijn/uitvraag/…) | app-repo's `deploy.yml` → `zad-actions/deploy` | app-repo → `zad-actions/cleanup` | bij de app |
 
-Beide scripts zijn **volledig env-gedreven** (`ZAD_PROJECT`, `ZAD_API_KEY`, `ZAD_BASE`), dus een
-app-repo hergebruikt exact dezelfde `cleanup.sh` met zijn eigen project + key — geen fork nodig.
-Dit is de "kopiëren + pinnen"-variant uit `zad-projecten.md`; het houdt de source-of-truth
-(scripts + component-definities) hier, en de secrets bij de app.
+Een app-repo hoeft niets uit dit repo te vendoren: dezelfde SHA-gepinde action met het eigen
+project-id + de eigen key volstaat. Dat is de "kopiëren + pinnen"-variant uit `zad-projecten.md`,
+nu met de action als gedeeld artefact in plaats van een gekopieerd script.
 
 ## Deploy (directory)
 
-Zie `docs/zad-directory-deploy.md`. Kort: `zad-deploy-directory.yml` (workflow_dispatch,
-`validate|plan|apply`) roept `upsert-directory.sh` aan — `:upsert-deployment` + `POST /components`
-(met env). Bijlagen (certs) + Publicatie-op-het-web blijven UI-werk (niet in de deploy-API).
+Zie `docs/zad-directory-deploy.md`. Kort: `zad-deploy-directory.yml` (push naar main, PR-preview
+op open/sync, of handmatig via `workflow_dispatch`) roept `RijksICTGilde/zad-actions/deploy` aan —
+die zet het deployment + per component het image. Projectconfig (env, bijlagen,
+Publicatie-op-het-web) blijft UI-werk (niet in de action).
 
 ## Cleanup (directory)
 
 Bij het **sluiten van een PR** ruimt `zad-deploy-directory.yml` (job `cleanup-preview`) de
-`pr-<PR-nummer>`-deployment automatisch op via ditzelfde `cleanup.sh`. Handmatig
-(`zad-cleanup.yml` / CLI) blijft mogelijk voor overige gevallen:
+`pr-<PR-nummer>`-deployment automatisch op via dezelfde `zad-actions/cleanup`-action. Handmatig
+blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run workflow**, met inputs
+`deployment` (verplicht) en `allow_protected` (default `false`).
 
-`zad-cleanup.yml` (workflow_dispatch) roept `deploy/zad/cleanup.sh` aan:
-
-```bash
-export ZAD_API_KEY=...                          # niet inline
-./deploy/zad/cleanup.sh validate                # read-only: auth-check + lijst deployments
-./deploy/zad/cleanup.sh plan   pr-123           # toont wat verwijderd wordt, muteert NIET
-./deploy/zad/cleanup.sh apply  pr-123           # DELETE /api/v2/projects/{p}/pr-123 + pollt de task
-```
-
-- **Eenheid van cleanup = een héle deployment.** De v2-API kent geen losse component-delete;
-  `DELETE …/{deployment}` ruimt de deployment (en zijn componenten) op. Async → task-polling.
-- **Idempotent**: een niet-bestaande deployment = no-op (geen fout), zodat een cleanup-run
-  veilig herhaalbaar is (bv. na een gefaalde PR-preview).
-- **Beschermde namen** (`test`, `main`, `production`, …) weigeren tenzij `ALLOW_PROTECTED=1` /
-  de workflow-input `allow_protected`. Het cluster is **odcn-production** — dit voorkomt dat een
-  losse hand de gedeelde `test`-singleton sloopt. Previews (`pr-<PR-nummer>`) ruim je vrij op.
+- **Eenheid van cleanup = een héle deployment.** De v2-API kent geen losse component-delete; de
+  action ruimt de deployment (en zijn componenten) op. Async — de action pollt de task.
+- **Idempotent**: een niet-bestaande deployment = no-op (geen fout), zodat een cleanup-run veilig
+  herhaalbaar is (bv. na een gefaalde PR-preview). Dat zit in de action zelf, niet meer in eigen
+  scriptlogica.
+- **Beschermde namen** (`test`, `main`, `master`, `production`, `prod`) weigeren tenzij de
+  workflow-input `allow_protected` aanstaat. Dat is een `if`-guard-stap vóór de action in
+  `zad-cleanup.yml` — de action kent zelf geen beschermde-namen-check. Het cluster is
+  **odcn-production** — dit voorkomt dat een losse hand de gedeelde `test`-singleton sloopt.
+  Previews (`pr-<PR-nummer>`) ruim je vrij op.
 
 ## Beveiliging & versievastlegging
 
-- **SHA-pinned actions** (Scorecard Pinned-Dependencies): de curl-gebaseerde v2-API-workflows
-  gebruiken alléén `actions/checkout` (al SHA-gepind). De legacy `deploy.yml` (marketplace-action
-  `zad-actions/deploy`) is in #729 **SHA-gepind** (`@56ae5cc…` # v1); de actieve deploy loopt via
-  de v2-API.
-- **Geen secrets in de workflow-`run`**: inputs gaan via `env:` (`MODE`/`DEPLOYMENT`) en worden
-  gequote; `cleanup.sh` valideert de deployment-naam (`[a-z0-9-]`) tegen injectie.
-- **`X-API-Key`** komt uit `secrets.ZAD_API_KEY_DIRECTORY` (write-only); nooit gelogd.
+- **SHA-pinned actions** (Scorecard Pinned-Dependencies): `zad-deploy-directory.yml` en
+  `zad-cleanup.yml` gebruiken `RijksICTGilde/zad-actions/deploy` resp. `/cleanup`, beide
+  SHA-gepind (`@13434cd4…` # v4.0.6), plus `actions/checkout` (al SHA-gepind).
+- **Geen secrets in de workflow-`run`**: de API-key gaat als action-input (`api-key:
+  ${{ secrets.ZAD_API_KEY_DIRECTORY }}`), niet als losse env-var in een `run:`-stap; de
+  `if`-guard in `zad-cleanup.yml` valideert de deployment-naam (`[a-z0-9-]`) tegen injectie vóór
+  de action draait.
+- **`api-key`** komt uit `secrets.ZAD_API_KEY_DIRECTORY` (write-only); nooit gelogd.
 
 ## Openstaand
 
-- **Full peer-deploy-scripts** (per-peer `upsert-<peer>.sh` met de manager/inway/outway/txlog/
-  controller-componenten) leven bij de app-repo's; de component-definities + env-templates hier
-  (`peers/*/values.example.yaml`, de lokale `deploy/local/docker-compose.yaml`) zijn de bron.
+- **Peer-deploys** (manager/inway/outway/txlog/controller) draaien in het app-repo op dezelfde
+  manier: een eigen `deploy.yml` met `zad-actions/deploy` en een eigen `components:`-lijst. De
+  component-definities + env-templates hier (`peers/*/values.example.yaml`, de lokale
+  `deploy/local/docker-compose.yaml`) blijven de bron voor image- en env-namen.
 - Een gedeelde **reusable `workflow_call`-cleanup** is bewust niet gedaan: dispatch (repo-secret)
-  en call (doorgegeven secret) mengen in één workflow botst met de secrets-context. Het kopiëren van
-  `cleanup.sh` + een dunne dispatch-workflow bij de app is simpeler en even reproduceerbaar.
-- Beide scripts pollen nu gelijk: HTTP-code gated, timeout **fataal**, en `ZAD_TASK_TIMEOUT`
-  (default 600s) als knop — dezelfde ruimte als `PREVIEW_TASK_TIMEOUT` in
-  `moza-poc-fbs-berichtenbox`, want verse preview-provisioning duurt langer dan een update.
+  en call (doorgegeven secret) mengen in één workflow botst met de secrets-context. Elke app-repo
+  roept `zad-actions/cleanup` rechtstreeks aan in een eigen dunne dispatch-workflow — simpeler en
+  even reproduceerbaar, en er is niets meer te vendoren.
+- **Task-timeout**: de deploy-actie gebruikt `task-timeout: '600'` (zie `zad-deploy-directory.yml`)
+  — dezelfde ruimte als `PREVIEW_TASK_TIMEOUT` in `moza-poc-fbs-berichtenbox`, want verse
+  preview-provisioning duurt langer dan een update. `zad-actions/cleanup` kent zelf geen
+  timeout-knop; falen daar is direct zichtbaar als rode run in de Actions-tab.

@@ -68,9 +68,13 @@ with:
   task-timeout: '600'
   comment-on-pr: 'true'
   components: |
-    [{"name": "dirmgr", "image": "ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:<tag>"},
+    [{"name": "dirmgr", "image": "ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:<tag>"},
      {"name": "dirui",  "image": "docker.io/federatedserviceconnectivity/directory-ui:v1.43.7"}]
 ```
+
+> Naschrift (2026-07-29): de ghcr-image is hernoemd van `moza-fsc-testnet/manager-migrate` naar
+> `moza-fsc-testnet-manager-migrate` — `zad-actions/cleanup` valideert containernamen op
+> `^[a-zA-Z0-9._-]+$` en weigert dus een repo-scoped naam met `/`.
 
 Onderbouwing per input:
 
