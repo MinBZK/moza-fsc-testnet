@@ -106,7 +106,7 @@ Gemaakte keuzes:
   `workflow_dispatch` een `push`-trigger op main én een `pull_request`-trigger. Een PR
   (`opened`/`synchronize`/`reopened`) rolt automatisch een preview `pr-<PR-nummer>` uit; bij
   `closed` ruimt een `cleanup-preview`-job die op. `workflow_dispatch` blijft voor handmatige
-  overrides. `upsert-directory.sh`/`cleanup.sh` zijn de gedeelde bron.
+  overrides. `RijksICTGilde/zad-actions` (`/deploy` en `/cleanup`) is de gedeelde bron.
 - **Eén workflow, 3 jobs** (`changes` → `build` → `deploy`) tegen de build-deploy-race: een
   image-wijziging bouwt éérst (`build-manager-migrate` als reusable `workflow_call`), pas dán
   deployt `apply`. Een config/group-only merge skipt de build en herbruikt de bestaande tag.
@@ -114,9 +114,9 @@ Gemaakte keuzes:
   extra action-SHA te pinnen → OpenSSF Scorecard blijft groen. Om dezelfde reden stopt
   `build-manager-migrate` z'n eigen `push`-build op main (`branches-ignore: [main]`): main bouwt
   via de reusable-call (geen dubbele build + geen concurrency-clash).
-- **Trigger-paths:** `deploy/zad/upsert-directory.sh`, `deploy/zad/manager-migrate/**`, `group/**`
-  en de workflow zelf. `group/**` erbij voor zichtbaarheid, al is een group-wijziging via de API
-  meestal een no-op (trust-anchor/certs zijn UI-only bijlagen).
+- **Trigger-paths:** `deploy/zad/manager-migrate/**`, `group/**` en de workflow zelf. `group/**`
+  erbij voor zichtbaarheid, al is een group-wijziging via de API meestal een no-op
+  (trust-anchor/certs zijn UI-only bijlagen).
 - **Failure = kale rode workflow-run** in de Actions-tab. Bewust geen auto-issue: wordt dit ooit te
   vaak gemist, dan gaan we naar échte externe notificatie (Slack/mail), niet naar een
   half-oplossing. Fully-auto, géén environment-approval (conform het FBS-model).

@@ -52,6 +52,29 @@ jobs:
       image_base: ${{ steps.m.outputs.image_base }}
       manager_suffix: ${{ steps.m.outputs.manager_suffix }}
     steps:
+      # Vangrail uit het verwijderde upsert-directory.sh: ruwe workflow_dispatch-inputs niet
+      # ongevalideerd in de components-JSON (manager_tag) of als deployment-naam laten belanden.
+      - name: Valideer workflow_dispatch-inputs
+        env:
+          INPUT_DEPLOYMENT: "${{ inputs.deployment }}"
+          INPUT_MANAGER_TAG: "${{ inputs.manager_tag }}"
+        run: |
+          set -euo pipefail
+          # Zelfde default als de volgende stap (push/PR hebben geen inputs -> "test").
+          deployment="${INPUT_DEPLOYMENT:-test}"
+          case "$deployment" in
+            *[!a-z0-9-]*|"")
+              echo "::error::ongeldige deployment-naam '$deployment' (alleen a-z0-9-)"; exit 1 ;;
+          esac
+          # manager_tag mag leeg zijn (dan valt de deploy-job terug op image_base); alléén
+          # valideren als er iets is ingevuld.
+          if [ -n "$INPUT_MANAGER_TAG" ]; then
+            case "$INPUT_MANAGER_TAG" in
+              *[!A-Za-z0-9._-]*)
+                echo "::error::ongeldige manager_tag '$INPUT_MANAGER_TAG' (alleen A-Za-z0-9._-)"; exit 1 ;;
+            esac
+          fi
+
       - id: m
         env:
           EVENT: ${{ github.event_name }}
@@ -206,6 +229,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # De action verwijdert ook de preview-PR-comment (delete-pr-comment default 'true');
+      # zonder dit faalt die lookup stil en blijft de comment op elke gesloten PR staan.
+      pull-requests: write
     steps:
       - name: Ruim de preview op via zad-actions
         uses: RijksICTGilde/zad-actions/cleanup@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
@@ -215,6 +241,9 @@ jobs:
           deployment-name: ${{ needs.meta.outputs.deployment }}
           delete-github-env: 'false'
           delete-container: 'true'
+          # Moet spiegelen met de deploy-job hierboven: default 'true' zou een Dependabot-PR
+          # stilzwijgend overslaan -> de preview blijft dan permanent op het productiecluster staan.
+          skip-bot-prs: 'false'
           containers: |
             [
               {"org": "minbzk", "name": "moza-fsc-testnet-manager-migrate", "tag": "${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}"}

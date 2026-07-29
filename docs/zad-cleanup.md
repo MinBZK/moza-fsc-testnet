@@ -38,6 +38,10 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
 - **Idempotent**: een niet-bestaande deployment = no-op (geen fout), zodat een cleanup-run veilig
   herhaalbaar is (bv. na een gefaalde PR-preview). Dat zit in de action zelf, niet meer in eigen
   scriptlogica.
+- **Container-delete is best-effort én kan verdergaan dan de gevraagde tag**: weigert GitHub een
+  losse tag te verwijderen omdat het de laatste getagde versie van het package is, dan verwijdert
+  de action het **hele package** in plaats van alleen die tag (zie `cleanup/action.yml`,
+  stap "Delete Container Image").
 - **Beschermde namen** (`test`, `main`, `master`, `production`, `prod`) weigeren tenzij de
   workflow-input `allow_protected` aanstaat. Dat is een `if`-guard-stap vóór de action in
   `zad-cleanup.yml` — de action kent zelf geen beschermde-namen-check. Het cluster is

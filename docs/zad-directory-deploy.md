@@ -4,8 +4,8 @@
 > peers kunnen announcen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
 > ZAD Operations Manager API (`https://zad.rijksapp.nl/openapi.json`, v2).
 >
-> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723` — nog met de oude
-> issuenummer-naam; auto-previews heten voortaan `pr-<PR-nummer>`). `migrate up` ok tegen de
+> **Status (2026-06-30): directory LIVE op ZAD**, deployment `test` — de deployment waar `main`
+> naartoe rolt en waar previews (`pr-<PR-nummer>`) van klonen. `migrate up` ok tegen de
 > managed Postgres, manager serveert, **self-announce geslaagd** (`EVENT_TYPE_CREATE_PEER`, OIN
 > `00000000000000000010`, SUCCEEDED). Cert-mount (ontwerp A) + managed DB bewezen op ODCN-prod.
 >
@@ -156,7 +156,7 @@ Drie jobs voorkomen de build-deploy-race:
 | Job | Wanneer | Doet |
 |-----|---------|------|
 | `changes` | elke push | `git diff` (run-step) → output `manager_migrate_changed` |
-| `build` | alleen als `manager-migrate/**` wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht canonieke `v1.43.7` |
+| `build` | alleen als `manager-migrate/**` wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
 | `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór de deploy-stap). Config/group-change
@@ -184,4 +184,4 @@ Handmatige/preview-deploys blijven via `workflow_dispatch` (zie stap 6).
   `TLS handshake error … EOF` (cosmetisch; pod healthy). Protocol-aware probe **aangevraagd bij ZAD**.
 - **Key-permissies**: bijlagen worden read-only gemount (niet 0600) → `invalid PKI key permissions`
   (non-fataal). 0600-mount **aangevraagd als feature-request bij ZAD**.
-- `dirui` afmaken (3 bijlagen + edge-publicatie); directory naar `test` (centrale singleton).
+- `dirui` afmaken (3 bijlagen + edge-publicatie).

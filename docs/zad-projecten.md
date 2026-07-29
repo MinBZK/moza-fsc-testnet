@@ -110,14 +110,15 @@ echte env-namen.
 Omdat ZAD images + env deployt (geen charts), is dit een **GitHub-workflow**-vraag,
 geen Helm-distributievraag.
 
-**Besluit (#729): kopiëren van de generieke scripts.** De deploy-/cleanup-tooling is
-**volledig env-gedreven** (`deploy/zad/upsert-directory.sh`, `deploy/zad/cleanup.sh` — via
-`ZAD_PROJECT` en `ZAD_API_KEY`). Een app-repo kopieert die scripts + een dunne
-`workflow_dispatch`-workflow met het
-**eigen** project + de eigen key; source-of-truth (images, componentnamen, env-templates) blijft
-hier. Een reusable `workflow_call` is bewust niet gekozen: dispatch (repo-secret) en call
-(doorgegeven secret) in één workflow mengen botst met de GitHub-secrets-context (zie
-`docs/zad-cleanup.md`). De env-var-templates (`.env.example`) voert het app-team éénmalig in.
+**Besluit (#729): dezelfde upstream-action hergebruiken, niets vendoren.** De deploy-/
+cleanup-tooling loopt via de SHA-gepinde `RijksICTGilde/zad-actions` (`/deploy` en `/cleanup`) —
+volledig input-gedreven (`project-id`, `api-key`, `deployment-name`, ...). Een app-repo hoeft
+niets uit dit repo te kopiëren: een dunne workflow die dezelfde action aanroept met het
+**eigen** project-id + de eigen key volstaat; source-of-truth (images, componentnamen,
+env-templates) blijft hier. Een reusable `workflow_call` is bewust niet gekozen: dispatch
+(repo-secret) en call (doorgegeven secret) in één workflow mengen botst met de
+GitHub-secrets-context (zie `docs/zad-cleanup.md`). De env-var-templates (`.env.example`) voert
+het app-team éénmalig in.
 
 ## Open punten / blockers
 
@@ -127,8 +128,8 @@ hier. Een reusable `workflow_call` is bewust niet gekozen: dispatch (repo-secret
 - **DB-migraties → opgelost (wrapper-image, #723).** ZAD ondersteunt nog geen args/init-containers,
   dus migreren zit nu in de image-entrypoint: `deploy/zad/manager-migrate/`
   (`migrate up && serve` in één dunne laag boven de stock-manager — geen broncode-fork).
-  De directory-deploy (`deploy/zad/upsert-directory.sh` / `zad-deploy-directory.yml`) gebruikt
-  deze `manager-migrate`-image.
+  De directory-deploy (`zad-deploy-directory.yml`, via `RijksICTGilde/zad-actions/deploy`)
+  gebruikt deze `manager-migrate`-image.
 - **Env is een handmatige stap.** Operations Manager-config is niet via de
   deploy-action te zetten; documenteer per component welke env nodig is. Templates:
   `peers/directory/manager.env.example`.
