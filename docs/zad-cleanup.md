@@ -41,13 +41,17 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
 - **Container-delete via de action is best-effort én kan verdergaan dan de gevraagde tag**: weigert
   GitHub een losse tag te verwijderen omdat het de laatste getagde versie van het package is, dan
   verwijdert de action het **hele package** in plaats van alleen die tag (zie `cleanup/action.yml`,
-  stap "Delete Container Image"). Precies daarom zet de workflow `delete-container: 'false'` en
-  verwijdert 'm zelf de package-versie: als de tag een versie deelt met een andere tag, slaat die
-  eigen stap het verwijderen over (anders verdwijnt de gedeelde versie mee).
-- **Een mislukte delete is geen rode run**: de action degradeert een gefaalde container-delete tot
-  een `::warning::` en sluit af met exit 0 — een groene job bewijst dus niet dat het deployment weg
-  is. Daarom controleert de workflow ná de action de live deployment-lijst en faalt hard als het
-  deployment er nog staat.
+  stap "Delete Container Image"). Precies daarom zetten **beide** workflows `delete-container:
+  'false'` en geven ze geen `containers:` mee — maar alleen `zad-deploy-directory.yml`
+  (job `cleanup-preview`) heeft daarna een **eigen** stap die de ghcr-preview-tag zelf verwijdert:
+  deelt de tag een versie met een andere tag (bv. `v1.43.7`), dan slaat die eigen stap het
+  verwijderen over (anders verdwijnt de gedeelde versie mee). `zad-cleanup.yml` heeft géén eigen
+  ghcr-stap — een preview-image die je daarmee handmatig opruimt, blijft dus staan tot een latere
+  `cleanup-preview`-run 'm meepakt, of tot handmatig opruimen via de package-UI.
+- **Een mislukte delete is geen rode run**: de action degradeert een gefaalde **deployment**-delete
+  tot een `::warning::` en sluit af met exit 0 (zie `zad_delete_deployment` in `zad-common.sh`) — een
+  groene job bewijst dus niet dat het deployment weg is. Daarom controleren beide workflows ná de
+  action de live deployment-lijst en falen hard als het deployment er nog staat.
 - **Beschermde namen** (`test`, `main`, `master`, `production`, `prod`) weigeren tenzij de
   workflow-input `allow_protected` aanstaat. Dat is een `if`-guard-stap vóór de action in
   `zad-cleanup.yml` — de action kent zelf geen beschermde-namen-check. Het cluster is
@@ -65,10 +69,12 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   `zad-cli`, geïnstalleerd via `uv tool install git+https://github.com/RijksICTGilde/zad-cli.git@v0.8.0`
   (een mutable git-tag). Het is uiteindelijk `zad-cli` dat de ZAD-API-call uitvoert en dus de
   `api-key` te zien krijgt — die niet-SHA-gepinde keten valt buiten de Scorecard-dekking.
-- **Geen secrets in de workflow-`run`**: de API-key gaat als action-input (`api-key:
-  ${{ secrets.ZAD_API_KEY_DIRECTORY }}`), niet als losse env-var in een `run:`-stap; de
-  `if`-guard in `zad-cleanup.yml` valideert de deployment-naam (`[a-z0-9-]`) tegen injectie vóór
-  de action draait.
+- **De key komt ook in een `run:`-stap terecht, maar veilig**: de action krijgt 'm als action-input
+  (`api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}`), en de cleanup-verificatiestap (`curl` tegen de
+  deployments-lijst) heeft 'm zelf ook nodig — die stap zet de key via `env: ZAD_API_KEY: ${{
+  secrets... }}` en gebruikt 'm in `run:` alleen als gequote `"$ZAD_API_KEY"`, nooit geïnterpoleerd
+  in de commandoregel zelf; de key wordt nergens geëcht of gelogd. De `if`-guard in
+  `zad-cleanup.yml` valideert de deployment-naam (`[a-z0-9-]`) tegen injectie vóór de action draait.
 - **`api-key`** komt uit `secrets.ZAD_API_KEY_DIRECTORY` (write-only); nooit gelogd.
 
 ## Openstaand

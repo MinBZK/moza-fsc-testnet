@@ -151,11 +151,14 @@ uit zodra de `changes`-job de deploy-paden geraakt ziet — net als bij de push-
 géén automatisme voor élke PR. Dependabot-PR's worden altijd overgeslagen (`skip-bot-prs: 'true'`).
 `workflow_dispatch` blijft voor handmatige overrides.
 
-Path-filter (alleen deze paden triggeren de auto-deploy):
-`deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf. Docs- en peer-merges blijven dus
-stil. De filter zit in de `changes`-job zelf (een `git diff`-stap), niet in de trigger-`paths:` van
-de workflow — zo blijft bijvoorbeeld het `closed`-event van een PR altijd bereikbaar voor de
-`cleanup-preview`-job, ongeacht welke bestanden die PR wijzigde.
+Path-filter (alleen deze paden triggeren de auto-deploy, en een docs-only wijziging — `^docs/` of
+`*.md` — telt nooit mee, ook niet binnen zo'n pad): `deploy/zad/manager-migrate/**`, `group/**`, de
+workflow zelf. Docs- en peer-merges blijven dus stil. Voor `push` staat dat pad-filter ook in de
+trigger-`paths:` van de workflow zelf; de docs-uitzondering zit daar niet bij (de docs-only-conjunctie
+loopt alleen via de `changes`-job — zie hieronder). Voor `pull_request` zit de hele filter (paden +
+docs-uitzondering) in de `changes`-job, op basis van de bestandenlijst uit de GitHub PR-API (niet
+`git diff` — dat gebruikt alleen de `push`-tak) — zo blijft bijvoorbeeld het `closed`-event van een PR
+altijd bereikbaar voor de `cleanup-preview`-job, ongeacht welke bestanden die PR wijzigde.
 
 Een `pull_request`-preview ruimt een `cleanup-preview`-job op bij het sluiten van de PR.
 
@@ -163,9 +166,9 @@ Drie jobs voorkomen de build-deploy-race:
 
 | Job | Wanneer | Doet |
 |-----|---------|------|
-| `changes` | elke push | `git diff` (run-step) → output `manager_migrate_changed` |
-| `build` | alleen als `manager-migrate/**` wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
-| `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` |
+| `changes` | elke push mét pad-match, én elke PR (open/sync/reopened/closed) | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
+| `build` | alleen als `manager-migrate/**` non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
+| `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór de deploy-stap). Config/group-change
 → build skip → deploy herbruikt de bestaande tag. De manager-migrate-image bouwt via de reusable

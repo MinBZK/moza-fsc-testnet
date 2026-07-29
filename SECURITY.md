@@ -19,5 +19,15 @@ ingecheckt. Secret-scanning met push-protection staat aan op de repository.
 ### Sleutelrotatie `ZAD_API_KEY_DIRECTORY`
 
 Deze key staat in de **Actions**-secretstore van dit repo — expliciet **niet** (meer) in de
-Dependabot-secretstore. Na rotatie: draai handmatig de `zad-deploy-directory`-workflow om de
-nieuwe key te verifiëren, en trek de oude key daarna in bij de ZAD Operations Manager.
+Dependabot-secretstore. Verifieer een nieuwe key **read-only**, niet door `zad-deploy-directory`
+handmatig te draaien — dat deployt standaard `test` op het productiecluster. Doe in plaats daarvan
+een read-only API-call met de nieuwe key (zie `docs/zad-directory-deploy.md`, stap 6):
+
+```bash
+read -rs ZAD_API_KEY; export ZAD_API_KEY     # plak de key niet inline
+curl -sS -H "X-API-Key: $ZAD_API_KEY" \
+  https://zad.rijksapp.nl/api/v2/projects/mft-tp9/deployments | jq -r '.deployments[].name'
+```
+
+Een 200 met de deployment-lijst bevestigt dat de nieuwe key werkt. Trek de oude key daarna in bij de
+ZAD Operations Manager.

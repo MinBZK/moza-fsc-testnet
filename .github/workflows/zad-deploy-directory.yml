@@ -158,21 +158,30 @@ jobs:
                 echo "::warning::Fork-PR — preview overgeslagen (geen secrets)."
                 emit false false; exit 0
               fi
-              # Bestandenlijst; fail-safe: niet op te halen -> tóch deployen + bouwen.
+              # Bestandenlijst; fail-safe: niet op te halen -> tóch deployen + bouwen, vóór élke
+              # PR waarvan de bestandenlijst niet is op te halen — zonder die lijst is de
+              # paths/docs-conjunctie hieronder niet te evalueren, en een gemiste preview weegt
+              # zwaarder dan een overbodige.
               if ! files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename'); then
-                echo "::warning::Kon gewijzigde bestanden niet ophalen — fail-safe deploy."
+                echo "::warning::Kon gewijzigde bestanden niet ophalen — fail-safe deploy (voor elke PR)."
                 emit true true; exit 0
               fi
-              # run: raakt de wijziging deploy/zad/manager-migrate/, group/ of deze workflow zelf?
-              # (voorheen een paths-filter op de trigger; nu hier, zodat het closed-event er niet
-              # meer door geblokkeerd wordt — zie de trigger-comment hierboven.)
-              if printf '%s\n' "$files" | grep -qE '^(deploy/zad/manager-migrate/|group/|\.github/workflows/zad-deploy-directory\.yml$)'; then
+              # Docs-only wijzigingen tellen niet mee, ook niet binnen een bewaakt pad (bv.
+              # deploy/zad/manager-migrate/README.md) — vóór de paths-check uitfilteren.
+              # (voorheen de trigger-`paths:` zelf + een losse `grep -qvE '(^docs/|\.md$)'`
+              # op `run`; nu hier gecombineerd, zodat het closed-event er niet meer door
+              # geblokkeerd wordt — zie de trigger-comment hierboven — én `changed` dezelfde
+              # docs-uitsluiting krijgt.)
+              non_doc_files=$(printf '%s\n' "$files" | grep -vE '(^docs/|\.md$)' || true)
+              # run: raakt een non-docs wijziging deploy/zad/manager-migrate/, group/ of deze
+              # workflow zelf?
+              if printf '%s\n' "$non_doc_files" | grep -qE '^(deploy/zad/manager-migrate/|group/|\.github/workflows/zad-deploy-directory\.yml$)'; then
                 run=true
               else
                 run=false
               fi
-              # changed: raakt de wrapper?
-              if printf '%s\n' "$files" | grep -q '^deploy/zad/manager-migrate/'; then changed=true; else changed=false; fi
+              # changed: raakt een non-docs wijziging de wrapper?
+              if printf '%s\n' "$non_doc_files" | grep -q '^deploy/zad/manager-migrate/'; then changed=true; else changed=false; fi
               emit "$run" "$changed"; exit 0 ;;
             push)
               # main: altijd deployen. Wrapper gewijzigd sinds vorige push?
@@ -185,7 +194,10 @@ jobs:
                 echo "::warning::git diff faalde ($BEFORE..$SHA) — fail-safe build."
                 emit true true; exit 0
               fi
-              if printf '%s\n' "$diff_files" | grep -q '^deploy/zad/manager-migrate/'; then
+              # Zelfde docs-uitsluiting als de pull_request-tak hierboven: een docs-only wijziging
+              # onder manager-migrate/ (bv. een README) hoeft niet herbouwd te worden.
+              non_doc_diff_files=$(printf '%s\n' "$diff_files" | grep -vE '(^docs/|\.md$)' || true)
+              if printf '%s\n' "$non_doc_diff_files" | grep -q '^deploy/zad/manager-migrate/'; then
                 emit true true
               else
                 emit true false
@@ -303,11 +315,31 @@ jobs:
             echo "::error::Onverwachte respons (geen geldige JSON) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
             exit 1
           fi
-          if jq -e --arg d "$DEPLOYMENT" 'any(.deployments[]?; .name == $d)' /tmp/zad-deployments.json >/dev/null; then
-            echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup — check de Operations Manager UI."
+          # Vorm eerst afdwingen: zonder deze check maakt `.deployments[]?` van elke onverwachte
+          # respons-vorm (schema-wijziging, `{}`, een proxy-foutbody) stilzwijgend "niet aanwezig"
+          # — dan meldt deze stap de deployment weg terwijl hij nog kan draaien.
+          if ! jq -e '(.deployments | type) == "array"' /tmp/zad-deployments.json >/dev/null 2>&1; then
+            echo "::error::Onverwachte respons-vorm (.deployments is geen array) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
             exit 1
           fi
-          echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer."
+          # Géén `?` op .deployments[]: die is hierboven al als array bevestigd, dus een `?` zou
+          # hier alleen nog echte jq-fouten (bv. een niet-object element) verbergen. Exit-code apart
+          # afhandelen: `jq -e` geeft 0 (gevonden), 1 (niet gevonden) én 5 (jq-fout) — zonder dat
+          # onderscheid leest exit 5 als "niet gevonden" en zou een groene run opleveren.
+          set +e
+          match=$(jq -e --arg d "$DEPLOYMENT" 'any(.deployments[]; .name == $d)' /tmp/zad-deployments.json 2>&1)
+          jq_exit=$?
+          set -e
+          case "$jq_exit" in
+            0)
+              echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup — check de Operations Manager UI."
+              exit 1 ;;
+            1)
+              echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer." ;;
+            *)
+              echo "::error::jq-fout bij verificatie (exit $jq_exit): $match — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
+              exit 1 ;;
+          esac
 
       - name: Verwijder de ghcr preview-tag (indien niet gedeeld)
         # Zelfde reden als hierboven bij delete-container: de action verwijdert het hele package
@@ -322,7 +354,17 @@ jobs:
           org="minbzk"
           package="moza-fsc-testnet-manager-migrate"
 
-          versions=$(gh api "orgs/${org}/packages/container/${package}/versions")
+          # --paginate: één versie per preview-build is de staande situatie, dus zonder paginering
+          # (de API geeft 30 versies per pagina) valt een oudere preview-tag van de eerste pagina
+          # en wordt hij nooit meer opgeruimd — een stille image-leak.
+          # Ophaalfout (403/404: package weg, of het token mist org-package-rechten) alleen
+          # waarschuwen en doorgaan: de ZAD-deployment is op dit punt al hierboven geverifieerd
+          # weg — dát is de garantie die telt — dus net als bij de delete verderop (`|| ::warning::`)
+          # mag een niet op te halen of niet op te ruimen image-tag deze job niet rood maken.
+          if ! versions=$(gh api --paginate "orgs/${org}/packages/container/${package}/versions" 2>/tmp/gh-versions.err); then
+            echo "::warning::Kon package-versions niet ophalen voor '${package}' ($(tr '\n' ' ' </tmp/gh-versions.err)) — leftover image-tag (indien aanwezig) niet gecontroleerd."
+            exit 0
+          fi
 
           version_id=$(echo "$versions" | jq -r --arg tag "$TAG" \
             '.[] | select(.metadata.container.tags // [] | index($tag)) | .id' | head -n1)

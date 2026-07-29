@@ -63,7 +63,7 @@ with:
   project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
   deployment-name: pr-<PR-nummer>     # push naar main: `test`
   clone-from: test                    # alleen previews; leeg op `test` zelf
-  skip-bot-prs: 'false'
+  skip-bot-prs: 'false'               # achterhaald — zie Naschrift, nu 'true'
   wait-for-ready: 'false'
   task-timeout: '600'
   comment-on-pr: 'true'
@@ -79,8 +79,11 @@ with:
 Onderbouwing per input:
 
 - **`skip-bot-prs: 'false'`** — de action skipt bot-PR's standaard (`::notice::Skipping: PR author
-  '<author>' is a bot (type: <type>)`, groene job zonder deploy). Wij willen previews op élke PR,
-  ook op een actions-versiebump; daarvoor staat de key al in de Dependabot-secretstore.
+  '<author>' is a bot (type: <type>)`, groene job zonder deploy). Wij wilden previews op élke PR,
+  ook op een actions-versiebump. **Achterhaald, zie Naschrift**: dit is teruggedraaid naar
+  `skip-bot-prs: 'true'`; de key in de Dependabot-secretstore zetten om dit te ondersteunen was zelf
+  het probleem (een nog niet gereviewde gebumpte action-versie zou dan met de productie-key draaien)
+  — zie `SECURITY.md` voor de huidige aanpak (key alleen in de Actions-secretstore).
 - **`wait-for-ready: 'false'`** — de action curlt vanaf de runner één health-endpoint per
   component. `dirmgr` is mTLS-only en geeft daar nooit 2xx op; de wachtlus zou altijd time-outen.
   Zelfde reden als in de sibling.
@@ -96,12 +99,15 @@ preview-ontwerp).
 
 ### C. Cleanup via `zad-actions/cleanup`, met de vangrail in de workflow
 
-`cleanup-preview` (PR-close) en `zad-cleanup.yml` (workflow_dispatch) roepen beide
-`zad-actions/cleanup@<sha>` aan. Geen van beide geeft `containers:` mee: `delete-container` staat op
-`'false'`, en de ghcr-tag wordt door een eigen stap in de workflow verwijderd — bewust, want
-`zad-cleanup.yml` is een handmatige workflow die elke deployment-naam kan targetten, en de actie
-escaleert naar het verwijderen van het **hele package** zodra de gevraagde tag de laatste getagde
-versie is (zie ook het Naschrift).
+`cleanup-preview` (PR-close, in `zad-deploy-directory.yml`) en `zad-cleanup.yml` (workflow_dispatch)
+roepen beide `zad-actions/cleanup@<sha>` aan. Geen van beide geeft `containers:` mee en beide zetten
+`delete-container: 'false'` — bewust, want de actie escaleert naar het verwijderen van het **hele
+package** zodra de gevraagde tag de laatste getagde versie is. Dat verwijderen zelf, tag-voor-tag,
+gebeurt alleen in `cleanup-preview`: die heeft een eigen stap die de ghcr-preview-tag verwijdert als
+'m niet gedeeld wordt met een andere tag. `zad-cleanup.yml` — de handmatige workflow die elke
+deployment-naam kan targetten — heeft géén eigen ghcr-stap; een preview-image die je daarmee opruimt
+blijft dus staan tot een latere `cleanup-preview`-run 'm meepakt, of tot handmatig opruimen (zie ook
+het Naschrift).
 
 De action kent **geen** beschermde-namen-check, die `cleanup.sh` wel had. Het cluster is
 odcn-**production** en `test` is een gedeelde singleton, dus die vangrail komt terug als
@@ -145,8 +151,8 @@ De PR-pipeline van de implementatie-PR is de test — die deployt zichzelf als `
    verifieert, dus dat de certs gemount zijn).
 3. In de manager-log: `migrate up` slaagt tegen een verse managed Postgres en self-announce
    (`EVENT_TYPE_CREATE_PEER`, OIN `00000000000000000010`) is SUCCEEDED.
-4. Bij het sluiten van die PR: deployment weg (`validate` toont 'm niet meer) en de ghcr-tag
-   `v1.43.7-pr-<n>` is opgeruimd.
+4. Bij het sluiten van die PR: deployment weg (de verificatiestap in `cleanup-preview` bevestigt dit
+   tegen de live deployments-lijst) en de ghcr-tag `v1.43.7-pr-<n>` is opgeruimd.
 
 Faalt stap 2 of 3, dan is de oorzaak vrijwel zeker een niet-geërfde bijlage of web-publicatie —
 zichtbaar in de UI, en dan is dit ontwerp weerlegd op het punt uit de risicotabel.

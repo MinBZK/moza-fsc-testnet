@@ -79,8 +79,28 @@ jobs:
             echo "::error::Onverwachte respons (geen geldige JSON) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
             exit 1
           fi
-          if jq -e --arg d "$DEPLOYMENT" 'any(.deployments[]?; .name == $d)' /tmp/zad-deployments.json >/dev/null; then
-            echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup — check de Operations Manager UI."
+          # Vorm eerst afdwingen: zonder deze check maakt `.deployments[]?` van elke onverwachte
+          # respons-vorm (schema-wijziging, `{}`, een proxy-foutbody) stilzwijgend "niet aanwezig"
+          # — dan meldt deze stap de deployment weg terwijl hij nog kan draaien.
+          if ! jq -e '(.deployments | type) == "array"' /tmp/zad-deployments.json >/dev/null 2>&1; then
+            echo "::error::Onverwachte respons-vorm (.deployments is geen array) — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
             exit 1
           fi
-          echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer."
+          # Géén `?` op .deployments[]: die is hierboven al als array bevestigd, dus een `?` zou
+          # hier alleen nog echte jq-fouten (bv. een niet-object element) verbergen. Exit-code apart
+          # afhandelen: `jq -e` geeft 0 (gevonden), 1 (niet gevonden) én 5 (jq-fout) — zonder dat
+          # onderscheid leest exit 5 als "niet gevonden" en zou een groene run opleveren.
+          set +e
+          match=$(jq -e --arg d "$DEPLOYMENT" 'any(.deployments[]; .name == $d)' /tmp/zad-deployments.json 2>&1)
+          jq_exit=$?
+          set -e
+          case "$jq_exit" in
+            0)
+              echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup — check de Operations Manager UI."
+              exit 1 ;;
+            1)
+              echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer." ;;
+            *)
+              echo "::error::jq-fout bij verificatie (exit $jq_exit): $match — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
+              exit 1 ;;
+          esac
