@@ -78,9 +78,9 @@ with:
 
 Onderbouwing per input:
 
-- **`skip-bot-prs: 'false'`** — de action skipt bot-PR's standaard (`Skipping: PR author
-  'dependabot[bot]' is a bot`, groene job zonder deploy). Wij willen previews op élke PR, ook op
-  een actions-versiebump; daarvoor staat de key al in de Dependabot-secretstore.
+- **`skip-bot-prs: 'false'`** — de action skipt bot-PR's standaard (`::notice::Skipping: PR author
+  '<author>' is a bot (type: <type>)`, groene job zonder deploy). Wij willen previews op élke PR,
+  ook op een actions-versiebump; daarvoor staat de key al in de Dependabot-secretstore.
 - **`wait-for-ready: 'false'`** — de action curlt vanaf de runner één health-endpoint per
   component. `dirmgr` is mTLS-only en geeft daar nooit 2xx op; de wachtlus zou altijd time-outen.
   Zelfde reden als in de sibling.
@@ -97,8 +97,11 @@ preview-ontwerp).
 ### C. Cleanup via `zad-actions/cleanup`, met de vangrail in de workflow
 
 `cleanup-preview` (PR-close) en `zad-cleanup.yml` (workflow_dispatch) roepen beide
-`zad-actions/cleanup@<sha>` aan, met `containers:` voor de ghcr-tag `v1.43.7-pr-<n>` — dat vervangt
-onze eigen ghcr-delete-stap.
+`zad-actions/cleanup@<sha>` aan. Geen van beide geeft `containers:` mee: `delete-container` staat op
+`'false'`, en de ghcr-tag wordt door een eigen stap in de workflow verwijderd — bewust, want
+`zad-cleanup.yml` is een handmatige workflow die elke deployment-naam kan targetten, en de actie
+escaleert naar het verwijderen van het **hele package** zodra de gevraagde tag de laatste getagde
+versie is (zie ook het Naschrift).
 
 De action kent **geen** beschermde-namen-check, die `cleanup.sh` wel had. Het cluster is
 odcn-**production** en `test` is een gedeelde singleton, dus die vangrail komt terug als
@@ -152,3 +155,22 @@ zichtbaar in de UI, en dan is dit ontwerp weerlegd op het punt uit de risicotabe
 
 1. PR #35 mergen (repareert `main` → `test` en de component-koppeling; klein en losstaand).
 2. Deze wijziging als aparte PR: workflows om, scripts weg, docs bij.
+
+## Naschrift (2026-07-29)
+
+Vier besluiten uit de review van de implementatie-PR wijken af van dit ontwerp:
+
+- **Bot-PR's krijgen geen preview meer**: `skip-bot-prs: 'true'` (de default) op zowel deploy als
+  cleanup — het omgekeerde van Besl. B hierboven. Reden: die PR's worden hier niet functioneel
+  getest, dus een preview voegt weinig toe, en deployen zou een nog niet gereviewde gebumpte
+  action-versie draaien met de productie-API-key. Gevolg: de API-key hoeft niet meer in de
+  Dependabot-secretstore te staan — alleen nog in de Actions-store.
+- **De `paths:`-filter is verhuisd** van de `pull_request`-trigger naar de `changes`-job, zodat het
+  `closed`-event altijd de cleanup-job bereikt. De eerdere kanttekening dat een PR waarvan de diff
+  niet meer in deze paden valt geen cleanup triggert, is daarmee vervallen.
+- **Cleanup wordt nu geverifieerd**: een stap ná de action leest de live deployment-lijst en faalt
+  de job als het deployment er nog staat — omdat de action een mislukte delete degradeert tot een
+  `::warning::` en met exit 0 doorgaat.
+- **De ghcr-preview-tag wordt door een eigen stap verwijderd**, met `delete-container: 'false'` op
+  de action, omdat de action escaleert naar het verwijderen van het hele package zodra de gevraagde
+  tag de laatste getagde versie is.

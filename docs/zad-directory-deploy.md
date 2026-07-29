@@ -60,8 +60,11 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 > deployment **`test`**. De directory = 2 componenten (`dirmgr` + `dirui`) op ZAD's managed
 > Postgres; een upsert van `test` vervangt de bestaande placeholder-component `directory` (image
 > leeg). Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR rolt
-> **automatisch** een preview `pr-<PR-nummer>` uit (`pull_request`-trigger); bij het sluiten van de
-> PR wordt die weer opgeruimd. `pr-<PR-nummer>` = het PR-nummer, niet het issuenummer.
+> een preview `pr-<PR-nummer>` uit zodra de gewijzigde bestanden in de deploy-paden vallen (bepaald
+> in de `changes`-job) — niet elke `pull_request`-trigger deployt. Dependabot-PR's worden altijd
+> overgeslagen (`skip-bot-prs: 'true'`), ook als hun diff wél in die paden valt. Bij het sluiten van
+> de PR wordt een gedeployde preview weer opgeruimd. `pr-<PR-nummer>` = het PR-nummer, niet het
+> issuenummer.
 
 ## Stappen
 
@@ -143,13 +146,18 @@ naar main** — een merge (CI groen) rolt de directory automatisch uit naar depl
 (besluit in `docs/ontwerpkeuzes.md`, ontwerp in `docs/superpowers/specs/`). Push-pad zet vast:
 `deployment=test`, `image_tag=v1.43.7`, `manager_tag=""` (canonieke tag).
 
-Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) automatisch een
-`pr-<PR-nummer>`-preview uit en ruimt een `cleanup-preview`-job die op bij het sluiten van de PR;
+Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) een `pr-<PR-nummer>`-preview
+uit zodra de `changes`-job de deploy-paden geraakt ziet — net als bij de push-naar-main hierboven,
+géén automatisme voor élke PR. Dependabot-PR's worden altijd overgeslagen (`skip-bot-prs: 'true'`).
 `workflow_dispatch` blijft voor handmatige overrides.
 
 Path-filter (alleen deze paden triggeren de auto-deploy):
 `deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf. Docs- en peer-merges blijven dus
-stil.
+stil. De filter zit in de `changes`-job zelf (een `git diff`-stap), niet in de trigger-`paths:` van
+de workflow — zo blijft bijvoorbeeld het `closed`-event van een PR altijd bereikbaar voor de
+`cleanup-preview`-job, ongeacht welke bestanden die PR wijzigde.
+
+Een `pull_request`-preview ruimt een `cleanup-preview`-job op bij het sluiten van de PR.
 
 Drie jobs voorkomen de build-deploy-race:
 

@@ -15,3 +15,9 @@ Dit is een **gesloten testnet** met een eigen test-CA. Sleutels, certificaten en
 `.env`-bestanden horen **niet** in deze repository en staan in
 [`.gitignore`](.gitignore). Alleen scripts en `.example`-templates worden
 ingecheckt. Secret-scanning met push-protection staat aan op de repository.
+
+### Sleutelrotatie `ZAD_API_KEY_DIRECTORY`
+
+Deze key staat in de **Actions**-secretstore van dit repo — expliciet **niet** (meer) in de
+Dependabot-secretstore. Na rotatie: draai handmatig de `zad-deploy-directory`-workflow om de
+nieuwe key te verifiëren, en trek de oude key daarna in bij de ZAD Operations Manager.

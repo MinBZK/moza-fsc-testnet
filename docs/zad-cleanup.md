@@ -38,10 +38,16 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
 - **Idempotent**: een niet-bestaande deployment = no-op (geen fout), zodat een cleanup-run veilig
   herhaalbaar is (bv. na een gefaalde PR-preview). Dat zit in de action zelf, niet meer in eigen
   scriptlogica.
-- **Container-delete is best-effort én kan verdergaan dan de gevraagde tag**: weigert GitHub een
-  losse tag te verwijderen omdat het de laatste getagde versie van het package is, dan verwijdert
-  de action het **hele package** in plaats van alleen die tag (zie `cleanup/action.yml`,
-  stap "Delete Container Image").
+- **Container-delete via de action is best-effort én kan verdergaan dan de gevraagde tag**: weigert
+  GitHub een losse tag te verwijderen omdat het de laatste getagde versie van het package is, dan
+  verwijdert de action het **hele package** in plaats van alleen die tag (zie `cleanup/action.yml`,
+  stap "Delete Container Image"). Precies daarom zet de workflow `delete-container: 'false'` en
+  verwijdert 'm zelf de package-versie: als de tag een versie deelt met een andere tag, slaat die
+  eigen stap het verwijderen over (anders verdwijnt de gedeelde versie mee).
+- **Een mislukte delete is geen rode run**: de action degradeert een gefaalde container-delete tot
+  een `::warning::` en sluit af met exit 0 — een groene job bewijst dus niet dat het deployment weg
+  is. Daarom controleert de workflow ná de action de live deployment-lijst en faalt hard als het
+  deployment er nog staat.
 - **Beschermde namen** (`test`, `main`, `master`, `production`, `prod`) weigeren tenzij de
   workflow-input `allow_protected` aanstaat. Dat is een `if`-guard-stap vóór de action in
   `zad-cleanup.yml` — de action kent zelf geen beschermde-namen-check. Het cluster is
@@ -50,11 +56,15 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
 
 ## Beveiliging & versievastlegging
 
-- **SHA-pinned actions** (Scorecard Pinned-Dependencies): `zad-deploy-directory.yml` en
-  `zad-cleanup.yml` gebruiken `RijksICTGilde/zad-actions/deploy` resp. `/cleanup`, beide
-  SHA-gepind (`@13434cd4…` # v4.0.6). `zad-deploy-directory.yml` checkt daarnaast de repo uit
-  met `actions/checkout` (al SHA-gepind, nodig voor `git diff` in de `changes`-job);
-  `zad-cleanup.yml` heeft geen checkout-stap — die praat alleen met de ZAD-API.
+- **SHA-pinning dekt `zad-actions` zelf, niet alles eronder** (Scorecard Pinned-Dependencies):
+  `zad-deploy-directory.yml` en `zad-cleanup.yml` gebruiken `RijksICTGilde/zad-actions/deploy` resp.
+  `/cleanup`, beide SHA-gepind (`@13434cd4…` # v4.0.6). `zad-deploy-directory.yml` checkt daarnaast
+  de repo uit met `actions/checkout` (al SHA-gepind, nodig voor `git diff` in de `changes`-job);
+  `zad-cleanup.yml` heeft geen checkout-stap — die praat alleen met de ZAD-API. Binnen `zad-actions`
+  zelf zijn twee stappen **niet** SHA-gepind: `astral-sh/setup-uv@v6` (mutable major-tag) en
+  `zad-cli`, geïnstalleerd via `uv tool install git+https://github.com/RijksICTGilde/zad-cli.git@v0.8.0`
+  (een mutable git-tag). Het is uiteindelijk `zad-cli` dat de ZAD-API-call uitvoert en dus de
+  `api-key` te zien krijgt — die niet-SHA-gepinde keten valt buiten de Scorecard-dekking.
 - **Geen secrets in de workflow-`run`**: de API-key gaat als action-input (`api-key:
   ${{ secrets.ZAD_API_KEY_DIRECTORY }}`), niet als losse env-var in een `run:`-stap; de
   `if`-guard in `zad-cleanup.yml` valideert de deployment-naam (`[a-z0-9-]`) tegen injectie vóór
