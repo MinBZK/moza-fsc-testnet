@@ -142,6 +142,28 @@ Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) automatisch 
 `pr-<PR-nummer>`-preview uit en ruimt een `cleanup-preview`-job die op bij het sluiten van de PR;
 `workflow_dispatch` blijft voor handmatige overrides.
 
+#### Secret in twee stores: Actions én Dependabot
+
+Een run die door **Dependabot** wordt getriggerd (`opened`/`synchronize` op een
+`dependabot/...`-branch) leest níét uit de Actions-secretstore maar uit de aparte
+**Dependabot**-store — de runlog zegt letterlijk `Secret source: Dependabot`. Staat de key daar
+niet, dan is `secrets.ZAD_API_KEY_DIRECTORY` leeg en stopt `upsert-directory.sh` op
+`zet ZAD_API_KEY in je env`, terwijl `vars.ZAD_PROJECT_ID_DIRECTORY` wél gevuld is (`vars` zijn
+niet gesplitst). `ZAD_API_KEY_DIRECTORY` staat daarom in **beide** stores, met dezelfde waarde:
+
+```bash
+gh secret set ZAD_API_KEY_DIRECTORY                  # Actions-store
+gh secret set ZAD_API_KEY_DIRECTORY --app dependabot # Dependabot-store
+```
+
+Rotatie = beide bijwerken; anders werkt main wel en breken de Dependabot-previews (of andersom).
+Gevolg van deze keuze: ook een Dependabot-PR deployt naar het gedeelde directory-project. Dat is
+bewust — previews horen op elke PR te draaien, ook op een actions-versiebump.
+
+`closed` blijft werken zonder de Dependabot-store: dat event wordt door een mens getriggerd, dus
+`cleanup-preview` draait op de gewone Actions-secrets. Een **fork**-PR heeft geen van beide en
+wordt in de `changes`-job luid geskipt.
+
 Path-filter (alleen deze paden triggeren de auto-deploy):
 `deploy/zad/upsert-directory.sh`, `deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf.
 Docs- en peer-merges blijven dus stil.
