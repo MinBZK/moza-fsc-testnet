@@ -9,15 +9,16 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      # `weekly`, niet `daily` en niet `monthly`. Daily liet Dependabot dagelijks kijken en dus bij
-      # elke nieuwe upstream-release een open groep-PR force-pushen — elke force-push is een volle
-      # CI-run. Monthly zou goedkoper zijn, maar "Dependabot security updates" staat op deze repo UIT
-      # (`gh api repos/{owner}/{repo}` → `security_and_analysis.dependabot_security_updates.status`).
-      # Zolang dat zo is, is het
-      # version-updateschema is daarmee het enige automatische kanaal waarlangs een kwetsbare
-      # action-pin wordt vervangen, en 30 dagen wachten is niet te verdedigen voor workflows die een
-      # productie-API-key aanroepen (BIO 12.6.1). Zet dat repo-instelling aan en `monthly` mag.
-      interval: "weekly"
+      # `monthly`, niet `daily`. Daily liet Dependabot dagelijks kijken en dus bij elke nieuwe
+      # upstream-release een open groep-PR force-pushen — en elke force-push is een volle CI-run.
+      # Monthly kan omdat "Dependabot security updates" op deze repo AAN staat (ingeschakeld
+      # 2026-07-30; controleer met `gh api repos/{owner}/{repo}` →
+      # `security_and_analysis.dependabot_security_updates.status`). Advisories leveren daardoor
+      # direct een fix-PR op, los van dit interval, dus dit schema hoeft alleen routinematige
+      # versiebumps te doen. Zou die instelling ooit weer uitgaan, dan is dit schema het énige
+      # automatische kanaal en hoort het terug naar `weekly` (BIO 12.6.1: tijdige maatregelen, niet
+      # alleen tijdige detectie) — de workflows hier deployen met een productie-API-key.
+      interval: "monthly"
     groups:
       # codeql-action publiceert init/autobuild/analyze/upload-sarif als losse
       # sub-actions onder één versie. Ze MOETEN samen bewegen: een enkele
@@ -34,9 +35,9 @@ updates:
           - "github/codeql-action*"
 
   # De wrapper-image draait op odcn-production; zonder dit ecosystem is er geen enkel automatisch
-  # signaal bij een CVE in de base-image. (Repo-instelling "Dependabot security updates" staat uit,
-  # dus dit schema is ook hier het enige kanaal — zie de comment bij de actions hierboven.)
+  # signaal bij een CVE in de base-image — en juist dat signaal komt nu via de security-updates
+  # binnen (zie de comment bij de actions hierboven).
   - package-ecosystem: "docker"
     directory: "/deploy/zad/manager-migrate"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
