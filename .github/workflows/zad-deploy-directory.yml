@@ -337,8 +337,8 @@ jobs:
         # de backend-map ongewijzigd door (de key is dan simpelweg afwezig) en gaat gewoon door —
         # een ontbrekende dirmgr zou dus als groene deploy voorbijkomen, met een PR-comment die
         # alleen dirui noemt. Let op wat deze check wél en niet bewijst: hij toetst de
-        # deployment-spec, niet of de pod draait of de image bestaat (zie
-        # MinBZK/MijnOverheidZakelijk#892). Overgeslagen op
+        # deployment-spec, niet of de pod draait of de image bestaat — met wait-for-ready uit is dat
+        # laatste in deze workflow helemaal niet gedekt. Overgeslagen op
         # een bot-PR (skip-bot-prs): dan draaide de deploy-substap niet en is `urls` leeg — dat is
         # geen onvolledige deploy, dus geen assertion nodig.
         if: steps.deploy.outputs.skipped != 'true'
@@ -468,8 +468,10 @@ jobs:
         # Zelfde reden als hierboven bij delete-container: de action verwijdert het hele package
         # zodra dit de laatst getagde versie is. Alleen verwijderen als de preview-tag een eigen,
         # ongedeelde versie heeft; deelt de versie tags met bv. v1.43.7 (byte-identieke rebuild),
-        # dan blijft de package staan — die gedeelde-tag-situatie is géén randgeval en blijft dus
-        # tags achterlaten; opruimen daarvan loopt via MinBZK/MijnOverheidZakelijk#894.
+        # dan blijft de package staan. Die gedeelde-tag-situatie is géén randgeval (een PR die alleen
+        # de build-recipe raakt levert een byte-identieke image op), dus preview-tags blijven zich
+        # verzamelen op de canonieke version — opruimen daarvan hoort in een periodieke reaper, niet
+        # hier: deze stap mag de version waar `test` op draait nooit weggooien.
         # Overgeslagen op een bot-PR: sinds de bot-tak in de `changes`-job bouwt zo'n PR geen
         # preview-image meer, dus er is niets om op te ruimen.
         if: steps.cleanup.outputs.skipped != 'true'

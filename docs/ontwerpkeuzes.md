@@ -160,5 +160,6 @@ op het web" dat al deed.
   stap 4) dat uitlegt hoe je ze in de UI invoert.
 - **Geaccepteerde kosten:** git **documenteert** de config, het **handhaaft** 'm niet — een
   UI-wijziging die afwijkt van de `.example`-bestanden wordt niet automatisch gedetecteerd of
-  teruggedraaid. TODO(#896): een scheduled read-only vergelijking die dat verschil wél meldt (met
-  `DISABLE_CRL_CHECKS` als scherpste geval).
+  teruggedraaid. Openstaand: een scheduled read-only vergelijking die dat verschil wél meldt, met
+  `DISABLE_CRL_CHECKS` als scherpste geval
+  ([#896](https://github.com/MinBZK/MijnOverheidZakelijk/issues/896)).

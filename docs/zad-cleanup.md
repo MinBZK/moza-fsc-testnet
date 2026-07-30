@@ -103,8 +103,9 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   zelf zijn twee stappen **niet** SHA-gepind: `astral-sh/setup-uv@v6` (mutable major-tag) en
   `zad-cli`, geïnstalleerd via `uv tool install git+https://github.com/RijksICTGilde/zad-cli.git@v0.8.0`
   (een mutable git-tag). Het is uiteindelijk `zad-cli` dat de ZAD-API-call uitvoert en dus de
-  `api-key` te zien krijgt — die niet-SHA-gepinde keten valt buiten de Scorecard-dekking.
-  TODO(#898): upstream-verzoek aan RijksICTGilde om die twee te pinnen.
+  `api-key` te zien krijgt — die niet-SHA-gepinde keten valt buiten de Scorecard-dekking. Openstaand:
+  een upstream-verzoek aan RijksICTGilde om die twee te pinnen
+  ([#898](https://github.com/MinBZK/MijnOverheidZakelijk/issues/898)).
 - **De key komt ook in een `run:`-stap terecht, maar veilig**: de action krijgt 'm als action-input
   (`api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}`), en de cleanup-verificatiestap (`curl` tegen de
   deployments-lijst) heeft 'm zelf ook nodig — die stap zet de key via `env: ZAD_API_KEY: ${{
