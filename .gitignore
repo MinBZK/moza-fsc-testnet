@@ -1,8 +1,33 @@
-.env
+# Env-bestanden met echte waarden. De templates heten `<component>.env.example`
+# (peers/directory/manager.env.example, dirui.env.example) en nodigen uit tot een ingevulde
+# `<component>.env` met DSN + wachtwoord ernaast; `.env` alléén dekte dat niet. `.env*` en `*.env.*`
+# vangen ook de varianten die tooling maakt: `.env.local`, `.env.production`, `manager.env.bak`.
+# Let op: dit is voor die klasse de énige barrière — secret-scanning push-protection dekt
+# provider-tokens, geen DSN met wachtwoord erin.
+.env*
+*.env
+*.env.*
+# De negaties houden de templates committable; `!*.env.example` is nodig vanwege `*.env.*` hierboven.
+!.env.example
+!*.env.example
+# Kopieën die tooling en handwerk achterlaten. `*.key` dekt `ca.key` maar niet `ca.key.bak`, en de
+# directory-ignores hieronder dekken alleen die paden — niet een stray kopie ernaast.
+*.bak
+*.orig
+*~
+*.local.yaml
 *.pem
 *.key
 *.crt
 *.crl
+# Sleutel-/certformaten naast de losse *.pem/*.key hierboven. p12/pfx/jks zijn containers met een
+# privésleutel; der is een encoding (vaak een publiek cert) en pk8 een kale PKCS#8-sleutel — alle vier
+# uitgesloten omdat ze hier alleen als gegenereerd materiaal voorkomen.
+*.p12
+*.pfx
+*.jks
+*.der
+*.pk8
 secrets/
 pki/ca/
 pki/out/

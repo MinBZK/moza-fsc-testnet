@@ -33,9 +33,9 @@ on:
         required: false
         default: "test"
       image_tag:
-        description: "OpenFSC stock-tag (directory-ui; default voor de manager)"
+        description: "OpenFSC stock-tag (directory-ui; default voor de manager). Leeg = IMAGE_TAG_DEFAULT."
         required: false
-        default: "v1.43.7"
+        default: ""
       manager_tag:
         description: "ghcr manager-migrate-tag (bv. branch-tag); leeg = image_tag"
         required: false
@@ -50,6 +50,18 @@ env:
   # lopen. Zónder /api-suffix: de action-input wil die erbij, de curl bouwt zelf /api/v2/... —
   # elke aanroep plakt 'm apart aan, anders eindig je op /api/api/v2.
   ZAD_API_BASE: https://zad.rijksapp.nl
+  # Default OpenFSC-basisversie voor déze workflow: de workflow_dispatch-input staat op leeg en valt
+  # hier terug (`on:`-defaults kunnen de env-context niet lezen), zodat handmatige dispatch niet stil
+  # een andere versie deployt dan een push naar main. `build-manager-migrate.yml` heeft z'n eigen
+  # default voor losse dispatch — die twee horen samen te bewegen.
+  # LET OP bij een bump: een wijziging aan alléén deze regel zet `run=true` maar `changed=false`, dus
+  # de build draait niet en de deploy wijst naar een tag die nog niet bestaat (met wait-for-ready uit
+  # merkt de run dat niet). Bump dus samen met een build, of dispatch eerst build-manager-migrate.
+  IMAGE_TAG_DEFAULT: v1.43.7
+  # Eén bron voor de manager-image: de components-JSON van de deploy-job én de ghcr-opruimstap in
+  # cleanup-preview leiden hier hun waarden uit af. Losse literals liepen anders uiteen bij een
+  # rename, waarna de opruimstap stilzwijgend "niets gevonden" meldt.
+  MANAGER_IMAGE: ghcr.io/minbzk/moza-fsc-testnet-manager-migrate
 
 concurrency:
   # Eén run per (project, deployment) tegelijk: PR -> pr-<n>, push/dispatch -> test/input.
@@ -62,6 +74,11 @@ concurrency:
 jobs:
   # Afgeleide waarden op één plek: deployment-naam, OpenFSC-basistag, manager-image-suffix.
   meta:
+    # Zelfde reden als bij `changes` hieronder: op een `closed`-event leest niemand deze outputs
+    # meer (build/deploy skippen, en cleanup-preview leidt de naam zelf af), dus er hoeft geen
+    # runner-VM te booten. `deploy` eist `needs.meta.result == 'success'` en is op `closed` al via
+    # `needs.changes.result` uitgeschakeld, dus dit verandert niets aan het gedrag.
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -69,7 +86,7 @@ jobs:
       image_base: ${{ steps.m.outputs.image_base }}
       manager_suffix: ${{ steps.m.outputs.manager_suffix }}
     steps:
-      # Vangrail uit het verwijderde upsert-directory.sh: ruwe workflow_dispatch-inputs niet
+      # Vangrail die de deploy-action zelf niet heeft: ruwe workflow_dispatch-inputs niet
       # ongevalideerd in de components-JSON (manager_tag, image_tag) of als deployment-naam
       # laten belanden.
       - name: Valideer workflow_dispatch-inputs
@@ -93,7 +110,7 @@ jobs:
                 echo "::error::ongeldige manager_tag '$INPUT_MANAGER_TAG' (alleen A-Za-z0-9._-)"; exit 1 ;;
             esac
           fi
-          # image_tag mag leeg zijn (dan valt de volgende stap terug op v1.43.7); alléén
+          # image_tag mag leeg zijn (dan valt de volgende stap terug op IMAGE_TAG_DEFAULT); alléén
           # valideren als er iets is ingevuld — komt terecht in de components-JSON (dirmgr,
           # dirui) én de cleanup-containers-tag.
           if [ -n "$INPUT_IMAGE_TAG" ]; then
@@ -111,7 +128,7 @@ jobs:
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           set -euo pipefail
-          image_base="${INPUT_IMAGE_TAG:-v1.43.7}"
+          image_base="${INPUT_IMAGE_TAG:-$IMAGE_TAG_DEFAULT}"
           if [ "$EVENT" = "pull_request" ]; then
             deployment="pr-${PR}"
             manager_suffix="pr-${PR}"
@@ -126,9 +143,15 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   # Bepaalt of er gedeployd moet worden (run) + of de manager-migrate-wrapper wijzigde
-  # (build nodig). PR: via de bestandenlijst (docs-only skip, fork skip, close skip).
+  # (build nodig). PR: docs-only en de paden via de bestandenlijst; fork- en bot-skip uit de
+  # event-payload; `closed` komt hier niet eens (job-`if` hieronder).
   # push: git diff. dispatch: run=true, changed=false (geef desnoods manager_tag mee).
   changes:
+    # Een `closed`-event heeft hier niets te classificeren: er valt niets te deployen en
+    # cleanup-preview hangt niet aan deze job. Job-`if` i.p.v. een tak in de shell: dan boot er geen
+    # runner-VM voor een antwoord dat al vaststaat. `deploy` blijft correct skippen —
+    # `needs.changes.result` is dan `skipped`.
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -157,6 +180,8 @@ jobs:
           EVENT: ${{ github.event_name }}
           ACTION: ${{ github.event.action }}
           IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+          IS_BOT: ${{ github.event.pull_request.user.type == 'Bot' }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
@@ -171,28 +196,69 @@ jobs:
               # Handmatig: deploy wat de operator vraagt; bouw niet automatisch.
               emit true false; exit 0 ;;
             pull_request)
-              # Close = teardown (geen deploy; cleanup-job handelt dit af).
-              [ "$ACTION" = "closed" ] && { emit false false; exit 0; }
+              # `closed` komt hier niet: de job-`if` hierboven vangt dat af.
               # Fork-PR heeft geen secrets -> deploy zou falen; skip luid.
               if [ "$IS_FORK" = "true" ]; then
                 echo "::warning::Fork-PR — preview overgeslagen (geen secrets)."
+                emit false false; exit 0
+              fi
+              # Bot-PR: hetzelfde projectbesluit als `skip-bot-prs` op de deploy-/cleanup-action,
+              # maar hier — vóór de build. Die action-input werkt pas binnen de action, en de
+              # `build`-job zit ervóór. Een bot-actions-bump raakt
+              # .github/workflows/build-manager-migrate.yml (daar staat de checkout-pin), dus zonder
+              # deze guard start die PR een build. Wat daarna gebeurt hangt af van wélke bot het is,
+              # en beide uitkomsten zijn slecht:
+              #   - Dependabot: GITHUB_TOKEN is bij die events read-only, ongeacht `packages:
+              #     write`, dus de ghcr-push faalt en de PR is structureel rood;
+              #   - een bot met gewone token-permissies (bv. Renovate op een in-repo branch): de
+              #     push lukt, en bij het sluiten van de PR skipt de cleanup-action op diezelfde
+              #     bot-regel -> de preview-tag blijft achter.
+              # Bot-definitie gelijk aan upstream: `user.type == 'Bot'` óf een bekende bot-login
+              # (zad-actions checkt beide).
+              case "$PR_AUTHOR" in
+                dependabot\[bot\]|renovate\[bot\]|pre-commit-ci\[bot\]|github-actions\[bot\]) IS_BOT=true ;;
+              esac
+              if [ "$IS_BOT" = "true" ]; then
+                echo "::warning::Bot-PR — preview overgeslagen (projectbesluit, zie docs/ontwerpkeuzes.md)."
                 emit false false; exit 0
               fi
               # Bestandenlijst; fail-safe: niet op te halen -> tóch deployen + bouwen, vóór élke
               # PR waarvan de bestandenlijst niet is op te halen — zonder die lijst is de
               # paths/docs-conjunctie hieronder niet te evalueren, en een gemiste preview weegt
               # zwaarder dan een overbodige.
-              if ! files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename'); then
+              if ! files=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'); then
                 echo "::warning::Kon gewijzigde bestanden niet ophalen — fail-safe deploy (voor elke PR)."
+                emit true true; exit 0
+              fi
+              # Een geslaagde call met een lege lijst is onmogelijk (een PR heeft altijd minstens
+              # één bestand): dan is de query stuk of de API-vorm gewijzigd. Zonder deze tak leest
+              # dat als "niets relevant gewijzigd" en skipt de deploy stil.
+              if [ -z "$files" ]; then
+                echo "::warning::Bestandenlijst voor PR #$PR is leeg — onmogelijk, dus de query klopt niet; fail-safe deploy."
                 emit true true; exit 0
               fi
               # Docs-only wijzigingen tellen niet mee, ook niet binnen een bewaakt pad (bv.
               # deploy/zad/manager-migrate/README.md) — vóór de paths-check uitfilteren, zodat
               # `run` én `changed` dezelfde uitsluiting krijgen.
-              non_doc_files=$(printf '%s\n' "$files" | grep -vE '(^docs/|\.md$)' || true)
+              # `|| true` zou ook grep-exit 2 (echte fout) als "niets over" lezen; alleen exit 1
+              # (geen match) is hier normaal.
+              non_doc_files=$(grep -vE '(^docs/|\.md$)' <<<"$files") || {
+                rc=$?
+                [ "$rc" -eq 1 ] || { echo "::error::grep faalde (exit $rc) op de PR-bestandenlijst — classificatie niet betrouwbaar."; exit 1; }
+                non_doc_files=""
+              }
+              # Here-string i.p.v. `printf | grep -q`: `grep -q` sluit de pipe bij de eerste match,
+              # printf krijgt dan SIGPIPE, en onder `pipefail` wordt de pipeline-status 141 —
+              # waardoor een match als "geen match" leest. Dat treedt op zodra de bestandenlijst de
+              # pipe-buffer vult én de match vroeg in de lijst staat. Let op de vorm: dit is een
+              # kansproces, geen drempel — gemeten (29-byte paden, match op regel 1) mist ~1 op 20 runs
+              # bij 2000 paden en ~6 op 20 bij 2500, en zelfs bij 3200 paden lukt het soms nog wél. De
+              # classificatie zou dus flaky zijn, niet stuk: `run=false` op een PR die de directory wél
+              # raakt, stil groen — anders dan de SIGPIPE-valkuil bij `head -n1` verderop, die de stap
+              # juist luid laat falen.
               # run: raakt een non-docs wijziging deploy/zad/manager-migrate/, group/, deze
               # workflow zelf, of de build-recipe (build-manager-migrate.yml)?
-              if printf '%s\n' "$non_doc_files" | grep -qE '^(deploy/zad/manager-migrate/|group/|\.github/workflows/zad-deploy-directory\.yml$|\.github/workflows/build-manager-migrate\.yml$)'; then
+              if grep -qE '^(deploy/zad/manager-migrate/|group/|\.github/workflows/zad-deploy-directory\.yml$|\.github/workflows/build-manager-migrate\.yml$)' <<<"$non_doc_files"; then
                 run=true
               else
                 run=false
@@ -200,7 +266,7 @@ jobs:
               # changed: raakt een non-docs wijziging de wrapper óf de build-recipe zelf? Die
               # laatste bepaalt hoe de image gebouwd wordt, dus een wijziging daarin is precies
               # het moment waarop een rebuild nodig is.
-              if printf '%s\n' "$non_doc_files" | grep -qE '^(deploy/zad/manager-migrate/|\.github/workflows/build-manager-migrate\.yml$)'; then
+              if grep -qE '^(deploy/zad/manager-migrate/|\.github/workflows/build-manager-migrate\.yml$)' <<<"$non_doc_files"; then
                 changed=true
               else
                 changed=false
@@ -213,15 +279,23 @@ jobs:
               fi
               # Fail-safe: git diff kan falen (onbereikbare $BEFORE na force-push/GC) — dan tóch
               # bouwen, i.p.v. `test` stilzwijgend op een stale image laten staan.
-              if ! diff_files=$(git diff --name-only "$BEFORE" "$SHA" 2>&1); then
-                echo "::warning::git diff faalde ($BEFORE..$SHA) — fail-safe build."
+              # stderr apart houden (niet `2>&1`): anders belandt de git-foutmelding in
+              # $diff_files — weg uit de log waar je 'm nodig hebt om "verwacht, na force-push" van
+              # "checkout is stuk" te onderscheiden, én mee in de greps hieronder.
+              if ! diff_files=$(git diff --name-only "$BEFORE" "$SHA" 2>"$RUNNER_TEMP/git-diff.err"); then
+                echo "::warning::git diff faalde ($BEFORE..$SHA): $(tr '\n' ' ' <"$RUNNER_TEMP/git-diff.err") — fail-safe build."
                 emit true true; exit 0
               fi
               # Zelfde docs-uitsluiting als de pull_request-tak hierboven: een docs-only wijziging
               # onder manager-migrate/ (bv. een README) hoeft niet herbouwd te worden. Ook hier
               # telt de build-recipe zelf mee (zie de pull_request-tak hierboven).
-              non_doc_diff_files=$(printf '%s\n' "$diff_files" | grep -vE '(^docs/|\.md$)' || true)
-              if printf '%s\n' "$non_doc_diff_files" | grep -qE '^(deploy/zad/manager-migrate/|\.github/workflows/build-manager-migrate\.yml$)'; then
+              non_doc_diff_files=$(grep -vE '(^docs/|\.md$)' <<<"$diff_files") || {
+                rc=$?
+                [ "$rc" -eq 1 ] || { echo "::error::grep faalde (exit $rc) op de git-diff-uitvoer — classificatie niet betrouwbaar."; exit 1; }
+                non_doc_diff_files=""
+              }
+              # Here-strings, om dezelfde SIGPIPE-reden als in de pull_request-tak hierboven.
+              if grep -qE '^(deploy/zad/manager-migrate/|\.github/workflows/build-manager-migrate\.yml$)' <<<"$non_doc_diff_files"; then
                 emit true true
               else
                 emit true false
@@ -231,7 +305,8 @@ jobs:
               emit true false; exit 0 ;;
           esac
 
-  # Bouwt + pusht de manager-migrate-image (canonieke v1.43.7) vóór de deploy. Alleen bij een
+  # Bouwt + pusht de manager-migrate-image vóór de deploy: op main de canonieke tag, op een PR
+  # `<basisversie>-pr-<n>` (zie image_suffix hieronder). Alleen bij een
   # image-wijziging; anders geskipt en herbruikt deploy de bestaande tag. Reusable workflow =
   # één bron voor de build-logica.
   build:
@@ -271,12 +346,14 @@ jobs:
           deployment-name: ${{ needs.meta.outputs.deployment }}
           # Previews erven de projectconfig van `test`; `test` zelf kloont niets.
           clone-from: ${{ github.event_name == 'pull_request' && 'test' || '' }}
-          # Dependabot-PR's worden niet functioneel getest, dus een preview voegt weinig toe — en
-          # deployen zou een nog niet gereviewde gebumpte action-versie draaien met de
-          # productie-API-key. Projectbesluit: bot-PR's overslaan.
+          # Bot-PR's (Dependabot, Renovate, elke auteur van type Bot) worden niet functioneel
+          # getest, dus een preview voegt weinig toe — en deployen zou een nog niet gereviewde
+          # gebumpte action-versie draaien met de productie-API-key. Projectbesluit: overslaan. De
+          # primaire guard zit in de `changes`-job (vóór de build); dit is het vangnet.
           skip-bot-prs: 'true'
-          # De action curlt één health-endpoint per component; dirmgr is mTLS-only en geeft daar
-          # nooit 2xx -> de wachtlus zou altijd time-outen.
+          # De action curlt één health-endpoint per component en accepteert HTTP 200-399; dirmgr is
+          # mTLS-only, dus een kale HTTPS-probe komt niet verder dan een mislukte handshake en curl
+          # rapporteert `000` -> buiten dat bereik, dus de wachtlus zou altijd time-outen.
           wait-for-ready: 'false'
           # Verse preview-provisioning duurt structureel langer dan een update (300s is te krap).
           task-timeout: '600'
@@ -284,40 +361,56 @@ jobs:
           domain-format: component-deployment-project
           components: |
             [
-              {"name": "dirmgr", "image": "ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:${{ inputs.manager_tag != '' && inputs.manager_tag || ((github.event_name == 'pull_request' && needs.changes.outputs.manager_migrate_changed == 'true') && format('{0}-{1}', needs.meta.outputs.image_base, needs.meta.outputs.manager_suffix) || needs.meta.outputs.image_base) }}"},
+              {"name": "dirmgr", "image": "${{ env.MANAGER_IMAGE }}:${{ inputs.manager_tag != '' && inputs.manager_tag || ((github.event_name == 'pull_request' && needs.changes.outputs.manager_migrate_changed == 'true') && format('{0}-{1}', needs.meta.outputs.image_base, needs.meta.outputs.manager_suffix) || needs.meta.outputs.image_base) }}"},
               {"name": "dirui", "image": "docker.io/federatedserviceconnectivity/directory-ui:${{ needs.meta.outputs.image_base }}"}
             ]
 
       - name: Controleer dat alle componenten een URL kregen
-        # De action faalt alléén als ALLE component-URL's ontbreken; mist er één, dan schrijft
-        # hij `null` voor dat component en gaat gewoon door — een ontbrekende dirmgr zou dus als
-        # groene deploy voorbijkomen, met een PR-comment die alleen dirui noemt. Overgeslagen op
+        # De action faalt alléén als de hele URL-map leeg is; mist er één component, dan geeft hij
+        # de backend-map ongewijzigd door (de key is dan simpelweg afwezig) en gaat gewoon door —
+        # een ontbrekende dirmgr zou dus als groene deploy voorbijkomen, met een PR-comment die
+        # alleen dirui noemt. Let op wat deze check wél en niet bewijst: hij toetst de
+        # deployment-spec, niet of de pod draait of de image bestaat — met wait-for-ready uit is dat
+        # laatste in deze workflow helemaal niet gedekt. Overgeslagen op
         # een bot-PR (skip-bot-prs): dan draaide de deploy-substap niet en is `urls` leeg — dat is
         # geen onvolledige deploy, dus geen assertion nodig.
         if: steps.deploy.outputs.skipped != 'true'
         env:
           URLS: ${{ steps.deploy.outputs.urls }}
+          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
         run: |
           set -euo pipefail
+          # Eerst parsebaarheid: zonder deze check leest een onparsebare urls-output als "beide
+          # componenten missen een URL" en wijst de foutmelding de verkeerde kant op.
+          if ! jq -e . >/dev/null 2>&1 <<<"$URLS"; then
+            echo "::error::urls-output van de deploy-action is geen geldige JSON: $URLS"
+            exit 1
+          fi
           missing=""
           for comp in dirmgr dirui; do
-            url=$(echo "$URLS" | jq -r --arg c "$comp" '.[$c] // empty' 2>/dev/null || true)
+            url=$(jq -r --arg c "$comp" '.[$c] // empty' <<<"$URLS")
             if [ -z "$url" ] || [ "$url" = "null" ]; then
               missing="$missing $comp"
             fi
           done
           if [ -n "$missing" ]; then
-            echo "::error::Deploy leverde geen URL voor:$missing — deployment '${{ needs.meta.outputs.deployment }}' is mogelijk onvolledig (zie de zad-actions-log hierboven). urls-output: $URLS"
+            echo "::error::Deploy leverde geen URL voor:$missing — deployment '$DEPLOYMENT' is mogelijk onvolledig (zie de zad-actions-log hierboven). urls-output: $URLS"
             exit 1
           fi
-          echo "Alle componenten (dirmgr, dirui) hebben een URL gekregen."
+          echo "Alle componenten (dirmgr, dirui) hebben een URL gekregen — dit zegt niets over pod-readiness of over het bestaan van de image (wait-for-ready staat uit)."
 
-  # PR gesloten -> preview opruimen (deployment + de ghcr-preview-tag). Onafhankelijk van
-  # changes/deploy (die skippen op close). Géén GitHub-environment, dus geen GH_ADMIN_TOKEN nodig.
+  # PR gesloten -> preview opruimen (deployment + de ghcr-preview-tag). Géén GitHub-environment,
+  # dus geen GH_ADMIN_TOKEN nodig.
+  #
+  # Bewust ZONDER `needs:` — ook niet op `meta`. De teardown moet de kortst mogelijke
+  # afhankelijkheidsketen hebben: een gefaalde of gecancelde `meta` zou deze job stil skippen, en
+  # omdat de PR dan al gesloten is triggert niets 'm opnieuw — de preview blijft op het
+  # productiecluster staan. `always()` toevoegen is géén alternatief: dan zou een gefaalde `meta`
+  # een LEGE deployment-naam doorgeven aan een delete-call. De naam is hier één expressie
+  # (`pr-<PR-nummer>`, zelfde vorm als in de concurrency-key hierboven), dus er is niets te erven.
   cleanup-preview:
     if: ${{ github.event_name == 'pull_request' && github.event.action == 'closed'
             && github.event.pull_request.head.repo.full_name == github.repository }}
-    needs: meta
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -327,13 +420,6 @@ jobs:
       # zonder dit faalt die lookup stil en blijft de comment op elke gesloten PR staan.
       pull-requests: write
     steps:
-      # Nodig zodat de composite verificatie-action (`uses: ./.github/actions/...` hieronder) uit
-      # de repo geladen kan worden — die actions worden gelezen uit de workspace, niet gedownload.
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Ruim de preview op via zad-actions
         id: cleanup
         uses: RijksICTGilde/zad-actions/cleanup@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
@@ -341,19 +427,23 @@ jobs:
           api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
           api-base-url: ${{ env.ZAD_API_BASE }}/api
-          deployment-name: ${{ needs.meta.outputs.deployment }}
+          deployment-name: pr-${{ github.event.pull_request.number }}
           delete-github-env: 'false'
           # De action string-matcht op de foutmelding "You cannot delete the last tagged version"
-          # (géén statuscode-check) en verwijdert dan het HELE package i.p.v. de tag — riskant,
-          # want moza-fsc-testnet-manager-migrate heeft momenteel maar één versie (v1.43.7, waar
-          # de gedeelde `test`-deployment op draait). Zelf afhandelen, zie de stap hieronder.
+          # (géén statuscode-check) en verwijdert dan het HELE package i.p.v. de tag. Die
+          # bijl-i.p.v.-scalpel is permanent riskant, ongeacht hoeveel versies het package op dit
+          # moment heeft: raakt hij de versie waar de gedeelde `test`-deployment op draait, dan kan
+          # `test` z'n image niet meer pullen. Zelf afhandelen, zie de stap hieronder.
           delete-container: 'false'
-          # Moet spiegelen met de deploy-job hierboven (zelfde skip-bot-prs), maar het risico is
-          # NIET symmetrisch: skip bij deploy is fail-safe (er wordt dan nooit iets aangemaakt),
-          # skip bij cleanup is fail-open (wat er al staat overleeft stilzwijgend, bv. een preview
-          # die eerder via een handmatige workflow_dispatch wél is aangemaakt vóórdat het bot-PR
-          # opnieuw sloot). De action geeft bij een skip zelf alleen een ::notice:: (onzichtbaar in
-          # de praktijk); de ONGATE-stap hieronder maakt dat zichtbaar met een ::warning::.
+          # Spiegelt het bot-besluit van de deploy-job, maar het risico is NIET symmetrisch: skip
+          # bij deploy is fail-safe (er wordt dan nooit iets aangemaakt), skip bij cleanup is
+          # fail-open (wat er al staat overleeft stilzwijgend, bv. een preview die eerder via een
+          # handmatige workflow_dispatch wél is aangemaakt vóórdat het bot-PR opnieuw sloot). De
+          # action geeft bij een skip zelf alleen een ::notice:: (onzichtbaar in de praktijk); de
+          # ONGATE-stap hieronder maakt dat zichtbaar met een ::warning::. Let op: op een
+          # `closed`-event draait de `changes`-job niet (job-`if`), dus de bot-tak daarin dekt dít pad
+          # niet — hier is deze input de énige bot-gate. Niet weghalen omdat "de primaire guard elders
+          # zit".
           skip-bot-prs: 'true'
           # Zelfde reden als bij de deploy-job: upstream default (300s) is krap voor een
           # ArgoCD-sync; bij een timeout degradeert de action een mislukte delete tot ::warning::
@@ -362,55 +452,68 @@ jobs:
           task-timeout: '600'
 
       # Expres NIET gegated op steps.cleanup.outputs.skipped: dit is precies de bot-skip die we
-      # zichtbaar moeten maken (zie de skip-bot-prs-comment hierboven). Alle andere stappen in
-      # deze job blijven wél gegate op skipped != 'true', want die veronderstellen dat de
-      # cleanup-actie daadwerkelijk gedraaid heeft.
+      # zichtbaar moeten maken (zie de skip-bot-prs-comment hierboven). De ghcr-stap hieronder is
+      # wél op `skipped != 'true'` gegate (die veronderstelt dat er iets gebouwd is); de
+      # verificatiestap juist niet — die draait ook na een skip, want een preview die dan tóch
+      # bestaat is precies wat we willen zien.
       - name: Waarschuw als cleanup werd overgeslagen voor een bot-PR
         if: steps.cleanup.outputs.skipped == 'true'
+        env:
+          DEPLOYMENT: pr-${{ github.event.pull_request.number }}
         run: |
-          echo "::warning::Cleanup overgeslagen voor een bot-PR (skip-bot-prs) — deployment '${{ needs.meta.outputs.deployment }}' is NIET gecontroleerd of opgeruimd. Bestond er al een preview (bv. eerder aangemaakt via workflow_dispatch), dan blijft die nu stil op het productiecluster staan. Ruim zo nodig handmatig op via workflow_dispatch 'zad-cleanup'."
+          echo "::warning::Cleanup overgeslagen voor een bot-PR (skip-bot-prs) — deployment '$DEPLOYMENT' is NIET gecontroleerd of opgeruimd. Bestond er al een preview (bv. eerder aangemaakt via workflow_dispatch), dan blijft die nu stil op het productiecluster staan. Ruim zo nodig handmatig op via workflow_dispatch 'zad-cleanup'."
 
       - name: Waarschuw als de preview mogelijk nooit bestond
         # Zelfde redenering als in zad-cleanup.yml: zad-deleted != 'true' onderscheidt "verwijderd"
         # van "nooit bestaan". Hier blijft dit een ::warning:: (i.p.v. de ::error:: in
-        # zad-cleanup.yml): de deployment-naam komt hier uit `needs.meta` (PR-nummer -> pr-<n>),
-        # geen vrije operator-invoer, dus een "typo" bestaat hier niet — zie zad-cleanup.yml voor
-        # het pad waar dat onderscheid wél nodig is. Overgeslagen op een bot-PR: dan zegt de
-        # action niets over deleted.
+        # zad-cleanup.yml): de deployment-naam is hier afgeleid van het PR-nummer (pr-<n>), geen
+        # vrije operator-invoer, dus een "typo" bestaat hier niet — zie zad-cleanup.yml voor het pad
+        # waar dat onderscheid wél nodig is. Overgeslagen op een bot-PR: dan zegt de action niets
+        # over deleted.
         if: steps.cleanup.outputs.skipped != 'true' && steps.cleanup.outputs.zad-deleted != 'true'
+        env:
+          DEPLOYMENT: pr-${{ github.event.pull_request.number }}
+          ZAD_DELETED: ${{ steps.cleanup.outputs.zad-deleted }}
         run: |
-          echo "::warning::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ needs.meta.outputs.deployment }}' — de preview bestond mogelijk niet, of de delete is niet gelukt. Controleer desgewenst de Operations Manager UI."
-
-      - name: Verifieer dat de deployment echt weg is
-        # Gedeeld met zad-cleanup.yml via de composite action — zie
-        # .github/actions/verify-zad-deleted/action.yml voor de volledige rationale (404 telt pas
-        # als bewijs ná bevestiging via het lijst-endpoint, transiënte-fout-hantering op zowel de
-        # scoped als de confirmatie-call, de positieve-richting-check, en de live-geverifieerde
-        # 401-status die niet in de OpenAPI-spec staat).
-        # Overgeslagen op een bot-PR (skip-bot-prs bij de cleanup-stap hierboven): zo'n run heeft
-        # geen Actions-secrets, dus ZAD_API_KEY is leeg en deze stap zou anders altijd op 401 lopen.
-        if: steps.cleanup.outputs.skipped != 'true'
-        uses: ./.github/actions/verify-zad-deleted
-        with:
-          deployment: ${{ needs.meta.outputs.deployment }}
-          project: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
-          api-base: ${{ env.ZAD_API_BASE }}
+          echo "::warning::zad-actions meldt zad-deleted='$ZAD_DELETED' voor '$DEPLOYMENT' — de preview bestond mogelijk niet, of de delete is niet gelukt. Controleer desgewenst de Operations Manager UI."
 
       - name: Verwijder de ghcr preview-tag (indien niet gedeeld)
         # Zelfde reden als hierboven bij delete-container: de action verwijdert het hele package
         # zodra dit de laatst getagde versie is. Alleen verwijderen als de preview-tag een eigen,
         # ongedeelde versie heeft; deelt de versie tags met bv. v1.43.7 (byte-identieke rebuild),
-        # dan blijft de package staan. Overgeslagen op een bot-PR: dan is er nooit een eigen
-        # preview-image gebouwd, dus niets om op te ruimen.
+        # dan blijft de package staan. Die gedeelde-tag-situatie is géén randgeval (een PR die alleen
+        # de build-recipe raakt levert een byte-identieke image op), dus preview-tags blijven zich
+        # verzamelen op de canonieke version — opruimen daarvan hoort in een periodieke reaper, niet
+        # hier: deze stap mag de version waar `test` op draait nooit weggooien.
+        # Overgeslagen op een bot-PR: de bot-guard in `changes` laat zo'n PR geen preview-image
+        # bouwen, dus er is niets om op te ruimen.
         if: steps.cleanup.outputs.skipped != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.meta.outputs.image_base }}-${{ needs.meta.outputs.manager_suffix }}
+          # Zoeken op suffix, niet op een volledige tag: de basisversie in IMAGE_TAG_DEFAULT kan
+          # gebumpt zijn nadat deze PR z'n image bouwde (de PR wordt dan niet meer gesynchroniseerd,
+          # maar de close-run leest de nieuwe waarde). Een exacte match zou die oude tag missen en
+          # "niets op te ruimen" melden terwijl hij blijft staan.
+          TAG_SUFFIX: -pr-${{ github.event.pull_request.number }}
+          MANAGER_IMAGE: ${{ env.MANAGER_IMAGE }}
         run: |
           set -euo pipefail
-          org="minbzk"
-          package="moza-fsc-testnet-manager-migrate"
+          # org + package uit dezelfde image-referentie als de deploy-job gebruikt, zodat een rename
+          # niet stilzwijgend tot "package niet gevonden, niets op te ruimen" leidt.
+          # Streng matchen, want elke vorm die hier doorglipt eindigt op een 404 van de
+          # packages-API, en die wordt hieronder als "nooit een image gebouwd" groen afgedaan.
+          case "$MANAGER_IMAGE" in
+            ghcr.io/*/*/*|*:*|*@*|*[[:space:]]*|ghcr.io/*/|ghcr.io//*)
+              echo "::error::MANAGER_IMAGE ('$MANAGER_IMAGE') heeft niet de vorm ghcr.io/<org>/<package> (geen tag, digest of genest pad) — kan de preview-tag niet opruimen."
+              exit 1 ;;
+            ghcr.io/*/*) ;;
+            *)
+              echo "::error::MANAGER_IMAGE ('$MANAGER_IMAGE') is geen ghcr.io-referentie — kan de preview-tag niet opruimen."
+              exit 1 ;;
+          esac
+          image_path="${MANAGER_IMAGE#ghcr.io/}"
+          org="${image_path%%/*}"
+          package="${image_path#*/}"
 
           # --paginate: één versie per preview-build is de staande situatie, dus zonder paginering
           # (de API geeft 30 versies per pagina) valt een oudere preview-tag van de eerste pagina
@@ -420,14 +523,17 @@ jobs:
           # ZAD-deployment is op dit punt al hierboven geverifieerd weg — dát is de garantie die
           # telt. Maar 403 (token mist org-package-rechten) of 5xx betekent dat image-opruiming
           # structureel kapot is en dat moet DEZE stap luid melden, niet stilzwijgend wegwaarschuwen.
-          if ! versions=$(gh api --paginate "orgs/${org}/packages/container/${package}/versions" 2>/tmp/gh-versions.err); then
+          # Geen --slurp: dat is onverenigbaar met --jq én niet nodig. Voor een array-endpoint voegt
+          # --paginate de pagina's samen tot één JSON-array (gemeten met gh 2.46 over meerdere
+          # pagina's: één document, geen `][`), dus de jq-queries hieronder krijgen één lijst.
+          if ! versions=$(gh api --paginate "orgs/${org}/packages/container/${package}/versions?per_page=100" 2>"$RUNNER_TEMP/gh-versions.err"); then
             # `|| true` op de grep-pipeline: zonder een "(HTTP <code>)"-match in de foutmelding
             # (een onbekend foutformaat) faalt de laatste `grep` in de pipe, en zou de
             # assignment onder `set -e -o pipefail` het hele script hier stil laten stoppen —
             # vóórdat de ::error:: hieronder ooit gedrukt wordt. `|| true` laat `gh_status` dan
             # gewoon leeg, zodat de `${gh_status:-onbekend}`-fallback verderop wél wordt bereikt.
-            gh_status=$(grep -oE '\(HTTP [0-9]+\)' /tmp/gh-versions.err | grep -oE '[0-9]+' | tail -n1 || true)
-            err_msg=$(tr '\n' ' ' </tmp/gh-versions.err)
+            gh_status=$(grep -oE '\(HTTP [0-9]+\)' "$RUNNER_TEMP/gh-versions.err" | grep -oE '[0-9]+' | tail -n1 || true)
+            err_msg=$(tr '\n' ' ' <"$RUNNER_TEMP/gh-versions.err")
             if [ "$gh_status" = "404" ]; then
               echo "::notice::Package '${package}' niet gevonden (HTTP 404) — preview heeft nooit een eigen image gebouwd, niets op te ruimen."
               exit 0
@@ -439,23 +545,41 @@ jobs:
           # first(...) i.p.v. `| head -n1`: onder `pipefail` kan head een SIGPIPE naar jq sturen
           # zodra head z'n regel heeft en de pipe sluit, wat de stap laat falen. `// empty` levert
           # een lege string (geen fout) als geen enkele version deze tag draagt.
-          version_id=$(echo "$versions" | jq -r --arg tag "$TAG" \
-            'first(.[] | select(.metadata.container.tags // [] | index($tag)) | .id) // empty')
+          # Álle matchende versions, niet alleen de eerste: een PR die twee keer bouwde over een
+          # bump van de basisversie heen heeft twee versies met een `-pr-<n>`-tag, en `first(...)`
+          # liet de tweede stil achter.
+          version_ids=$(echo "$versions" | jq -r --arg suffix "$TAG_SUFFIX" \
+            '[.[] | select(any((.metadata.container.tags // [])[]; endswith($suffix))) | .id] | .[]')
 
-          if [ -z "$version_id" ]; then
-            echo "Geen package-version gevonden met tag '$TAG' — niets op te ruimen (preview heeft nooit een eigen image gebouwd)."
+          if [ -z "$version_ids" ]; then
+            echo "Geen package-version gevonden met een tag die eindigt op '$TAG_SUFFIX' — niets op te ruimen (preview heeft nooit een eigen image gebouwd)."
             exit 0
           fi
 
-          # `// 0` dwingt één numerieke waarde af: zonder deze fallback (bv. bij een onverwacht
-          # lege selectie) breekt de `-gt`-vergelijking hieronder met "integer expression expected"
-          # i.p.v. netjes af te handelen — en een lege/multi-line uitkomst (een tag die door een
-          # gelijktijdige push tijdelijk op twee versies staat) deed exact dat.
+          # `// 0` dwingt één numerieke waarde af: zonder deze fallback breekt de `-gt`-vergelijking
+          # hieronder met "integer expression expected", en zo'n kapotte vergelijking in een kale
+          # `if` leest als *false* (`set -e` grijpt niet in bij een conditie) — dan zou de default
+          # "toch verwijderen" zijn, precies de verkeerde kant. De guard hieronder maakt dat
+          # expliciet i.p.v. het van `//`-gedrag af te laten hangen (belt-and-braces: onder de
+          # huidige code faalt jq al eerder onder `pipefail`).
+          #
+          # `0` is géén geldige uitkomst: we hebben de version net gevonden via z'n tag, dus hij
+          # heeft er minstens één. Nul betekent dat de twee jq-queries niet dezelfde version zien —
+          # dan is verwijderen juist gevaarlijk, want we weten niet meer wélke version we raken.
           tag_count=$(echo "$versions" | jq -r --arg id "$version_id" \
             'first(.[] | select((.id | tostring) == $id) | (.metadata.container.tags // []) | length) // 0')
+          case "$tag_count" in
+            ''|*[!0-9]*)
+              echo "::error::Kon het aantal tags van package-version $version_id niet bepalen (kreeg '$tag_count') — niet verwijderd, want zonder dat getal is niet vast te stellen of deze version met de canonieke tag gedeeld wordt."
+              exit 1 ;;
+          esac
+          if [ "$tag_count" -lt 1 ]; then
+            echo "::error::Package-version $version_id werd gevonden via z'n tag maar rapporteert 0 tags — inconsistente API-uitkomst, dus niet verwijderd (we weten niet welke version we zouden raken)."
+            exit 1
+          fi
 
           if [ "$tag_count" -gt 1 ]; then
-            echo "::warning::Package-version $version_id (tag '$TAG') deelt tags met een andere image (bv. v1.43.7) — package NIET verwijderd."
+            echo "::warning::Package-version $version_id (tag met suffix '$TAG_SUFFIX') deelt tags met een andere image (bv. de canonieke tag) — package-version NIET verwijderd; de preview-tag blijft dus bestaan."
             exit 0
           fi
 
@@ -466,16 +590,67 @@ jobs:
           # een ::warning:: blijven hangen, dan waarschuwt deze stap voortaan op ELKE PR-close
           # zonder ooit te escaleren — precies het patroon waardoor een team een stap leert
           # negeren.
-          if ! gh api "orgs/${org}/packages/container/${package}/versions/${version_id}" -X DELETE 2>/tmp/gh-delete.err; then
+          if ! gh api "orgs/${org}/packages/container/${package}/versions/${version_id}" -X DELETE 2>"$RUNNER_TEMP/gh-delete.err"; then
             # `|| true` op de grep-pipeline: zelfde reden als bij het ophalen hierboven — zonder
             # een "(HTTP <code>)"-match zou de assignment onder `set -e -o pipefail` anders het
             # script hier stil afbreken, vóórdat de ::error:: hieronder gedrukt wordt.
-            gh_status=$(grep -oE '\(HTTP [0-9]+\)' /tmp/gh-delete.err | grep -oE '[0-9]+' | tail -n1 || true)
-            err_msg=$(tr '\n' ' ' </tmp/gh-delete.err)
+            gh_status=$(grep -oE '\(HTTP [0-9]+\)' "$RUNNER_TEMP/gh-delete.err" | grep -oE '[0-9]+' | tail -n1 || true)
+            err_msg=$(tr '\n' ' ' <"$RUNNER_TEMP/gh-delete.err")
             if [ "$gh_status" = "404" ]; then
-              echo "::notice::Package-version $version_id (tag '$TAG') was al weg (HTTP 404) bij het verwijderen — niets meer te doen; de ZAD-deployment is hierboven al geverifieerd weg."
+              echo "::notice::Package-version $version_id (suffix '$TAG_SUFFIX') was al weg (HTTP 404) bij het verwijderen — niets meer te doen; de ZAD-deployment is hierboven al geverifieerd weg."
               exit 0
             fi
-            echo "::error::Kon package-version $version_id (tag '$TAG') niet verwijderen (HTTP ${gh_status:-onbekend}: ${err_msg}) — opruimen van ghcr-preview-images werkt structureel niet meer. De ZAD-deployment is hierboven al geverifieerd weg, dus dit blokkeert de deployment-cleanup zelf niet, maar mag niet stil weggewaarschuwd worden."
+            echo "::error::Kon package-version $version_id (suffix '$TAG_SUFFIX') niet verwijderen (HTTP ${gh_status:-onbekend}: ${err_msg}) — opruimen van ghcr-preview-images werkt structureel niet meer. De ZAD-deployment is hierboven al geverifieerd weg, dus dit blokkeert de deployment-cleanup zelf niet, maar mag niet stil weggewaarschuwd worden."
             exit 1
           fi
+
+      # Staat hier, ná de delete en ná de ghcr-opruiming: die twee mogen niet afhankelijk zijn van
+      # een checkout die kan falen (rate-limit, storing, een sparse-checkout-regressie na een
+      # checkout-bump). Een gesloten PR hertriggert niets, dus een geblokkeerde delete laat de
+      # preview op odcn-production staan — dat weegt zwaarder dan een niet-geverifieerde delete, die
+      # nog altijd rood wordt. De checkout is alleen nodig omdat lokale actions (`uses: ./...`) uit
+      # de workspace geladen worden, niet gedownload. Twee keuzes daarbij:
+      #   - `ref:` op de default branch i.p.v. de impliciete `github.ref`. Die is bij een
+      #     `pull_request`-event `refs/pull/<n>/merge`, en die kan na het sluiten van een PR
+      #     verdwijnen. Belangrijker: de verificatiecode die de productie-API-key krijgt, komt zo uit
+      #     de gereviewde versie en niet uit de PR-branch — let op de scope: de workflow-YAML zelf
+      #     (inclusief de `run:`-stappen in deze job) komt bij een `pull_request`-event nog wél uit de
+      #     merge-ref, dus dit dekt alleen de composite action. Twee gevolgen om te weten: wijzigingen aan
+      #     deze action valideer je op main (deze PR test ze niet), en voegt een PR een action-input
+      #     toe, dan negeert de main-versie die met alleen een GitHub-warning — houd inputs dus
+      #     achterwaarts compatibel of merge de action vóór de aanroeper.
+      #   - `sparse-checkout`: alleen de action zelf, geen volledige tree.
+      - name: Checkout verificatie-action
+        # Zelfde conditie als de verificatiestap hieronder: is die geskipt, dan is dit dode arbeid.
+        if: github.actor != 'dependabot[bot]'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/actions/verify-zad-deleted
+          persist-credentials: false
+
+      - name: Verifieer dat de deployment echt weg is
+        # Gedeeld met zad-cleanup.yml via de composite action — zie
+        # .github/actions/verify-zad-deleted/action.yml voor de rationale.
+        # Deze stap draait óók als de cleanup-action zichzelf oversloeg (bot-PR): er hoort dan geen
+        # preview te bestaan — de bot-guard in `changes` deployt er geen — en als er tóch één staat
+        # (bv. eerder handmatig aangemaakt via workflow_dispatch), dan is dat precies wat we willen
+        # zien in plaats van stilzwijgend groen. Enige uitzondering: Dependabot-events krijgen geen
+        # Actions-secrets, dus daar is ZAD_API_KEY leeg en zou de stap alleen op z'n eigen
+        # lege-key-guard vastlopen zonder iets te zeggen over de werkelijke staat.
+        if: github.actor != 'dependabot[bot]'
+        uses: ./.github/actions/verify-zad-deleted
+        with:
+          deployment: pr-${{ github.event.pull_request.number }}
+          project: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          api-base: ${{ env.ZAD_API_BASE }}
+
+      # De skip hierboven mag niet stil zijn: zonder deze melding staat er niets in de run dat zegt
+      # dat de deployment niet gecontroleerd is. Zelfde reden als bij de bot-skip-warning hierboven.
+      - name: Waarschuw als de verificatie is overgeslagen
+        if: github.actor == 'dependabot[bot]'
+        env:
+          DEPLOYMENT: pr-${{ github.event.pull_request.number }}
+        run: |
+          echo "::warning::Verificatie overgeslagen voor '$DEPLOYMENT': deze run is door dependabot[bot] getriggerd en heeft dus geen Actions-secrets. Er is NIET vastgesteld of de deployment weg is. Controleer desgewenst via workflow_dispatch 'zad-cleanup'."

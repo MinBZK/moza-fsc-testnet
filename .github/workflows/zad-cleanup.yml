@@ -35,18 +35,30 @@ concurrency:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Worst case: pre-flight (2 calls x 30s) + cleanup-action (task-timeout 600) + verificatie
+    # (4 pogingen x 3 calls van 30s + 3x10s sleep = 390s) ≈ 17,5 min. Op 15 werd de job midden in de
+    # verificatie gekilld: runnertijd verbrand, geen uitkomst. Gelijk aan cleanup-preview. Bij het
+    # toevoegen van een call of poging aan de verificatie: deze rekensom mee bijwerken.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
       # Nodig zodat de composite verificatie-action (`uses: ./.github/actions/...` hieronder) uit
       # de repo geladen kan worden — die actions worden gelezen uit de workspace, niet gedownload.
+      # Hier staat de impliciete `github.ref` (anders dan in de cleanup-preview-job van
+      # zad-deploy-directory.yml, die 'm op de default branch pint): dit is een workflow_dispatch op
+      # een gewone branch-ref, die niet halverwege kan verdwijnen zoals een PR-merge-ref, en een
+      # operator kan de run desnoods opnieuw starten. Wees je bewust van de keerzijde: een dispatch
+      # kan op élke branch draaien, en dan komen zowel deze action als de beschermde-namen-guard
+      # hierboven uit die branch. De guard is dus een vangrail tegen typo's, geen beveiligingsgrens
+      # tegen iemand met push-rechten — die grens is de branch-protection op main plus het feit dat
+      # de key alleen in Actions-secrets staat.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # Vangrail uit het verwijderde cleanup.sh: beschermde deployments niet per ongeluk slopen.
+      # Vangrail die de action zelf niet heeft: beschermde deployments niet per ongeluk slopen.
       - name: Weiger beschermde deployment-namen
         env:
           DEPLOYMENT: ${{ inputs.deployment }}
@@ -76,6 +88,12 @@ jobs:
         # (transiënte fout, 401/403/5xx/000) nemen we aan dat de deployment WEL bestond — dat is
         # de veilige kant: het duwt een onzekere uitkomst naar de foutmelding hieronder i.p.v.
         # naar een vals-groene "bestond toch al niet".
+        #
+        # `existed=false` vereist daarom dezelfde bevestiging als de verificatie-action verderop:
+        # een kale 404 bewijst niets (die komt ook van een onbekend pad of een leeg
+        # project-segment, zonder dat de key ooit gecontroleerd wordt). Zonder die bevestiging zou
+        # een verkeerde ZAD_PROJECT_ID_DIRECTORY een groene "niets te doen"-notice geven terwijl de
+        # gevraagde deployment onaangeroerd blijft draaien.
         id: preflight
         env:
           ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
@@ -83,6 +101,16 @@ jobs:
           DEPLOYMENT: ${{ inputs.deployment }}
         run: |
           set -euo pipefail
+          # Zelfde guards als in .github/actions/verify-zad-deleted: leeg project of lege key
+          # faalt verderop toch, maar met een melding die de verkeerde kant op wijst.
+          if [ -z "$ZAD_PROJECT" ]; then
+            echo "::error::ZAD-project-ID is leeg — cleanup van '$DEPLOYMENT' zou zich richten op een leeg project-segment."
+            exit 1
+          fi
+          if [ -z "$ZAD_API_KEY" ]; then
+            echo "::error::ZAD API-key is leeg — cleanup van '$DEPLOYMENT' kan niet worden uitgevoerd of vastgesteld."
+            exit 1
+          fi
           http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
             --connect-timeout 10 --max-time 30 \
             -H "X-API-Key: $ZAD_API_KEY" \
@@ -92,12 +120,34 @@ jobs:
             [0-9][0-9][0-9]) ;;
             *) http_code="000" ;;
           esac
-          if [ "$http_code" = "404" ]; then
-            echo "existed=false" >> "$GITHUB_OUTPUT"
-            echo "Pre-flight: '$DEPLOYMENT' gaf HTTP 404 vóór cleanup — bestond (voor zover waarneembaar) niet."
-          else
+          if [ "$http_code" != "404" ]; then
             echo "existed=true" >> "$GITHUB_OUTPUT"
             echo "Pre-flight: '$DEPLOYMENT' gaf HTTP $http_code vóór cleanup — aangenomen dat de deployment bestond (bij twijfel: wel bestond)."
+            exit 0
+          fi
+          # 404 gezien: bevestig key + project via het lijst-endpoint vóórdat we 'm als
+          # "bestond niet" boeken. Alléén een 200 bevestigt dat; al het andere valt terug op de
+          # veilige kant (existed=true).
+          list_code=$(curl -sS -o "$RUNNER_TEMP/zad-preflight-list.json" -w '%{http_code}' \
+            --connect-timeout 10 --max-time 30 \
+            -H "X-API-Key: $ZAD_API_KEY" \
+            "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments" \
+            || true)
+          case "$list_code" in
+            [0-9][0-9][0-9]) ;;
+            *) list_code="000" ;;
+          esac
+          # Zelfde vorm-eis als de verificatie-action: een 200 met `{}` of een gateway-pagina is
+          # géén bevestiging van key + project. Zonder deze check zou zo'n antwoord hier
+          # `existed=false` opleveren, en dat is precies de tak die groen eindigt.
+          if [ "$list_code" = "200" ] \
+            && jq -e 'type == "object" and has("project") and has("cluster")' \
+              "$RUNNER_TEMP/zad-preflight-list.json" >/dev/null 2>&1; then
+            echo "existed=false" >> "$GITHUB_OUTPUT"
+            echo "Pre-flight: '$DEPLOYMENT' gaf HTTP 404 vóór cleanup, met key/project bevestigd via het lijst-endpoint (HTTP 200, juiste body-vorm) — bestond niet."
+          else
+            echo "existed=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Pre-flight: 404 op '$DEPLOYMENT', maar het lijst-endpoint gaf geen bruikbare bevestiging (HTTP $list_code) — key/project niet bevestigd, dus die 404 telt niet. Aangenomen dat de deployment bestond (veilige kant); controleer de API-key en ZAD_PROJECT_ID_DIRECTORY."
           fi
 
       - name: Cleanup via zad-actions
@@ -116,7 +166,8 @@ jobs:
           task-timeout: '600'
 
       # De action rapporteert een mislukte/lege delete als ::warning:: en faalt de step niet (zie
-      # zad-common.sh) — --ignore-not-found-achtig gedrag: een typo in de deployment-naam levert
+      # zad-actions@v4.0.6:scripts/zad-common.sh, `zad_delete_deployment`, die de CLI letterlijk met
+      # `--ignore-not-found` aanroept): een typo in de deployment-naam levert
       # hier ook gewoon een groene stap op (er was niets te verwijderen). `zad-deleted != 'true'`
       # is het signaal dat "verwijderd" van "niets gebeurd" onderscheidt, maar zegt zelf niet óf
       # dat laatste een probleem is: de pre-flight hierboven maakt dat onderscheid. Bestond de
@@ -125,21 +176,36 @@ jobs:
       # te zijn, niet een ::warning:: die de rest van de run niet raakt.
       - name: Faal als er niets verwijderd is terwijl de deployment wél bestond
         if: steps.cleanup.outputs.zad-deleted != 'true' && steps.preflight.outputs.existed == 'true'
+        env:
+          ZAD_DELETED: ${{ steps.cleanup.outputs.zad-deleted }}
+          DEPLOYMENT: ${{ inputs.deployment }}
         run: |
-          echo "::error::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ inputs.deployment }}', terwijl de pre-flight-check hierboven bevestigde dat de deployment vóór deze run bestond — er is een verwijdering gevraagd en die is niet gebeurd. Controleer de deployment-naam en de Operations Manager UI."
+          echo "::error::zad-actions meldt zad-deleted='$ZAD_DELETED' voor '$DEPLOYMENT', terwijl de pre-flight-check hierboven bevestigde dat de deployment vóór deze run bestond — er is een verwijdering gevraagd en die is niet gebeurd. Controleer de deployment-naam en de Operations Manager UI."
           exit 1
 
       - name: Meld dat er niets te verwijderen was (bestond al niet)
         if: steps.cleanup.outputs.zad-deleted != 'true' && steps.preflight.outputs.existed != 'true'
+        env:
+          ZAD_DELETED: ${{ steps.cleanup.outputs.zad-deleted }}
+          DEPLOYMENT: ${{ inputs.deployment }}
         run: |
-          echo "::notice::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ inputs.deployment }}' — de pre-flight-check zag 'm al niet vóór deze run (typo, of al eerder opgeruimd). Niets te doen."
+          echo "::notice::zad-actions meldt zad-deleted='$ZAD_DELETED' voor '$DEPLOYMENT' — de pre-flight-check zag 'm al niet vóór deze run (typo, of al eerder opgeruimd). Niets te doen."
+
+      # De omgekeerde tegenstrijdigheid van de twee stappen hierboven: de pre-flight zag 'm niet,
+      # de action zegt 'm verwijderd te hebben. Dan keek de pre-flight naar het verkeerde pad (of er
+      # was een race met een andere run) — en juist die eerste mogelijkheid is het signaal dat een
+      # kapot scoped endpoint verraadt, dus die mag niet stil blijven.
+      - name: Waarschuw bij een tegenstrijdige pre-flight
+        if: steps.cleanup.outputs.zad-deleted == 'true' && steps.preflight.outputs.existed != 'true'
+        env:
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: |
+          echo "::warning::Pre-flight zag '$DEPLOYMENT' niet vóór deze run, maar zad-actions meldt 'm wél verwijderd — de pre-flight-URL of het scoped endpoint klopt vermoedelijk niet (of een andere run zat ertussen). De verificatie hieronder is dan de enige harde uitspraak."
 
       - name: Verifieer dat de deployment echt weg is
         # Gedeeld met de cleanup-preview-job in zad-deploy-directory.yml via de composite action —
-        # zie .github/actions/verify-zad-deleted/action.yml voor de volledige rationale (404 telt
-        # pas als bewijs ná bevestiging via het lijst-endpoint, transiënte-fout-hantering op zowel
-        # de scoped als de confirmatie-call, de positieve-richting-check, en de live-geverifieerde
-        # 401-status die niet in de OpenAPI-spec staat).
+        # zie .github/actions/verify-zad-deleted/action.yml voor de rationale (die staat daar, niet
+        # hier: de vorige samenvattingen op beide aanroepplekken liepen al uiteen).
         uses: ./.github/actions/verify-zad-deleted
         with:
           deployment: ${{ inputs.deployment }}

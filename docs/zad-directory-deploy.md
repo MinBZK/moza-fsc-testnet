@@ -101,7 +101,9 @@ Vink **"bijlagen"** aan op `dirmgr` en voeg elke file uit `MANIFEST.md` toe als
 | `internal/directory/directory/cert.pem` | `/etc/fsc/internal/directory/directory/cert.pem` |
 | `internal/directory/directory/key.pem` | `/etc/fsc/internal/directory/directory/key.pem` |
 
-`dirui` krijgt zijn subset (group-root + een lezer-cert/key) op dezelfde manier.
+`dirui` krijgt zijn subset (group-root + **dezelfde** directory-cert/key als `dirmgr`) op dezelfde
+manier — dirui presenteert dus de identiteit van de directory-peer zelf, niet een aparte
+lezer-identiteit; zie `peers/directory/dirui.env.example`.
 **Geen `combined.pem` nodig** (modus 2 = pod serveert losse cert/key). Bijlagen zijn read-only +
 binary-safe (spike vraag 4).
 
@@ -117,8 +119,9 @@ Waarden ter referentie:
   - `DIRECTORY_MANAGER_ADDRESS=` idem, incl. `:443` (directory wijst naar zichzelf)
   - `STORAGE_POSTGRES_DSN` uit de managed-Postgres-substitutievars (`$DATABASE_*`) — geen eigen
     postgres-component.
-  - `DISABLE_CRL_CHECKS=true` als **interim** (lege CRL, geen distributiepunt). `TODO(#722)`:
-    CRL-pad mounten + `DISABLE_CRL_CHECKS` weghalen vóór go-live (zie `manager.env.example`).
+  - `DISABLE_CRL_CHECKS=true` als **interim** (lege CRL, geen distributiepunt). Openstaand: CRL-pad
+    mounten + `DISABLE_CRL_CHECKS` weghalen vóór go-live
+    ([#722](https://github.com/MinBZK/MijnOverheidZakelijk/issues/722), zie `manager.env.example`).
 - `dirui`: de waarden uit `peers/directory/dirui.env.example`, met dezelfde
   `DIRECTORY_MANAGER_ADDRESS`-alias (naar dirmgr op dezelfde deployment) als hierboven.
 
@@ -133,12 +136,13 @@ gewone (edge) publicatie krijgen — die doet geen mTLS-mesh.
 
 Deployen doet CI. Handmatig kan via **Actions → zad-deploy-directory → Run workflow**
 (`deployment`, `image_tag`, `manager_tag`). Er is geen lokaal deploy-script meer; wil je zien wat
-er staat, kijk dan in de Operations Manager UI of doe een read-only API-call:
+er staat, kijk dan in de Operations Manager UI of doe een read-only API-call (dezelfde call gebruikt
+`docs/sleutelbeheer.md` om een geroteerde key te verifiëren):
 
 ```bash
 read -rs ZAD_API_KEY; export ZAD_API_KEY     # plak de key niet inline
 curl -sS -H "X-API-Key: $ZAD_API_KEY" \
-  https://zad.rijksapp.nl/api/v2/projects/mft-tp9/deployments | jq -r '.deployments[].name'
+  https://zad.rijksapp.nl/api/v2/projects/mft-tp9/deployments | jq -r '.deployments[]?.name'
 ```
 
 **Blijft handwerk in de UI (stappen 3 + 5):** bijlagen (certs) + Publicatie op het web modus 2 op
@@ -153,13 +157,18 @@ naar main** — een merge (CI groen) rolt de directory automatisch uit naar depl
 
 Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) een `pr-<PR-nummer>`-preview
 uit zodra de `changes`-job de deploy-paden geraakt ziet — net als bij de push-naar-main hierboven,
-géén automatisme voor élke PR. Dependabot-PR's worden altijd overgeslagen (`skip-bot-prs: 'true'`).
+géén automatisme voor élke PR. Bot-PR's (Dependabot, Renovate, elke auteur van type `Bot`) worden
+altijd overgeslagen: de `changes`-job zet daarvoor `run=false` vóór de build, en `skip-bot-prs: 'true'`
+op de deploy-/cleanup-action is het vangnet erachter.
 `workflow_dispatch` blijft voor handmatige overrides.
 
-Path-filter (alleen deze paden triggeren de auto-deploy, en een docs-only wijziging — `^docs/` of
-`*.md` — telt nooit mee, ook niet binnen zo'n pad): `deploy/zad/manager-migrate/**`, `group/**`, de
+Path-filter (alleen deze paden triggeren de auto-deploy): `deploy/zad/manager-migrate/**`, `group/**`, de
 workflow zelf én `build-manager-migrate.yml` (de build-recipe zelf). Docs- en peer-merges blijven
-dus stil. Voor `push` staat dat pad-filter ook in de
+dus stil. Een docs-only wijziging (`^docs/` of `*.md`) telt niet mee, ook niet binnen zo'n pad — maar
+let op de asymmetrie tussen de twee paden: op **`pull_request`** bepaalt die uitsluiting of er
+überhaupt gedeployd wordt (`run`), terwijl een **`push` naar main** die de trigger-`paths:` haalt
+altijd deployt en de docs-uitsluiting daar alleen bepaalt of er herbouwd wordt (`changed`). Een merge
+die uitsluitend een `.md` onder `group/**` wijzigt, rolt `test` dus wél opnieuw uit. Voor `push` staat dat pad-filter ook in de
 trigger-`paths:` van de workflow zelf; de docs-uitzondering zit daar niet bij (de docs-only-conjunctie
 loopt alleen via de `changes`-job — zie hieronder). Voor `pull_request` zit de hele filter (paden +
 docs-uitzondering) in de `changes`-job, op basis van de bestandenlijst uit de GitHub PR-API (niet
@@ -171,8 +180,8 @@ lezen) slaat de job checkout over.
 
 Een `pull_request`-preview ruimt een `cleanup-preview`-job op bij het sluiten van de PR.
 
-Vóór `changes`/`build`/`deploy` bepaalt een `meta`-job eerst de afgeleide waarden die de andere
-jobs delen: de deployment-naam, de OpenFSC-basistag (`image_base`) en de manager-image-suffix
+Naast `changes` (en dus parallel eraan — `changes` heeft geen `needs:`) bepaalt een `meta`-job de
+afgeleide waarden die `build`/`deploy` delen: de deployment-naam, de OpenFSC-basistag (`image_base`) en de manager-image-suffix
 (`manager_suffix`). Diezelfde job valideert ook de ruwe `workflow_dispatch`-inputs (`deployment`,
 `image_tag`, `manager_tag`) tegen een toegestaan-tekens-patroon vóórdat ze als deployment-naam of
 in de `components:`-JSON belanden.
@@ -181,9 +190,9 @@ Daarna voorkomen drie jobs de build-deploy-race:
 
 | Job | Wanneer | Doet |
 |-----|---------|------|
-| `changes` | elke push mét pad-match, én elke PR (open/sync/reopened/closed) | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
+| `changes` | elke push mét pad-match, elke PR (open/sync/reopened) én elke `workflow_dispatch` | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
 | `build` | alleen als `manager-migrate/**` óf `build-manager-migrate.yml` zelf non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
-| `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR; controleert daarna dat élk component een URL kreeg |
+| `deploy` | ná build-succes, óf meteen als build geskipt (ook op `workflow_dispatch`) | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR; controleert daarna dat élk component een URL kreeg |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór de deploy-stap). Config/group-change
 → build skip → deploy herbruikt de bestaande tag. De manager-migrate-image bouwt via de reusable
@@ -205,7 +214,8 @@ Handmatige/preview-deploys blijven via `workflow_dispatch` (zie stap 6).
 
 ## Openstaande TODO's
 
-- CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS=true` (#722) — **gate vóór go-live**.
+- CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS=true`
+  ([#722](https://github.com/MinBZK/MijnOverheidZakelijk/issues/722)) — **gate vóór go-live**.
 - **`sslmode=disable`** op `STORAGE_POSTGRES_DSN` (zie `peers/directory/manager.env.example`) is
   géén losse TODO maar een **expliciet geaccepteerde keuze**: intra-cluster verkeer naar ZAD's
   managed Postgres, gesloten testnet, synthetische data. Herzien zodra er échte berichtinhoud of

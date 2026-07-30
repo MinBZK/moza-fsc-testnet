@@ -83,7 +83,7 @@ Onderbouwing per input:
   ook op een actions-versiebump. **Achterhaald, zie Naschrift**: dit is teruggedraaid naar
   `skip-bot-prs: 'true'`; de key in de Dependabot-secretstore zetten om dit te ondersteunen was zelf
   het probleem (een nog niet gereviewde gebumpte action-versie zou dan met de productie-key draaien)
-  — zie `SECURITY.md` voor de huidige aanpak (key alleen in de Actions-secretstore).
+  — zie `docs/sleutelbeheer.md` voor de huidige aanpak (key alleen in de Actions-secretstore).
 - **`wait-for-ready: 'false'`** — de action curlt vanaf de runner één health-endpoint per
   component. `dirmgr` is mTLS-only en geeft daar nooit 2xx op; de wachtlus zou altijd time-outen.
   Zelfde reden als in de sibling.

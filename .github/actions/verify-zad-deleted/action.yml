@@ -1,7 +1,8 @@
 # Bevestigt hard dat een ZAD-deployment weg is. Nodig omdat zad-actions/cleanup een mislukte
 # delete tot ::warning:: degradeert en exit 0 geeft — een groene run zegt dus niets over de
-# werkelijke staat. Rationale + de vraag of dit nog nodig is:
-# https://github.com/MinBZK/MijnOverheidZakelijk/issues/891
+# werkelijke staat (geverifieerd op zad-actions v4.0.6: `scripts/zad-common.sh` roept de CLI met
+# `--ignore-not-found` aan en logt een fout als `::warning::` zonder non-zero exit). Kan vervallen
+# zodra upstream een mislukte delete zelf fataal maakt; controleer dat bij een versiebump.
 name: "Verifieer ZAD-deployment verwijderd"
 description: "Faalt de job als een ZAD-deployment na cleanup nog bestaat of niet te verifiëren is."
 inputs:
@@ -17,6 +18,13 @@ inputs:
   api-base:
     description: "ZAD-API-basis zónder /api-suffix (bv. env.ZAD_API_BASE)"
     required: true
+  control-deployment:
+    description: >-
+      Deployment die zeker bestaat, als positieve controle op het scoped endpoint. Geeft die 404,
+      dan is het pad stuk en telt een 404 op de te verifiëren deployment niet als bewijs. Leeg =
+      controle overslaan (dan blijft dat gat open).
+    required: false
+    default: "test"
 runs:
   using: composite
   steps:
@@ -27,16 +35,26 @@ runs:
       #     project-segment, zonder dat de key gecontroleerd wordt;
       #   - het lijst-endpoint is cluster-gefilterd, dus afwezigheid daarin bewijst niets —
       #     alleen AANWEZIGHEID bewijst dat de deployment nog bestaat;
-      #   - een 200 op de lijst bevestigt wél key + project (foute of lege key geeft 401 —
-      #     live gemeten 2026-07-30; de OpenAPI declareert die 401 níet, dus niet "corrigeren"
-      #     naar de spec).
-      # Daarom: 404 + lijst-200 + naam niet in die lijst = weg. Al het andere faalt.
+      #   - een 200 op de lijst bevestigt wél key + project (een foute key geeft 401 — live
+      #     gemeten 2026-07-30; de OpenAPI declareert die 401 níet, dus niet "corrigeren" naar de
+      #     spec). Een lége key komt daar niet eens: die valt op de guard hieronder;
+      #   - "een 200 met parsebare JSON" is niet genoeg: `{}`, `[]`, `0` en `"onderhoud"` parseren
+      #     ook, en de naam-scan vindt daarin niets — dan zou een gateway-pagina als bewijs van
+      #     verwijdering gelden. Daarom moet de body de vorm van DeploymentListResponse hebben
+      #     (object met `project` én `cluster`; `deployments` mag legitiem ontbreken);
+      #   - dat dekt nog niet het geval "scoped pad stuk, dus 404 voor ELKE naam". Daarvoor dient
+      #     de positieve controle: een deployment waarvan we weten dat hij bestaat (input
+      #     `control-deployment`, standaard de gedeelde `test`) moet op datzelfde scoped pad 2xx
+      #     geven. Geeft die óók 404, dan is het pad kapot en bewijst onze 404 niets.
+      # Daarom: 404 + lijst-200 + juiste body-vorm + naam niet in die lijst + controle-deployment
+      # geeft 2xx = weg. Al het andere faalt.
       shell: bash
       env:
         DEPLOYMENT: ${{ inputs.deployment }}
         ZAD_PROJECT: ${{ inputs.project }}
         ZAD_API_KEY: ${{ inputs.api-key }}
         ZAD_API_BASE: ${{ inputs.api-base }}
+        CONTROL_DEPLOYMENT: ${{ inputs.control-deployment }}
       # Annotatie-teksten staan per definitie op één regel; yamllint's line-length geldt hier niet.
       # yamllint disable rule:line-length
       run: |
@@ -52,14 +70,26 @@ runs:
           echo "::error::ZAD API-key is leeg — kan de verwijdering van '$DEPLOYMENT' niet verifiëren zonder key."
           exit 1
         fi
+        # Zonder basis-URL bouwt de curl hieronder een pad zonder host: dat faalt met exit 3,
+        # `|| true` slikt dat op, de case-normalisatie maakt er '000' van en je kijkt 60s naar
+        # retries op een niet-bestaand netwerkprobleem (per poging 3 calls van max 30s).
+        if [ -z "$ZAD_API_BASE" ]; then
+          echo "::error::ZAD-API-basis is leeg — kan de verwijdering van '$DEPLOYMENT' niet verifiëren zonder api-base."
+          exit 1
+        fi
 
-        attempts=6
+        # 3 calls per poging (scoped + lijst + controle) van elk max 30s, plus de sleeps. Met 6
+        # pogingen liep de worst case over de job-timeout van de aanroepers heen, en dan wordt de job
+        # midden in de verificatie gekilld: runnertijd verbrand, geen uitkomst. 4 pogingen =
+        # 4*90 + 3*10 = 390s, wat samen met een task-timeout van 600s binnen 20 minuten blijft.
+        attempts=4
         interval=10
         for attempt in $(seq 1 "$attempts"); do
           # `|| true`, niet `|| echo "000"`: curl schrijft de -w-uitvoer ('000' bij een
           # connect-/timeoutfout) zelf al naar stdout. De case-normalisatie erna dwingt af dat
           # $http_code altijd drie cijfers is, zodat de vergelijkingen hieronder niet struikelen.
-          http_code=$(curl -sS -o /tmp/zad-deployment.json -w '%{http_code}' \
+          # -o /dev/null: alleen de statuscode telt hier, de body wordt nooit gelezen.
+          http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
             --connect-timeout 10 --max-time 30 \
             -H "X-API-Key: $ZAD_API_KEY" \
             "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments/$DEPLOYMENT" \
@@ -70,7 +100,7 @@ runs:
           esac
 
           if [ "$http_code" = "404" ]; then
-            list_code=$(curl -sS -o /tmp/zad-deployments-list.json -w '%{http_code}' \
+            list_code=$(curl -sS -o "$RUNNER_TEMP/zad-deployments-list.json" -w '%{http_code}' \
               --connect-timeout 10 --max-time 30 \
               -H "X-API-Key: $ZAD_API_KEY" \
               "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments" \
@@ -81,13 +111,108 @@ runs:
             esac
 
             if [ "$list_code" = "200" ]; then
-              # Recursieve scan i.p.v. `.deployments[].name`: de itemvorm van deze lijst staat
-              # niet volledig in de spec, dus zoek de naam overal in de boom.
-              if jq -e --arg d "$DEPLOYMENT" 'any(.. | strings; . == $d)' /tmp/zad-deployments-list.json >/dev/null 2>&1; then
-                echo "::error::Lijst-endpoint (HTTP 200) bevat '$DEPLOYMENT', terwijl het scoped endpoint (.../deployments/$DEPLOYMENT) net 404 gaf — tegenstrijdig, dus die 404 is geen bewijs van verwijdering (scoped pad stuk of upstream gewijzigd). Controleer handmatig in de Operations Manager UI."
+              # Eerst parsebaarheid, dan inhoud — en die twee streng gescheiden. `jq -e` geeft
+              # non-zero voor drie verschillende dingen: resultaat `false` (naam afwezig), geen
+              # output (exit 4) én een parsefout (exit 5). Als één `if jq -e ... 2>&1` die drie op
+              # één hoop gooide, las een HTTP 200 met een WAF-/onderhoudspagina, een afgekapte body
+              # (--max-time midden in de transfer) of een ontbrekende jq-binary als "naam niet
+              # gevonden" → "Geverifieerd: bestaat niet meer" + exit 0. Dat is precies de
+              # fail-open die deze action moet uitsluiten.
+              # jq -e faalt hier op drie dingen die alle drie onbruikbaar zijn, dus dezelfde tak: een
+              # parsefout (exit 5), geen output (exit 4), en een body die letterlijk `null` of `false`
+              # is (exit 1 — dat gaat over de body zelf, niet over een ontbrekende naam).
+              if ! jq -e . "$RUNNER_TEMP/zad-deployments-list.json" >/dev/null 2>"$RUNNER_TEMP/zad-jq.err"; then
+                jq_err=$(tr '\n' ' ' <"$RUNNER_TEMP/zad-jq.err")
+                echo "::error::Lijst-endpoint gaf HTTP 200 maar geen bruikbare JSON (${jq_err:-lege body, of de body was letterlijk null/false}) — key/project niet te bevestigen, dus de 404 op '$DEPLOYMENT' telt niet als bewijs van verwijdering. Controleer handmatig in de Operations Manager UI."
                 exit 1
               fi
-              echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts; key/project bevestigd via het lijst-endpoint)."
+              # Vorm-eis, niet alleen parsebaarheid: DeploymentListResponse is een object met
+              # `project` én `cluster` (`deployments` mag ontbreken — cluster-gefilterd). Zonder deze
+              # check gelden `{}`, `[]`, `0` en `"onderhoud"` als "lijst waarin de naam niet staat",
+              # en dus als bewijs van verwijdering. Gemeten: precies die bodies kwamen groen door.
+              # `tr -d` erbij: bij een multi-document-body drukt jq per document een regel, en een
+              # meerregelige waarde midden in een ::error:: breekt die annotatie.
+              shape=$(jq -r --arg p "$ZAD_PROJECT" \
+                'if type == "object" and (.cluster != null) and (.project == $p) then "ok" else "wrong" end' \
+                "$RUNNER_TEMP/zad-deployments-list.json" 2>/dev/null | tr -d '\n' || true)
+              if [ "$shape" != "ok" ]; then
+                echo "::error::Lijst-endpoint gaf HTTP 200, maar de body is geen DeploymentListResponse voor project '$ZAD_PROJECT' (verwacht een object met .project == '$ZAD_PROJECT' en een cluster-veld; jq zei '${shape:-lege uitvoer}') — dat is geen bevestiging van key/project, dus de 404 op '$DEPLOYMENT' telt niet als bewijs. Vermoedelijk een gateway-/onderhoudsantwoord, een gewijzigd endpoint, of het verkeerde project."
+                exit 1
+              fi
+              # Recursief over álle `name`-velden i.p.v. `.deployments[].name`: de itemvorm van deze
+              # lijst staat niet volledig in de spec, dus we willen niet vastzitten aan één pad. Maar
+              # wél begrensd tot naam-velden: een scan over élke string in de boom matcht ook
+              # herkomst-velden (previews worden met `clone-from: test` aangemaakt) en zou dan na een
+              # terechte verwijdering van `test` "tegenstrijdig" melden.
+              #
+              # Drie takken, geen `if [ "$(...)" = "true" ]`. In die vorm maskeert `set -e` een
+              # gefaalde command-substitution zolang die in een `if`-conditie staat: valt jq hier
+              # om (bug in de expressie, binary weg, OOM), dan is de uitkomst een lege string, die
+              # `!= "true"` is, en dan zou de code doorlopen naar "bestaat niet meer" + exit 0.
+              # Alleen een letterlijke `false` mag "afwezig" betekenen; al het andere is een fout.
+              # Geen `jq -s` hier: slurp zou een lége body stil in `false` veranderen ("naam afwezig"
+              # = bewijs van verwijdering). Een multi-document-body wordt al door de vorm-check
+              # hierboven afgekapt, die dan meerdere regels teruggeeft en dus niet "ok" is.
+              present=$(jq -r --arg d "$DEPLOYMENT" \
+                'any(.. | objects | select(has("name")) | .name; . == $d)' \
+                "$RUNNER_TEMP/zad-deployments-list.json" 2>/dev/null || true)
+              case "$present" in
+                true)
+                  echo "::error::Lijst-endpoint (HTTP 200) bevat '$DEPLOYMENT', terwijl het scoped endpoint (.../deployments/$DEPLOYMENT) net 404 gaf — tegenstrijdig, dus die 404 is geen bewijs van verwijdering (scoped pad stuk of upstream gewijzigd). Controleer handmatig in de Operations Manager UI."
+                  exit 1 ;;
+                false) ;;
+                *)
+                  echo "::error::Kon niet bepalen of '$DEPLOYMENT' in de lijst staat (jq gaf '${present:-lege uitvoer}' i.p.v. true/false) — de 404 telt daarmee niet als bewijs van verwijdering. Controleer handmatig in de Operations Manager UI."
+                  exit 1 ;;
+              esac
+              # Positieve controle op het scoped pad: onze 404 mag geen artefact zijn van een pad dat
+              # voor élke naam 404 geeft (upstream-wijziging, typfout in de URL-opbouw). Het
+              # lijst-endpoint kan dat niet uitsluiten — dat is een ánder pad.
+              control_checked=true
+              if [ -z "$CONTROL_DEPLOYMENT" ] || [ "$CONTROL_DEPLOYMENT" = "$DEPLOYMENT" ]; then
+                control_checked=false
+              fi
+              if [ "$control_checked" = "true" ]; then
+                control_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+                  --connect-timeout 10 --max-time 30 \
+                  -H "X-API-Key: $ZAD_API_KEY" \
+                  "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments/$CONTROL_DEPLOYMENT" \
+                  || true)
+                case "$control_code" in
+                  [0-9][0-9][0-9]) ;;
+                  *) control_code="000" ;;
+                esac
+                if [ "$control_code" = "404" ]; then
+                  # Twee mogelijke oorzaken, en we hebben de lijst al: staat de controle-deployment
+                  # daarin, dan is het scoped pad stuk (hard falen). Staat hij er niet in, dan is hij
+                  # zelf opgeruimd of nog nooit uitgerold — dan is deze controle onbruikbaar, maar
+                  # dat mag de cleanup-verificatie niet blokkeren; het is geen aanwijzing dat onze
+                  # deployment nog bestaat. Luid melden en doorgaan.
+                  control_in_list=$(jq -r --arg d "$CONTROL_DEPLOYMENT" \
+                    'any(.. | objects | select(has("name")) | .name; . == $d)' \
+                    "$RUNNER_TEMP/zad-deployments-list.json" 2>/dev/null || true)
+                  if [ "$control_in_list" = "true" ]; then
+                    echo "::error::Controle-deployment '$CONTROL_DEPLOYMENT' staat in de lijst maar geeft HTTP 404 op het scoped endpoint — dat pad is dus stuk of gewijzigd, en de 404 op '$DEPLOYMENT' bewijst niets. Controleer handmatig in de Operations Manager UI."
+                    exit 1
+                  fi
+                  echo "::warning::Controle-deployment '$CONTROL_DEPLOYMENT' bestaat niet (meer): 404 op het scoped endpoint én afwezig in de lijst — is hij zelf opgeruimd of nog niet uitgerold? De positieve controle op dat pad is daarmee overgeslagen — geef via de input control-deployment een deployment mee die wél bestaat, anders blijft het geval 'scoped pad 404't voor elke naam' ongedekt."
+                  control_checked=false
+                fi
+                if [ "$control_code" -lt 200 ] || [ "$control_code" -ge 300 ]; then
+                  # Geen retry-lus: op dit punt staat het hoofdbewijs (404 + lijst-200 + juiste
+                  # body-vorm + naam afwezig) al vast, en de hele lus opnieuw doorlopen zou die twee
+                  # calls herhalen terwijl alleen deze derde onduidelijk is. Een onbruikbare controle
+                  # is geen aanwijzing dat onze deployment nog bestaat — dus luid melden en doorgaan,
+                  # niet 50 seconden idle wachten op een status die niet verandert.
+                  echo "::warning::Controle-deployment '$CONTROL_DEPLOYMENT' gaf HTTP $control_code i.p.v. 2xx — de positieve controle op het scoped pad is overgeslagen. Het geval 'dit pad 404't voor elke naam' is daarmee niet uitgesloten; bestaat '$CONTROL_DEPLOYMENT' nog?"
+                  control_checked=false
+                fi
+              fi
+              if [ "$control_checked" = "true" ]; then
+                echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts; key/project bevestigd via het lijst-endpoint, scoped pad bevestigd via '$CONTROL_DEPLOYMENT')."
+              else
+                echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts; key/project bevestigd via het lijst-endpoint). LET OP: de positieve controle op het scoped pad is niet uitgevoerd, dus het geval 'dit pad 404't voor elke naam' is hier niet uitgesloten."
+              fi
               exit 0
             fi
 

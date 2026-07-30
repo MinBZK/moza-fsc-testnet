@@ -15,6 +15,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,4 +43,19 @@ jobs:
         with:
           reporter: local
           filter_mode: nofilter
-          fail_on_error: true
+          fail_on_error: true      # actionlint scant alleen .github/workflows/, dus de bash in composite actions — inclusief het
+      # script dat de ZAD-API-key krijgt en de enige harde uitspraak over cleanup doet — viel buiten
+      # elke geautomatiseerde toets. shellcheck krijgt die blokken hier alsnog te zien.
+      - name: Shellcheck composite-action scripts
+        run: |
+          set -euo pipefail
+          rc=0
+          while IFS= read -r action; do
+            script="$RUNNER_TEMP/$(echo "$action" | tr '/' '-').sh"
+            python3 -c 'import sys, yaml; d = yaml.safe_load(open(sys.argv[1])); print("#!/usr/bin/env bash"); [print("# step:", s.get("name", ""), chr(10) + s["run"]) for s in (d.get("runs") or {}).get("steps") or [] if s.get("run")]' "$action" > "$script"
+            echo "shellcheck: $action"
+            shellcheck --shell=bash --severity=warning "$script" || rc=1
+          done < <(find .github/actions -name action.yml)
+          exit "$rc"
+
+

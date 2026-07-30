@@ -84,7 +84,7 @@ voor #722/#723 is opgeheven.
 ## Repo-structuur
 
 ```text
-docs/        ontwerp: topologie.md + ontwerpkeuzes.md
+docs/        ontwerp: topologie.md + ontwerpkeuzes.md; runbooks incl. sleutelbeheer.md
 pki/         test-CA als trust-anchor + cert-generatie
 group/       group-id, trust-anchor, group rules (TLS)
 peers/       per peer: Helm-values + OIN + adressen
@@ -105,9 +105,13 @@ contracts/   grant → sign → accept bootstrap
   (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
   `Analyze (actions)`.
 - **CI:** `lint.yml` (markdownlint + yamllint + actionlint), `codeql.yml` (Actions-analyse),
-  `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind; Dependabot houdt ze maandelijks bij.
+  `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind; Dependabot houdt ze wekelijks bij, plus de base-image van de
+  manager-migrate-wrapper. Wekelijks houdt de gegroepeerde PR reviewbaar; advisories komen los daarvan
+  binnen via Dependabot security updates (staat aan op de repo).
 - **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
-  en `docs/ai-verantwoording.md`. Governance/support/security delegeren naar de MOZa-hoofdrepo.
+  en `docs/ai-verantwoording.md`. Governance/support delegeren naar de MOZa-hoofdrepo; **geen eigen
+  `SECURITY.md`** — melden loopt via het org-brede beleid in `MinBZK/.github`. Operationeel
+  secretbeheer staat in `docs/sleutelbeheer.md`.
 - `gh` CLI voor GitHub-operaties.
 
 ## Issues / stappenplan

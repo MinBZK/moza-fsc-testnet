@@ -44,8 +44,12 @@ contracts/   grant → sign → accept bootstrap
 - **Disclaimer:** dit is een experimentele PoC, grotendeels met AI opgesteld — zie
   [`DISCLAIMER.md`](DISCLAIMER.md) en de volledige
   [AI-verantwoording](docs/ai-verantwoording.md).
-- **Governance / support / security:** [`GOVERNANCE.md`](GOVERNANCE.md) ·
-  [`SUPPORT.md`](SUPPORT.md) · [`SECURITY.md`](SECURITY.md) (delegeren naar de MOZa-hoofdrepo).
+- **Governance / support:** [`GOVERNANCE.md`](GOVERNANCE.md) · [`SUPPORT.md`](SUPPORT.md)
+  (delegeren naar de MOZa-hoofdrepo).
+- **Security:** kwetsbaarheden melden volgt het org-brede beleid van
+  [MinBZK](https://github.com/MinBZK/.github/blob/main/SECURITY.md) — deze repo heeft bewust geen
+  eigen `SECURITY.md`. Secretbeheer en sleutelrotatie:
+  [`docs/sleutelbeheer.md`](docs/sleutelbeheer.md).
 - **Metadata:** [`publiccode.yml`](publiccode.yml). **Licentie:** [EUPL-1.2](LICENSE).
 - **CI:** lint (markdown/YAML/workflows), CodeQL en OpenSSF Scorecard draaien op elke PR.
 

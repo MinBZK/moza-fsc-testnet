@@ -1,15 +1,26 @@
 # Dependabot version updates.
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 #
-# Deze repo bevat geen applicatie-dependencies (config-only). We houden alleen de
-# GitHub Actions up-to-date. Voeg hier later docker/helm toe zodra OpenFSC-images
-# of charts in deze repo gepind worden.
+# Deze repo bevat geen applicatie-dependencies (config-only), maar wel gepinde artefacten:
+# GitHub Actions én de base-image van de manager-migrate-wrapper. Beide staan hieronder. Helm-charts
+# worden hier niet gepind (ZAD deployt images, geen charts), dus daar is geen ecosystem voor.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      # `weekly`: het middenpad, en bewust niet `monthly`. Een maandbatch levert één groep-PR op met
+      # zoveel bumps dat hij niet meer te reviewen is — en gegroepeerde PR's zijn juist bedoeld om
+      # review-ruis te beperken, niet om 'm te verplaatsen. Ook bewust niet `daily`: dan force-pusht
+      # Dependabot een open groep-PR bij elke nieuwe upstream-release, en elke force-push is een volle
+      # CI-run.
+      # Beveiliging hangt niet aan dit interval: "Dependabot security updates" staat op de repo AAN
+      # (2026-07-30; `gh api repos/{owner}/{repo}` →
+      # `security_and_analysis.dependabot_security_updates.status`), dus een advisory levert direct een
+      # fix-PR op. Gaat die instelling ooit uit, dan is dit schema het énige automatische kanaal en mag
+      # het in geen geval langer worden (BIO 12.6.1: tijdige maatregelen, niet alleen tijdige detectie)
+      # — de workflows hier deployen met een productie-API-key.
+      interval: "weekly"
     groups:
       # codeql-action publiceert init/autobuild/analyze/upload-sarif als losse
       # sub-actions onder één versie. Ze MOETEN samen bewegen: een enkele
@@ -24,3 +35,11 @@ updates:
           - "*"
         exclude-patterns:
           - "github/codeql-action*"
+
+  # De wrapper-image draait op odcn-production; zonder dit ecosystem is er geen enkel automatisch
+  # signaal bij een CVE in de base-image — en juist dat signaal komt nu via de security-updates
+  # binnen (zie de comment bij de actions hierboven).
+  - package-ecosystem: "docker"
+    directory: "/deploy/zad/manager-migrate"
+    schedule:
+      interval: "weekly"
