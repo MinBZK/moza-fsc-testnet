@@ -168,3 +168,9 @@ op het web" dat al deed.
   teruggedraaid. Openstaand: een scheduled read-only vergelijking die dat verschil wél meldt, met
   `DISABLE_CRL_CHECKS` als scherpste geval
   ([#896](https://github.com/MinBZK/MijnOverheidZakelijk/issues/896)).
+
+Nog een **geaccepteerd risico** in dezelfde categorie: `dirui` mount dezelfde cert/key als `dirmgr` en
+authenticeert dus op de mesh als de directory-peer zelf (OIN `00000000000000000010`) — een
+webfacing pod met de peer-identiteit van de directory. Verdedigbaar voor een gesloten testnet met
+eigen test-CA, niet houdbaar richting PKIoverheid; afweging en opties in
+[#899](https://github.com/MinBZK/MijnOverheidZakelijk/issues/899).

@@ -35,19 +35,24 @@ concurrency:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    # Worst case: pre-flight (2 calls) + cleanup-action (task-timeout 600) + verificatie
-    # (6 pogingen x 2 calls van 30s + 5x10s sleep) ligt rond 18 min. Op 15 werd de job midden in
-    # de verificatie gekilld: runnertijd verbrand, geen uitkomst. Gelijk aan cleanup-preview.
+    # Worst case: pre-flight (2 calls x 30s) + cleanup-action (task-timeout 600) + verificatie
+    # (4 pogingen x 3 calls van 30s + 3x10s sleep = 390s) ≈ 17,5 min. Op 15 werd de job midden in de
+    # verificatie gekilld: runnertijd verbrand, geen uitkomst. Gelijk aan cleanup-preview. Bij het
+    # toevoegen van een call of poging aan de verificatie: deze rekensom mee bijwerken.
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
       # Nodig zodat de composite verificatie-action (`uses: ./.github/actions/...` hieronder) uit
       # de repo geladen kan worden — die actions worden gelezen uit de workspace, niet gedownload.
-      # Hier mag de impliciete `github.ref` wél (anders dan in de cleanup-preview-job van
+      # Hier staat de impliciete `github.ref` (anders dan in de cleanup-preview-job van
       # zad-deploy-directory.yml, die 'm op de default branch pint): dit is een workflow_dispatch op
       # een gewone branch-ref, die niet halverwege kan verdwijnen zoals een PR-merge-ref, en een
-      # operator kan de run desnoods opnieuw starten.
+      # operator kan de run desnoods opnieuw starten. Wees je bewust van de keerzijde: een dispatch
+      # kan op élke branch draaien, en dan komen zowel deze action als de beschermde-namen-guard
+      # hierboven uit die branch. De guard is dus een vangrail tegen typo's, geen beveiligingsgrens
+      # tegen iemand met push-rechten — die grens is de branch-protection op main plus het feit dat
+      # de key alleen in Actions-secrets staat.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -10,6 +10,12 @@
 # De negaties houden de templates committable; `!*.env.example` is nodig vanwege `*.env.*` hierboven.
 !.env.example
 !*.env.example
+# Kopieën die tooling en handwerk achterlaten. `*.key` dekt `ca.key` maar niet `ca.key.bak`, en de
+# directory-ignores hieronder dekken alleen die paden — niet een stray kopie ernaast.
+*.bak
+*.orig
+*~
+*.local.yaml
 *.pem
 *.key
 *.crt

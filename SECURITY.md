@@ -34,7 +34,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' -H "X-API-Key: $ZAD_API_KEY" \
 Dit print alléén de statuscode: `200` = de nieuwe key werkt, `401` = niet. Wil je ook de namen zien
 (`| jq -r '.deployments[]?.name'`), gebruik dan die `?` — `deployments` mag legitiem ontbreken omdat
 het endpoint alleen deployments van het huidige cluster teruggeeft (zie `docs/zad-cleanup.md`,
-"Verificatie = twee calls"). Een lege namenlijst is dus géén bewijs dat de key stuk is; de
+"Verificatie = drie calls"). Een lege namenlijst is dus géén bewijs dat de key stuk is; de
 statuscode is dat wel — vandaar dat de check hierboven op de code kijkt. Zet de nieuwe key daarna in
 **Settings → Secrets and variables → Actions** bij `ZAD_API_KEY_DIRECTORY` (overschrijft de oude
 waarde). Trek de oude key **pas ná die stap** in bij de ZAD Operations Manager — anders revoke je

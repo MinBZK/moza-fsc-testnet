@@ -67,7 +67,7 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   `exit` met een fout, dus de job blijft groen. Een groene job bewijst dus niet dat het deployment
   weg is, ook al staan er soms error-annotaties in de run. Precies dáárom bestaat de
   verificatiestap: die controleert onafhankelijk van wat de `cleanup`-action zelf rapporteert.
-- **Verificatie = twee calls, niet één kale 404**: de composite action pollt eerst het **scoped**
+- **Verificatie = drie calls, niet één kale 404**: de composite action pollt eerst het **scoped**
   endpoint `GET /api/v2/projects/{project}/deployments/{deployment}`. Een 404 daar is op zichzelf
   géén bewijs — live tegen de API geprobeerd komt diezelfde 404 ook terug op een onbekend pad en
   op een leeg project-segment, zónder dat de key ooit gecontroleerd wordt. Pas als een
@@ -81,8 +81,27 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   the current cluster"* (`openapi.json`) en `DeploymentListResponse.required` is enkel
   `["project","cluster"]`, dus `deployments` mag legitiem ontbreken — de negatieve richting is
   dus niet bruikbaar als bewijs. Transiënte fouten (`000`, 5xx) op zowel de scoped als de
-  bevestigingscall krijgen een begrensde retry (6 pogingen, 10s interval); elke andere status
-  (2xx = nog aanwezig, of een onverwachte 4xx/5xx na de laatste poging) faalt de stap hard.
+  bevestigingscall krijgen een begrensde retry (4 pogingen, 10s interval — de rekensom achter de
+  `timeout-minutes` van beide aanroepende jobs hangt aan dat getal); elke andere status (2xx = nog
+  aanwezig, of een onverwachte 4xx/5xx na de laatste poging) faalt de stap hard.
+- **Die 200 moet ook de juiste vórm hebben**: een object met `cluster` en met `.project` gelijk aan het
+  opgevraagde project. Zonder die eis gelden `{}`, `[]`, `0` en `"onderhoud"` als "lijst waarin de naam
+  niet staat" — en dus als bewijs van verwijdering. Een gateway- of onderhoudspagina met HTTP 200 kwam
+  daar eerder groen door.
+- **Derde call = positieve controle op het scoped pad.** Een 404 kan ook betekenen dat het pad zelf
+  stuk is (upstream-wijziging), en dat kan het lijst-endpoint niet uitsluiten — dat is een ander pad.
+  Daarom moet een deployment die zeker bestaat (input `control-deployment`, standaard de gedeelde
+  `test`) op datzelfde scoped pad 2xx geven. Staat die controle-deployment wél in de lijst maar geeft
+  hij 404, dan is het pad stuk en faalt de stap. Is hij ook uit de lijst verdwenen (zelf opgeruimd, of
+  nog niet uitgerold), dan wordt de controle met een `::warning::` overgeslagen — dat mag de cleanup
+  niet blokkeren, maar de slotmelding zegt dan expliciet dat dit gat niet gedekt is. Ruim je `test`
+  zélf op, dan valt de controle om dezelfde reden weg (`control-deployment` == de deployment).
+- **De action wordt uit de default branch geladen** (`ref:` op de checkout in `cleanup-preview`), niet
+  uit de PR-branch: de verificatiecode die de productie-API-key krijgt is daarmee de gereviewde versie.
+  Gevolg voor onderhoud: een wijziging aan deze action wordt niet getest door de PR die 'm invoert —
+  z'n eerste uitvoering is een echte cleanup ná merge. Houd action-inputs achterwaarts compatibel, want
+  een oudere openstaande PR roept bij het sluiten de main-versie aan. De `lint`-workflow shellcheckt de
+  `run:`-blokken van composite actions, zodat shellfouten wél vóór merge opvallen.
 - **Beschermde namen** (`test`, `main`, `master`, `production`, `prod`) weigeren tenzij de
   workflow-input `allow_protected` aanstaat. Dat is een `if`-guard-stap vóór de action in
   `zad-cleanup.yml` — de action kent zelf geen beschermde-namen-check. Het cluster is
