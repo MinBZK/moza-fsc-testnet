@@ -4,13 +4,13 @@
 # De stock-image is DISTROLESS (geen /bin/sh), dus:
 #  - we enten een statische busybox als /bin/sh in, zodat het shell-entrypoint draait;
 #  - perms via COPY --chmod (geen RUN — RUN heeft zelf een shell nodig die er niet is).
-# Base-images digest-gepind (Scorecard Pinned-Dependencies). De digest fixeert de inhoud;
-# IMAGE_TAG (default v1.43.7) blijft de zichtbare + output-tag. Bij een versie-bump:
-# IMAGE_TAG én de manager-digest hieronder samen updaten.
-ARG IMAGE_TAG=v1.43.7
+# Base-image digest-gepind (Scorecard Pinned-Dependencies): bij `repo:tag@digest` resolvet
+# Docker op de digest en wordt de tag niet gevalideerd, dus een los ARG IMAGE_TAG zou hier
+# feitelijk niets doen. Bij een versie-bump: deze regel én de workflow-default IMAGE_TAG
+# (voor de output-tag) samen updaten.
 FROM busybox:1.36.1-musl@sha256:3c6ae8008e2c2eedd141725c30b20d9c36b026eb796688f88205845ef17aa213 AS busybox
 
-FROM docker.io/federatedserviceconnectivity/manager:${IMAGE_TAG}@sha256:e7e6a95c82ba220eaa9b9e2e77ec890fb16fff0f3bdce29a10218d25b56c186f
+FROM docker.io/federatedserviceconnectivity/manager:v1.43.7@sha256:e7e6a95c82ba220eaa9b9e2e77ec890fb16fff0f3bdce29a10218d25b56c186f
 COPY --from=busybox /bin/busybox /bin/sh
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/migrate-and-serve.sh
 ENTRYPOINT ["/usr/local/bin/migrate-and-serve.sh"]

@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "OpenFSC manager-basisversie (build-arg IMAGE_TAG + image-tag)"
+        description: "Output-tag (het basis-image zelf is digest-gepind in de Dockerfile; bump die er apart bij)"
         required: false
         default: "v1.43.7"
       image_suffix:
@@ -26,7 +26,7 @@ on:
   workflow_call:
     inputs:
       image_tag:
-        description: "OpenFSC manager-basisversie (build-arg IMAGE_TAG + image-tag)"
+        description: "Output-tag (het basis-image zelf is digest-gepind in de Dockerfile; bump die er apart bij)"
         required: false
         type: string
         default: "v1.43.7"
@@ -75,7 +75,6 @@ jobs:
           fi
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
           docker buildx build \
-            --build-arg "IMAGE_TAG=${IMAGE_TAG}" \
             --tag "${IMAGE}:${tag}" \
             --label "org.opencontainers.image.source=https://github.com/${REPO}" \
             --push \
