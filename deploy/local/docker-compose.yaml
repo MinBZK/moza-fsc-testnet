@@ -1,5 +1,5 @@
 # Lokale harness. Zie deploy/local/README.md voor het cert-contract.
-x-manager-image: &manager-image docker.io/federatedserviceconnectivity/manager:${IMAGE_TAG:-v1.43.7}
+x-manager-image: &manager-image docker.io/federatedserviceconnectivity/manager:${IMAGE_TAG:-v2.5.2}
 x-manager-common-env: &manager-common-env
   LOG_TYPE: local
   LOG_LEVEL: debug
@@ -73,8 +73,8 @@ services:
     build:
       context: ../../deploy/zad/manager-migrate
       args:
-        IMAGE_TAG: ${IMAGE_TAG:-v1.43.7}
-    image: manager-migrate:${IMAGE_TAG:-v1.43.7}
+        IMAGE_TAG: ${IMAGE_TAG:-v2.5.2}
+    image: manager-migrate:${IMAGE_TAG:-v2.5.2}
     restart: on-failure   # migreert bij boot; herstart bij transiënte DB-race (parity met siblings)
     # Draai als de host-UID/GID zodat de pod de 0600-privékeys leest (matching owner)
     # i.p.v. ze open te zetten. HOST_UID/HOST_GID uit .env (zie README, stap 3).
@@ -172,7 +172,7 @@ services:
     command: ["-listen=:8080", "-text=hello from example-provider stub-upstream"]
 
   inway-example-provider:
-    image: docker.io/federatedserviceconnectivity/inway:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/inway:${IMAGE_TAG:-v2.5.2}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-keys
     restart: on-failure                            # boot-race met controller/manager
     command:
@@ -232,7 +232,7 @@ services:
         condition: service_started
 
   directory-ui:
-    image: docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/directory-ui:${IMAGE_TAG:-v2.5.2}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-group-key
     ports:
       - "127.0.0.1:8080:8080"
@@ -271,7 +271,7 @@ services:
     restart: on-failure
 
   migrate-controller-example-provider:
-    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v2.5.2}
     command:
       - /usr/local/bin/controller
       - migrate
@@ -284,7 +284,7 @@ services:
     restart: on-failure
 
   controller-example-provider:
-    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v2.5.2}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-internal-key
     restart: on-failure                           # herstart bij transiënte boot-fout (DB/manager nog niet klaar)
     ports:
@@ -400,7 +400,7 @@ services:
         condition: service_started
 
   migrate-controller-example-consumer:
-    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v2.5.2}
     command:
       - /usr/local/bin/controller
       - migrate
@@ -413,7 +413,7 @@ services:
     restart: on-failure
 
   controller-example-consumer:
-    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/controller:${IMAGE_TAG:-v2.5.2}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-internal-key
     restart: on-failure                           # herstart bij transiënte boot-fout (DB/manager nog niet klaar)
     ports:
@@ -456,7 +456,7 @@ services:
         condition: service_started
 
   outway-example-consumer:
-    image: docker.io/federatedserviceconnectivity/outway:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/outway:${IMAGE_TAG:-v2.5.2}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest 0600-keys
     restart: on-failure                            # boot-race met de eigen manager
     command:
@@ -512,7 +512,7 @@ services:
 
   # ---- transaction-log API's (per peer) -------------------------------------------------------
   migrate-txlog-example-provider:
-    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v2.5.2}
     # `migrate up` leest de DSN ALLEEN uit --postgres-dsn (niet uit env, anders dan serve) — net als
     # de manager/controller-migrates. Zonder de vlag verbindt migrate met een default en hangt 't.
     command: [/usr/local/bin/txlog-api, migrate, up, --postgres-dsn,
@@ -527,7 +527,7 @@ services:
     restart: on-failure
 
   txlog-example-provider:
-    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v2.5.2}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest de 0600-internal-key
     command: [/usr/local/bin/txlog-api, serve]
     restart: on-failure                            # boot-race met postgres/migrate
@@ -549,7 +549,7 @@ services:
         condition: service_completed_successfully
 
   migrate-txlog-example-consumer:
-    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v2.5.2}
     # migrate leest de DSN alléén uit --postgres-dsn (zie migrate-txlog-example-provider).
     command: [/usr/local/bin/txlog-api, migrate, up, --postgres-dsn,
               "postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable"]
@@ -563,7 +563,7 @@ services:
     restart: on-failure
 
   txlog-example-consumer:
-    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v1.43.7}
+    image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v2.5.2}
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"   # host-UID -> leest de 0600-internal-key
     command: [/usr/local/bin/txlog-api, serve]
     restart: on-failure

@@ -56,6 +56,14 @@ jobs:
             echo "shellcheck: $action"
             shellcheck --shell=bash --severity=warning "$script" || rc=1
           done < <(find .github/actions -name action.yml)
+          shellcheck --shell=bash --severity=warning .github/scripts/*.sh || rc=1
           exit "$rc"
+
+      # De OpenFSC-componenten moeten in lockstep draaien, maar de versie staat op zeven plekken
+      # (drie wrapper-Dockerfiles, drie workflows, de lokale compose). Dependabot ziet alleen de
+      # Dockerfiles, dus zonder deze stap wordt een halve bump gewoon groen — en publiceert de
+      # build een image dat de oude versie heet en de nieuwe ís.
+      - name: OpenFSC-versie-consistentie
+        run: ./.github/scripts/check-openfsc-version.sh
 
 

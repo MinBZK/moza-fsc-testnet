@@ -104,10 +104,15 @@ contracts/   grant → sign → accept bootstrap
   `fix/`, `chore/`. Geen reviewer toevoegen bij aanmaken PR. `main` is **branch-protected**
   (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
   `Analyze (actions)`.
-- **CI:** `lint.yml` (markdownlint + yamllint + actionlint), `codeql.yml` (Actions-analyse),
-  `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind; Dependabot houdt ze wekelijks bij, plus de base-image van de
-  manager-migrate-wrapper. Wekelijks houdt de gegroepeerde PR reviewbaar; advisories komen los daarvan
-  binnen via Dependabot security updates (staat aan op de repo).
+- **CI:** `lint.yml` (markdownlint + yamllint + actionlint + OpenFSC-versie-consistentie),
+  `codeql.yml` (Actions-analyse), `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind;
+  Dependabot houdt ze wekelijks bij, plus de base-images van de drie migrate-wrappers. Wekelijks
+  houdt de gegroepeerde PR reviewbaar; advisories komen los daarvan binnen via Dependabot security
+  updates (staat aan op de repo).
+- **OpenFSC-versie:** alle componenten draaien in lockstep op één tag; die staat op zeven plekken
+  (drie wrapper-Dockerfiles, drie workflows, de lokale compose). Dependabot ziet alleen de
+  Dockerfiles en groepeert ze in één PR; `.github/scripts/check-openfsc-version.sh` faalt bij een
+  halve bump. Zie `docs/openfsc-versiebeheer.md`.
 - **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
   en `docs/ai-verantwoording.md`. Governance/support delegeren naar de MOZa-hoofdrepo; **geen eigen
   `SECURITY.md`** — melden loopt via het org-brede beleid in `MinBZK/.github`. Operationeel

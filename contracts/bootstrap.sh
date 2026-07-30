@@ -172,6 +172,12 @@ NAF=$((NBF + 315360000))                 # +10 jaar
 # De connection-grant's `service` VEREIST de discriminator `type: SERVICE_TYPE_SERVICE` (anders
 # 500 "invalid service type"; de publicatie-grant defaultte 'm, de connection-grant niet). Géén
 # `protocol` (dat hoort bij de service-PUBLICATIE, niet bij de connection).
+# Het `outway`-blok is sinds OpenFSC v2.0.0 een union: de outway wordt geïdentificeerd op
+# public-key-thumbprint óf op domeinnaam, met `type` als discriminator. De platte v1-vorm
+# (`outway.public_key_thumbprint`) wordt niet meer geaccepteerd. Wij houden het thumbprint aan
+# (stabiel bij cert-rotatie binnen hetzelfde sleutelpaar; zie de OUTWAY_CERT_HOST-comment).
+# `fsc_version` zetten we NIET zelf: de POST neemt `createContractContent`, waar dat veld ontbreekt
+# — de manager vult 'm en neemt 'm mee in de content-hash.
 echo "bootstrap: serviceConnection-contract indienen bij de consumer-manager..."
 RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: application/json' -d "{
   \"contract_content\": {
@@ -185,7 +191,10 @@ RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: applicati
       \"service\": { \"type\": \"SERVICE_TYPE_SERVICE\", \"peer_id\": \"$PROVIDER_OIN\", \"name\": \"$SERVICE_NAME\" },
       \"outway\": {
         \"peer_id\": \"$CONSUMER_OIN\",
-        \"public_key_thumbprint\": \"$THUMB\"
+        \"identification\": {
+          \"type\": \"OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT\",
+          \"public_key_thumbprint\": \"$THUMB\"
+        }
       }
     } ]
   }
