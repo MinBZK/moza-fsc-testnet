@@ -83,6 +83,14 @@ services:
       <<: *manager-common-env
       SELF_ADDRESS: https://directory.fsc-test.local:443
       TX_LOG_API_ADDRESS: ""                 # directory-mode: geen txlog
+      # Sinds OpenFSC v2.5.2 is --controller-registration-api-address VERPLICHT; zonder deze regel
+      # weigert de manager te starten ("required flag(s) ... not set"). De directory draait bij ons
+      # geen controller, en heeft er ook geen nodig: de manager belt de Controller Registration API
+      # uitsluitend vanuit het /token-endpoint (get_token.go -> GetService), en dat pad vraagt om een
+      # dienst die déze peer gepubliceerd heeft. De directory publiceert niets, dus dit adres wordt
+      # nooit gedialed. Bewust een niet-resolvende hostnaam: gaat die aanname ooit niet meer op, dan
+      # faalt het luid op DNS in plaats van stil naar een verkeerde controller te praten.
+      CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.directory.invalid:9443
       AUTO_SIGN_GRANTS: servicePublication,delegatedServicePublication
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
@@ -369,6 +377,9 @@ services:
       SELF_ADDRESS: https://example-consumer.fsc-test.local:443
       # echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
       TX_LOG_API_ADDRESS: https://txlog.example-consumer.fsc-test.local:9443
+      # Verplicht sinds OpenFSC v2.5.2 (zie manager-directory). De consumer heeft een echte
+      # controller, dus hier het werkelijke registratie-adres — spiegelt de provider.
+      CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-consumer.fsc-test.local:9443
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444

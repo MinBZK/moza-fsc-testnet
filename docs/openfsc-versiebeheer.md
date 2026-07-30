@@ -57,9 +57,28 @@ Twee breaking changes uit v2.0.0 raken deze repo:
   (`OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT` of `…_DOMAIN_NAME`). `contracts/bootstrap.sh`
   stuurt de thumbprint-variant.
 
+- **`CONTROLLER_REGISTRATION_API_ADDRESS` is verplicht geworden voor de manager.** In v1.43.7 was
+  `--controller-registration-api-address` optioneel (met een gedeprecieerd alias
+  `--controller-api-address`); v2.5.2 voegt `MarkFlagRequired` toe. Een manager zonder die env
+  weigert te starten met `required flag(s) "controller-registration-api-address" not set` — een
+  crashloop met een melding die niet naar de eigenlijke oorzaak wijst. Dit trof onze
+  **directory-manager** en de **consumer-manager**; de provider-manager zette 'm al.
+
+  De directory heeft geen controller-component en heeft er ook geen nodig: de manager belt die API
+  uitsluitend vanuit het `/token`-endpoint (`manager/apps/ext/query/get_token.go` → `GetService`),
+  voor een dienst die déze peer gepubliceerd heeft. De directory publiceert niets. Daarom staat er
+  een bewust niet-resolvende hostnaam (`.invalid`): wordt de aanname ooit onwaar, dan faalt het
+  luid op DNS in plaats van stil naar een verkeerde controller te praten.
+
+  > **ZAD-actie, buiten git:** `peers/directory/manager.env.example` documenteert deze waarde
+  > alleen. De werkelijke env leeft in de Operations Manager UI en moet dáár toegevoegd worden vóór
+  > de volgende directory-deploy, anders crashloopt `dirmgr`.
+
 Wat **niet** wijzigde: de wrapper-entrypoints (`<component> migrate up --postgres-dsn` en `serve`
-bestaan onveranderd in v2.5.2), de env-namen die wij zetten, en het request-body-schema van
+bestaan onveranderd in v2.5.2), de overige env-namen die wij zetten, en het request-body-schema van
 `POST /v1/contracts` (dat neemt `createContractContent`, zónder `fsc_version` — de manager vult dat
-veld zelf). Wel verdwenen zijn twee gedeprecieerde vlaggen die wij niet gebruiken:
+veld zelf). Verder is `manager --controller-registration-api-address` de **enige** vlag die in
+v2.5.2 verplicht werd; controller, txlog-api, inway en outway hebben een ongewijzigde
+required-set. Verdwenen zijn twee gedeprecieerde aliassen die wij niet gebruiken:
 `manager --controller-api-address` en `controller --listen-address-api` /
 `--listen-address-internal`.
