@@ -27,10 +27,10 @@ runs:
       #     project-segment, zonder dat de key gecontroleerd wordt;
       #   - het lijst-endpoint is cluster-gefilterd, dus afwezigheid daarin bewijst niets —
       #     alleen AANWEZIGHEID bewijst dat de deployment nog bestaat;
-      #   - een 200 op de lijst bevestigt wél key + project (foute of lege key geeft 401 —
-      #     live gemeten 2026-07-30; de OpenAPI declareert die 401 níet, dus niet "corrigeren"
-      #     naar de spec).
-      # Daarom: 404 + lijst-200 + naam niet in die lijst = weg. Al het andere faalt.
+      #   - een 200 op de lijst bevestigt wél key + project (een foute key geeft 401 — live
+      #     gemeten 2026-07-30; de OpenAPI declareert die 401 níet, dus niet "corrigeren" naar de
+      #     spec). Een lége key komt daar niet eens: die valt op de guard hieronder.
+      # Daarom: 404 + lijst-200 + parsebare body + naam niet in die lijst = weg. Al het andere faalt.
       shell: bash
       env:
         DEPLOYMENT: ${{ inputs.deployment }}
@@ -50,6 +50,13 @@ runs:
         fi
         if [ -z "$ZAD_API_KEY" ]; then
           echo "::error::ZAD API-key is leeg — kan de verwijdering van '$DEPLOYMENT' niet verifiëren zonder key."
+          exit 1
+        fi
+        # Zonder basis-URL bouwt de curl hieronder een pad zonder host: dat faalt met exit 3,
+        # `|| true` slikt dat op, de case-normalisatie maakt er '000' van en je kijkt 60s naar
+        # retries op een niet-bestaand netwerkprobleem.
+        if [ -z "$ZAD_API_BASE" ]; then
+          echo "::error::ZAD-API-basis is leeg — kan de verwijdering van '$DEPLOYMENT' niet verifiëren zonder api-base."
           exit 1
         fi
 
@@ -81,9 +88,24 @@ runs:
             esac
 
             if [ "$list_code" = "200" ]; then
+              # Eerst parsebaarheid, dan inhoud — en die twee streng gescheiden. `jq -e` geeft
+              # non-zero voor drie verschillende dingen: resultaat `false` (naam afwezig), geen
+              # output (exit 4) én een parsefout (exit 5). Als één `if jq -e ... 2>&1` die drie op
+              # één hoop gooide, las een HTTP 200 met een WAF-/onderhoudspagina, een afgekapte body
+              # (--max-time midden in de transfer) of een ontbrekende jq-binary als "naam niet
+              # gevonden" → "Geverifieerd: bestaat niet meer" + exit 0. Dat is precies de
+              # fail-open die deze action moet uitsluiten.
+              if ! jq -e . /tmp/zad-deployments-list.json >/dev/null 2>/tmp/zad-jq.err; then
+                # Lege stderr = jq-exit 4 (geen output): een lege body. Anders staat de parsefout erin.
+                jq_err=$(tr '\n' ' ' </tmp/zad-jq.err)
+                echo "::error::Lijst-endpoint gaf HTTP 200 maar geen bruikbare JSON (${jq_err:-lege body}) — key/project niet te bevestigen, dus de 404 op '$DEPLOYMENT' telt niet als bewijs van verwijdering. Controleer handmatig in de Operations Manager UI."
+                exit 1
+              fi
               # Recursieve scan i.p.v. `.deployments[].name`: de itemvorm van deze lijst staat
-              # niet volledig in de spec, dus zoek de naam overal in de boom.
-              if jq -e --arg d "$DEPLOYMENT" 'any(.. | strings; . == $d)' /tmp/zad-deployments-list.json >/dev/null 2>&1; then
+              # niet volledig in de spec, dus zoek de naam overal in de boom. `jq -r` (geen -e):
+              # de uitkomst is nu een expliciete "true"/"false"-string, zodat een toekomstige
+              # jq-fout hier niet opnieuw als "afwezig" kan wegvallen.
+              if [ "$(jq -r --arg d "$DEPLOYMENT" 'any(.. | strings; . == $d)' /tmp/zad-deployments-list.json)" = "true" ]; then
                 echo "::error::Lijst-endpoint (HTTP 200) bevat '$DEPLOYMENT', terwijl het scoped endpoint (.../deployments/$DEPLOYMENT) net 404 gaf — tegenstrijdig, dus die 404 is geen bewijs van verwijdering (scoped pad stuk of upstream gewijzigd). Controleer handmatig in de Operations Manager UI."
                 exit 1
               fi
