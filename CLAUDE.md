@@ -64,12 +64,14 @@ mTLS-passthrough is bewezen op het ODCN-prod-cluster (beide poorten, eigen cert,
 - **Poort 8443/MetalLB (Manager-mesh): vervallen (#723)** — mesh loopt op :443-SNI (zie boven).
   MetalLB-IP's blijven schaars maar zijn voor de mesh niet meer nodig.
 - `edge`/`reencrypt`-terminatie of client-cert-in-header **breken** de certificate-binding — verboden.
-- **ZAD deployt images, geen Helm.** `zad-actions/deploy` neemt een `components:`-lijst van
-  `{name, image}`. OpenFSC-charts = bron voor image- + env-namen, niet het deploy-artefact.
-  Config = env-vars + gemounte certs (Operations Manager, éénmalig; previews erven via
-  `clone-from: test`). **DB-migratie (#723, opgelost):** ZAD ondersteunt nog geen args/init-containers
-  → migreren zit in een wrapper-image `deploy/zad/manager-migrate/` (`migrate up && serve`
-  in de entrypoint; deploy-image, geen fork).
+- **ZAD deployt images, geen Helm.** CI gebruikt `RijksICTGilde/zad-actions/deploy` (SHA-gepind,
+  zoals `moza-poc-fbs-berichtenbox`) met een `components:`-lijst van `{name, image}`.
+  OpenFSC-charts = bron voor image- + env-namen, niet het deploy-artefact. **Projectconfig**
+  (env_vars, aliases, services, bijlagen, web-publicatie) staat in de Operations Manager UI en
+  gebruikt deploy-variabelen (`$DEPLOYMENT_NAME`, `$DATABASE_*`), zodat elk deployment 'm erft;
+  `peers/directory/manager.env.example` documenteert die waarden maar dwingt niets af.
+  **DB-migratie (#723, opgelost):** ZAD ondersteunt nog geen args/init-containers → migreren zit in
+  een wrapper-image `deploy/zad/manager-migrate/` (`migrate up && serve` in de entrypoint).
 - ZAD-pods configureren via **env-vars / gemounte files**, niet via CLI-args (ZAD ondersteunt
   nog geen component-args).
 

@@ -93,7 +93,7 @@ provider_contracts() {
 # jq (host-side) laat ons de accept-STAAT checken i.p.v. blote hash-aanwezigheid: de consumer
 # heeft het contract zélf opgesteld, dus de content_hash staat in de lijst vanaf creatie —
 # aanwezigheid bewijst dus géén provider-accept. Alleen een provider-handtekening onder
-# signatures.accept doet dat. jq is een bestaande repo-dependency (deploy/zad/upsert-directory.sh).
+# signatures.accept doet dat. jq is een repo-dependency.
 HAVE_JQ=0; command -v jq >/dev/null 2>&1 && HAVE_JQ=1
 
 # Echoot "yes" | "no" | "unknown": draagt het contract met content_hash $2 een accept-handtekening

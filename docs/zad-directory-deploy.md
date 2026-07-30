@@ -4,8 +4,8 @@
 > peers kunnen announcen. Gegrond op `docs/spikes/zad-attachments.md` (cert-mount-ontwerp A) en de
 > ZAD Operations Manager API (`https://zad.rijksapp.nl/openapi.json`, v2).
 >
-> **Status (2026-06-30): directory LIVE op ZAD** (deployment `pr-723` — nog met de oude
-> issuenummer-naam; auto-previews heten voortaan `pr-<PR-nummer>`). `migrate up` ok tegen de
+> **Status (2026-06-30): directory LIVE op ZAD**, deployment `test` — de deployment waar `main`
+> naartoe rolt en waar previews (`pr-<PR-nummer>`) van klonen. `migrate up` ok tegen de
 > managed Postgres, manager serveert, **self-announce geslaagd** (`EVENT_TYPE_CREATE_PEER`, OIN
 > `00000000000000000010`, SUCCEEDED). Cert-mount (ontwerp A) + managed DB bewezen op ODCN-prod.
 >
@@ -13,24 +13,33 @@
 > ZAD's managed Postgres (`postgresql-database`-service) voor betere resource-pooling. De manager
 > krijgt de service + bouwt `STORAGE_POSTGRES_DSN` uit de connection-substitutievars
 > (`$DATABASE_SERVER_USER`/`$DATABASE_PASSWORD`/`$DATABASE_SERVER_HOST`/`$DATABASE_DB`, poort 5432),
-> via een `aliases`-regel — zie `deploy/zad/upsert-directory.sh` en `peers/directory/manager.env.example`.
+> via een `aliases`-regel — zie de Operations Manager UI (project `mft-tp9`) en
+> `peers/directory/manager.env.example`.
 
-## Taakverdeling: API/CI vs UI
+## Taakverdeling: CI vs UI
 
-- **Via `deploy/zad/upsert-directory.sh` (ZAD-API, secret `ZAD_API_KEY_DIRECTORY`):** deployment +
-  componenten + images **+ env_vars**. `:upsert-deployment` maakt het deployment; `POST /components`
-  maakt elke component mét env + poort. Het script bevat de poorten + env (uit de lokale harness).
-- **Alleen in de Operations Manager UI** (niet in de deploy-API): **bijlagen** (cert-mount, ontwerp A)
-  en **"Publicatie op het web"** (passthrough-TLS, modus 2).
+- **Via CI (`zad-deploy-directory.yml` → `RijksICTGilde/zad-actions/deploy`):** het deployment en
+  per component het draaiende **image**. Meer niet.
+- **In de Operations Manager UI, op projectniveau:** `env_vars`, `aliases`, `services`
+  (managed Postgres), **bijlagen** (cert-mount, ontwerp A) en **"Publicatie op het web"**
+  (passthrough-TLS, modus 2). Die config geldt voor **alle** deployments doordat ze
+  deploy-variabelen gebruikt (`$DEPLOYMENT_NAME`, `$DATABASE_*`) — een nieuw `pr-<n>` erft 'm dus
+  zonder handwerk.
+
+> Git dwingt de env **niet** af: `peers/directory/manager.env.example` (dirmgr) en
+> `peers/directory/dirui.env.example` (dirui) zijn de referentie van wat er in de UI hoort te
+> staan. De v2-API kan env alleen bij het *aanmaken* van een component zetten
+> (`AddComponentRequest`), niet bijwerken (`UpdateComponentRequest` heeft geen `env_vars`/`aliases`).
+> Er loopt een feature request bij ZAD-beheer om dat te openen.
 
 ## Componenten (project `mft-tp9`)
 
-Namen: kleine letters + cijfers, geen streepjes, max 12 tekens. Aangemaakt door
-`deploy/zad/upsert-directory.sh` (`apply`).
+Namen: kleine letters + cijfers, geen streepjes, max 12 tekens. Aangemaakt in de Operations
+Manager UI (project `mft-tp9`).
 
 | Component | Image | Service / Web / Bijlagen | Rol |
 |-----------|-------|--------------------------|-----|
-| `dirmgr` | `ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:<tag>` | **`postgresql-database`** + **Web modus 2** + **6 bijlagen** | manager (directory-mode, migrate→serve) + managed Postgres |
+| `dirmgr` | `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:<tag>` | **`postgresql-database`** + **Web modus 2** + **6 bijlagen** | manager (directory-mode, migrate→serve) + managed Postgres |
 | `dirui` | `docker.io/federatedserviceconnectivity/directory-ui:v1.43.7` | Web (edge) + 3 bijlagen | dienstencatalogus-UI |
 
 **Geen eigen postgres-component** — `dirmgr` gebruikt ZAD's managed Postgres via de
@@ -52,17 +61,22 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 > deployment **`test`**. De directory = 2 componenten (`dirmgr` + `dirui`) op ZAD's managed
 > Postgres; een upsert van `test` vervangt de bestaande placeholder-component `directory` (image
 > leeg). Manager-hostnaam dan: `dirmgr-test-mft-tp9.<base_domain>` (= `SELF_ADDRESS`). Een PR rolt
-> **automatisch** een preview `pr-<PR-nummer>` uit (`pull_request`-trigger); bij het sluiten van de
-> PR wordt die weer opgeruimd. `pr-<PR-nummer>` = het PR-nummer, niet het issuenummer.
+> een preview `pr-<PR-nummer>` uit zodra de gewijzigde bestanden in de deploy-paden vallen (bepaald
+> in de `changes`-job) — niet elke `pull_request`-trigger deployt. Dependabot-PR's worden altijd
+> overgeslagen (`skip-bot-prs: 'true'`), ook als hun diff wél in die paden valt. Bij het sluiten van
+> de PR wordt een gedeployde preview weer opgeruimd. `pr-<PR-nummer>` = het PR-nummer, niet het
+> issuenummer.
 
 ## Stappen
 
 ### 1. Image bouwen + pushen
 
 Draai `build-manager-migrate.yml` (Actions → workflow_dispatch, `image_tag=v1.43.7`), of merge een
-wrapper-wijziging naar `main`. Resultaat: `ghcr.io/minbzk/moza-fsc-testnet/manager-migrate:v1.43.7`
-(en/of `…:v1.43.7-<branch>` voor previews). Controleer dat het package zichtbaar is voor het
-ZAD-pull-mechanisme (ghcr-package → repo-linked via de `org.opencontainers.image.source`-label).
+wrapper-wijziging naar `main`. Resultaat: `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:v1.43.7`
+(en/of `…:v1.43.7-pr-<n>` voor previews — de `image_suffix`-input van de reusable
+`workflow_call` hangt het PR-nummer achter de tag, geen branch-slug). Controleer dat het package
+zichtbaar is voor het ZAD-pull-mechanisme (ghcr-package → repo-linked via de
+`org.opencontainers.image.source`-label).
 
 ### 2. Certs + upload-set genereren (jouw host)
 
@@ -91,19 +105,22 @@ Vink **"bijlagen"** aan op `dirmgr` en voeg elke file uit `MANIFEST.md` toe als
 **Geen `combined.pem` nodig** (modus 2 = pod serveert losse cert/key). Bijlagen zijn read-only +
 binary-safe (spike vraag 4).
 
-### 4. Env zetten (nu in `upsert-directory.sh`; hieronder ter referentie)
+### 4. Env zetten (UI, projectconfig; hieronder ter referentie)
 
-`upsert-directory.sh` zet de env al mee (`POST /components`). Waarden ter referentie:
+De env staat op `dirmgr`/`dirui` in de Operations Manager UI (project `mft-tp9`), niet in git.
+Waarden ter referentie:
 
 - `dirmgr`: de waarden uit `peers/directory/manager.env.example`, met:
-  - `SELF_ADDRESS=https://dirmgr-test-mft-tp9.<base_domain>` (of de PR-deployment)
-  - `DIRECTORY_MANAGER_ADDRESS=` idem (directory wijst naar zichzelf)
+  - `SELF_ADDRESS=https://dirmgr-test-mft-tp9.<base_domain>:443` (of de PR-deployment) — de
+    `:443` is verplicht: OpenFSC faalt fataal op "missing port in manager address" zonder
+    expliciete poort, en `:443` is de mesh-poort (ingress SNI-passthrough naar pod-poort 8443).
+  - `DIRECTORY_MANAGER_ADDRESS=` idem, incl. `:443` (directory wijst naar zichzelf)
   - `STORAGE_POSTGRES_DSN` uit de managed-Postgres-substitutievars (`$DATABASE_*`) — geen eigen
     postgres-component.
   - `DISABLE_CRL_CHECKS=true` als **interim** (lege CRL, geen distributiepunt). `TODO(#722)`:
     CRL-pad mounten + `DISABLE_CRL_CHECKS` weghalen vóór go-live (zie `manager.env.example`).
-- `dirui`: zie de `directory-ui`-env in `deploy/local/docker-compose.yaml` (adres-namen naar de
-  ZAD-hostnaam).
+- `dirui`: de waarden uit `peers/directory/dirui.env.example`, met dezelfde
+  `DIRECTORY_MANAGER_ADDRESS`-alias (naar dirmgr op dezelfde deployment) als hierboven.
 
 ### 5. "Publicatie op het web" → modus 2 (UI)
 
@@ -114,54 +131,68 @@ gewone (edge) publicatie krijgen — die doet geen mTLS-mesh.
 
 ### 6. Deployen
 
-Eén bron — `deploy/zad/upsert-directory.sh` (3 modi) — voor zowel CLI als CI:
+Deployen doet CI. Handmatig kan via **Actions → zad-deploy-directory → Run workflow**
+(`deployment`, `image_tag`, `manager_tag`). Er is geen lokaal deploy-script meer; wil je zien wat
+er staat, kijk dan in de Operations Manager UI of doe een read-only API-call:
 
 ```bash
-read -rs ZAD_API_KEY; export ZAD_API_KEY              # plak de key niet inline
-./deploy/zad/upsert-directory.sh validate             # read-only auth/connectie-check
-./deploy/zad/upsert-directory.sh plan  test v1.43.7   # toont alle JSON-bodies, muteert NIET (review)
-./deploy/zad/upsert-directory.sh apply test v1.43.7   # upsert deployment + maakt componenten (env), pollt tasks
-# ad-hoc preview (eigen verse DB; auto-previews doen dit via de pull_request-trigger):
-./deploy/zad/upsert-directory.sh apply pr-123 v1.43.7
+read -rs ZAD_API_KEY; export ZAD_API_KEY     # plak de key niet inline
+curl -sS -H "X-API-Key: $ZAD_API_KEY" \
+  https://zad.rijksapp.nl/api/v2/projects/mft-tp9/deployments | jq -r '.deployments[].name'
 ```
 
-Het script maakt het deployment (`:upsert-deployment`, `domain_format=component-deployment-project`)
-en de 2 componenten (`dirmgr` + `dirui`) met poorten + env (`POST /components`), en pollt elke task. `plan` toont eerst
-de exacte bodies. **Daarna nog handmatig (UI, stappen 3 + 5):** bijlagen (certs) + Publicatie op het
-web modus 2 op `directory-manager`. Via CI: `zad-deploy-directory.yml` (zelfde script; beschikbaar
-zodra 'ie op `main` staat). Env (stap 4) zit nu in het script — UI-env niet meer nodig.
+**Blijft handwerk in de UI (stappen 3 + 5):** bijlagen (certs) + Publicatie op het web modus 2 op
+`dirmgr` — eenmalig per project, niet per deployment.
 
 ### Auto-deploy naar `test` op main
 
 `zad-deploy-directory.yml` triggert náást `workflow_dispatch` (previews/handmatig) ook op **push
 naar main** — een merge (CI groen) rolt de directory automatisch uit naar deployment `test`
 (besluit in `docs/ontwerpkeuzes.md`, ontwerp in `docs/superpowers/specs/`). Push-pad zet vast:
-`mode=apply`, `deployment=test`, `image_tag=v1.43.7`, `manager_tag=""` (canonieke tag).
+`deployment=test`, `image_tag=v1.43.7`, `manager_tag=""` (canonieke tag).
 
-Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) automatisch een
-`pr-<PR-nummer>`-preview uit en ruimt een `cleanup-preview`-job die op bij het sluiten van de PR;
+Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) een `pr-<PR-nummer>`-preview
+uit zodra de `changes`-job de deploy-paden geraakt ziet — net als bij de push-naar-main hierboven,
+géén automatisme voor élke PR. Dependabot-PR's worden altijd overgeslagen (`skip-bot-prs: 'true'`).
 `workflow_dispatch` blijft voor handmatige overrides.
 
-Path-filter (alleen deze paden triggeren de auto-deploy):
-`deploy/zad/upsert-directory.sh`, `deploy/zad/manager-migrate/**`, `group/**`, de workflow zelf.
-Docs- en peer-merges blijven dus stil.
+Path-filter (alleen deze paden triggeren de auto-deploy, en een docs-only wijziging — `^docs/` of
+`*.md` — telt nooit mee, ook niet binnen zo'n pad): `deploy/zad/manager-migrate/**`, `group/**`, de
+workflow zelf én `build-manager-migrate.yml` (de build-recipe zelf). Docs- en peer-merges blijven
+dus stil. Voor `push` staat dat pad-filter ook in de
+trigger-`paths:` van de workflow zelf; de docs-uitzondering zit daar niet bij (de docs-only-conjunctie
+loopt alleen via de `changes`-job — zie hieronder). Voor `pull_request` zit de hele filter (paden +
+docs-uitzondering) in de `changes`-job, op basis van de bestandenlijst uit de GitHub PR-API (niet
+`git diff` — dat gebruikt alleen de `push`-tak) — zo blijft bijvoorbeeld het `closed`-event van een PR
+altijd bereikbaar voor de `cleanup-preview`-job, ongeacht welke bestanden die PR wijzigde. De
+`changes`-job checkt de repo daarom ook alléén uit op het `push`-pad (nodig voor `git diff`); op
+`pull_request` (de GitHub PR-API volstaat) en `workflow_dispatch` (er is geen bestandenlijst om te
+lezen) slaat de job checkout over.
 
-Drie jobs voorkomen de build-deploy-race:
+Een `pull_request`-preview ruimt een `cleanup-preview`-job op bij het sluiten van de PR.
+
+Vóór `changes`/`build`/`deploy` bepaalt een `meta`-job eerst de afgeleide waarden die de andere
+jobs delen: de deployment-naam, de OpenFSC-basistag (`image_base`) en de manager-image-suffix
+(`manager_suffix`). Diezelfde job valideert ook de ruwe `workflow_dispatch`-inputs (`deployment`,
+`image_tag`, `manager_tag`) tegen een toegestaan-tekens-patroon vóórdat ze als deployment-naam of
+in de `components:`-JSON belanden.
+
+Daarna voorkomen drie jobs de build-deploy-race:
 
 | Job | Wanneer | Doet |
 |-----|---------|------|
-| `changes` | elke push | `git diff` (run-step) → output `manager_migrate_changed` |
-| `build` | alleen als `manager-migrate/**` wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht canonieke `v1.43.7` |
-| `deploy` | ná build-succes, óf meteen als build geskipt | `upsert-directory.sh apply test` |
+| `changes` | elke push mét pad-match, én elke PR (open/sync/reopened/closed) | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
+| `build` | alleen als `manager-migrate/**` óf `build-manager-migrate.yml` zelf non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
+| `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR; controleert daarna dat élk component een URL kreeg |
 
-Image-change → build eerst → deploy (image bestaat gegarandeerd vóór `apply`). Config/group-change
+Image-change → build eerst → deploy (image bestaat gegarandeerd vóór de deploy-stap). Config/group-change
 → build skip → deploy herbruikt de bestaande tag. De manager-migrate-image bouwt via de reusable
 `workflow_call` in `zad-deploy-directory.yml` (build → deploy in één run, ordering-veilig).
 `build-manager-migrate.yml` heeft géén eigen `push`-trigger meer; een preview krijgt zijn image
 (`v1.43.7-pr-<n>`) uit die call, main de canonieke `v1.43.7`.
 
 Faalt de deploy, dan is dat een **kale rode run** in de Actions-tab (bewust, geen auto-issue).
-Handmatige/preview-deploys en `validate`/`plan` blijven via `workflow_dispatch` (zie stap 6).
+Handmatige/preview-deploys blijven via `workflow_dispatch` (zie stap 6).
 
 ### 7. Verifiëren
 
@@ -175,8 +206,12 @@ Handmatige/preview-deploys en `validate`/`plan` blijven via `workflow_dispatch` 
 ## Openstaande TODO's
 
 - CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS=true` (#722) — **gate vóór go-live**.
+- **`sslmode=disable`** op `STORAGE_POSTGRES_DSN` (zie `peers/directory/manager.env.example`) is
+  géén losse TODO maar een **expliciet geaccepteerde keuze**: intra-cluster verkeer naar ZAD's
+  managed Postgres, gesloten testnet, synthetische data. Herzien zodra er échte berichtinhoud of
+  PKIoverheid in beeld komt.
 - **Health-probe** doet een standaard TCP-poort-check op `:8443` (mTLS) → manager logt
   `TLS handshake error … EOF` (cosmetisch; pod healthy). Protocol-aware probe **aangevraagd bij ZAD**.
 - **Key-permissies**: bijlagen worden read-only gemount (niet 0600) → `invalid PKI key permissions`
   (non-fataal). 0600-mount **aangevraagd als feature-request bij ZAD**.
-- `dirui` afmaken (3 bijlagen + edge-publicatie); directory naar `test` (centrale singleton).
+- `dirui` afmaken (3 bijlagen + edge-publicatie).
