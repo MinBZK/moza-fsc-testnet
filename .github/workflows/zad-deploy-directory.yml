@@ -187,11 +187,8 @@ jobs:
                 emit true true; exit 0
               fi
               # Docs-only wijzigingen tellen niet mee, ook niet binnen een bewaakt pad (bv.
-              # deploy/zad/manager-migrate/README.md) — vóór de paths-check uitfilteren.
-              # (voorheen de trigger-`paths:` zelf + een losse `grep -qvE '(^docs/|\.md$)'`
-              # op `run`; nu hier gecombineerd, zodat het closed-event er niet meer door
-              # geblokkeerd wordt — zie de trigger-comment hierboven — én `changed` dezelfde
-              # docs-uitsluiting krijgt.)
+              # deploy/zad/manager-migrate/README.md) — vóór de paths-check uitfilteren, zodat
+              # `run` én `changed` dezelfde uitsluiting krijgen.
               non_doc_files=$(printf '%s\n' "$files" | grep -vE '(^docs/|\.md$)' || true)
               # run: raakt een non-docs wijziging deploy/zad/manager-migrate/, group/, deze
               # workflow zelf, of de build-recipe (build-manager-migrate.yml)?

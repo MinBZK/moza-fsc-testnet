@@ -1,13 +1,9 @@
-# Gedeelde verificatiestap voor "is deze ZAD-deployment écht weg" — gebruikt door zowel
-# zad-cleanup.yml (handmatig pad) als de cleanup-preview-job in zad-deploy-directory.yml
-# (PR-close-pad). Was tot deze wijziging een ~65-regelig, letterlijk gekopieerd script in beide
-# workflows; de kopieën waren al beginnen uiteenlopen (precies het faalpatroon dat deze PR
-# meermaals raakte). Eén bron hier voorkomt dat een fix voortaan opnieuw in slechts één kopie
-# landt.
+# Bevestigt hard dat een ZAD-deployment weg is. Nodig omdat zad-actions/cleanup een mislukte
+# delete tot ::warning:: degradeert en exit 0 geeft — een groene run zegt dus niets over de
+# werkelijke staat. Rationale + de vraag of dit nog nodig is:
+# https://github.com/MinBZK/MijnOverheidZakelijk/issues/891
 name: "Verifieer ZAD-deployment verwijderd"
-description: >-
-  Bevestigt hard dat een ZAD-deployment niet meer bestaat, i.p.v. te vertrouwen op de
-  zad-actions/cleanup-eigen ::warning:: bij een mislukte delete (die faalt de step niet).
+description: "Faalt de job als een ZAD-deployment na cleanup nog bestaat of niet te verifiëren is."
 inputs:
   deployment:
     description: "deployment-naam die geverifieerd moet worden"
@@ -25,48 +21,29 @@ runs:
   using: composite
   steps:
     - name: Verifieer dat de deployment echt weg is
-      # De action rapporteert een mislukte delete als ::warning:: en faalt de step niet (zie
-      # zad-common.sh) — zonder harde verificatie hier zou een 401 (bv. na key-rotatie) of 5xx
-      # een groene run opleveren terwijl de deployment nog live staat op het productiecluster.
-      # Scoped endpoint (GET .../deployments/{deployment}) i.p.v. de lijst: die laatste is
-      # cluster-gefilterd ("Returns only deployments targeting the current cluster" — ZAD
-      # OpenAPI) en DeploymentListResponse.required is enkel ["project","cluster"], dus
-      # `deployments` mag legitiem ontbreken/null zijn — afwezigheid in die lijst bewijst dus
-      # niets. De scoped endpoint geeft gewoon 404 (weg) of 2xx (bestaat nog).
-      # Een kale 404 is echter GEEN bewijs op zichzelf: live tegen de API geprobeerd, komt
-      # diezelfde 404 ook terug op een onbekend pad én op een leeg project-segment — zónder dat
-      # de key ooit gecontroleerd wordt. Staat het project ooit leeg/fout, of verandert het
-      # endpoint-pad upstream, dan zou deze stap voorheen permanent "opgeruimd" melden terwijl de
-      # deployment op het productiecluster blijft draaien. Daarom telt een 404 pas als de
-      # key/project ook aantoonbaar kloppen: het lijst-endpoint (zonder /{deployment}) is
-      # authenticated + project-scoped, dus een verkeerde key geeft 401 en een verkeerd project
-      # geeft geen 200 — alléén een 200 daar bevestigt dat de 404 hierboven "weg" betekent i.p.v.
-      # "onbevoegd/verkeerd pad". (Live geverifieerd tegen de API: een foute key geeft 401
-      # {"detail":"Invalid API key"}, een lege key geeft 401 {"detail":"Authentication
-      # required..."} — dit staat NIET in de OpenAPI-spec, die voor deze endpoints alleen
-      # 200/404/422 declareert. Niet laten "corrigeren" naar de spec.)
-      # Maar het lijst-endpoint bewijst ook maar één kant: afwezigheid van de naam in een 200-lijst
-      # bewijst niets (zie hierboven, cluster-gefilterd), AANWEZIGHEID wél — als $deployment daar
-      # gewoon in staat, is de 404 op het scoped pad zelf verdacht (bug/upstream-wijziging), en
-      # mag die 404 niet als bewijs van verwijdering doorgaan.
+      # Bewijsvoering, en waarom het niet simpeler kan:
+      #   - het scoped endpoint (.../deployments/{d}) geeft 404 (weg) of 2xx (bestaat nog);
+      #   - een kale 404 bewijst niets: die komt ook van een onbekend pad of een leeg
+      #     project-segment, zonder dat de key gecontroleerd wordt;
+      #   - het lijst-endpoint is cluster-gefilterd, dus afwezigheid daarin bewijst niets —
+      #     alleen AANWEZIGHEID bewijst dat de deployment nog bestaat;
+      #   - een 200 op de lijst bevestigt wél key + project (foute of lege key geeft 401 —
+      #     live gemeten 2026-07-30; de OpenAPI declareert die 401 níet, dus niet "corrigeren"
+      #     naar de spec).
+      # Daarom: 404 + lijst-200 + naam niet in die lijst = weg. Al het andere faalt.
       shell: bash
       env:
         DEPLOYMENT: ${{ inputs.deployment }}
         ZAD_PROJECT: ${{ inputs.project }}
         ZAD_API_KEY: ${{ inputs.api-key }}
         ZAD_API_BASE: ${{ inputs.api-base }}
-      # De operator-/log-teksten in dit script (::error::/::notice::-regels) blijven bewust op
-      # één regel — dat is hoe GitHub Actions-annotaties werken — en overschrijden daardoor
-      # yamllint's line-length. Dezelfde afweging geldt al voor de identieke boodschappen in de
-      # workflows zelf (.github/workflows/ staat daarom in .yamllint.yaml's `ignore:`).
+      # Annotatie-teksten staan per definitie op één regel; yamllint's line-length geldt hier niet.
       # yamllint disable rule:line-length
       run: |
         set -euo pipefail
 
-        # Vangrail: een leeg project geeft vandaag toevallig al 404 en een lege key toevallig al
-        # 401 (dus de stap faalt sowieso al dicht) — maar zonder deze check wees de foutmelding
-        # daarna de verkeerde kant op ("onverwachte status", i.p.v. de echte, triviale oorzaak).
-        # Expliciet en vóór de lus, met de juiste variabele in de melding.
+        # Een leeg project of een lege key faalt verderop toch (404 resp. 401), maar dan met een
+        # melding die de verkeerde kant op wijst.
         if [ -z "$ZAD_PROJECT" ]; then
           echo "::error::ZAD-project-ID is leeg — kan de verwijdering van '$DEPLOYMENT' niet verifiëren zonder project."
           exit 1
@@ -79,12 +56,9 @@ runs:
         attempts=6
         interval=10
         for attempt in $(seq 1 "$attempts"); do
-          # `|| true` (i.p.v. `|| echo "000"`): curl schrijft de -w-uitvoer ('000' bij een
-          # connect-/timeout-fout) zelf al naar stdout vóórdat het faalt; een aparte
-          # `|| echo "000"` erachter plakte daar een tweede '000' aan vast ("HTTP 000000"), en
-          # liet de numerieke vergelijkingen hieronder struikelen op "integer expression
-          # expected". De case-normalisatie hierna is het sluitstuk: elke uitkomst die geen drie
-          # cijfers is (leeg, of iets onverwachts) wordt hard '000'.
+          # `|| true`, niet `|| echo "000"`: curl schrijft de -w-uitvoer ('000' bij een
+          # connect-/timeoutfout) zelf al naar stdout. De case-normalisatie erna dwingt af dat
+          # $http_code altijd drie cijfers is, zodat de vergelijkingen hieronder niet struikelen.
           http_code=$(curl -sS -o /tmp/zad-deployment.json -w '%{http_code}' \
             --connect-timeout 10 --max-time 30 \
             -H "X-API-Key: $ZAD_API_KEY" \
@@ -96,8 +70,6 @@ runs:
           esac
 
           if [ "$http_code" = "404" ]; then
-            # Lichaam nu bewaard (niet meer -o /dev/null): nodig voor de positieve-richting-check
-            # hieronder.
             list_code=$(curl -sS -o /tmp/zad-deployments-list.json -w '%{http_code}' \
               --connect-timeout 10 --max-time 30 \
               -H "X-API-Key: $ZAD_API_KEY" \
@@ -109,24 +81,17 @@ runs:
             esac
 
             if [ "$list_code" = "200" ]; then
-              # Positieve richting: staat $DEPLOYMENT er, ondanks een 200, tóch in de lijst? Dan
-              # is dat een contradictie met de 404 hierboven — en de enige richting die iets
-              # bewijst (zie de rationale bovenaan dit bestand). Recursieve jq-scan
-              # (any(.. | strings; . == $d)) i.p.v. een vaste veldnaam als `.deployments[].name`:
-              # de exacte itemvorm van deze lijst staat nergens compleet gedocumenteerd, dus zoek
-              # de naam overal in de boom i.p.v. te gokken op een pad dat morgen kan verschuiven.
+              # Recursieve scan i.p.v. `.deployments[].name`: de itemvorm van deze lijst staat
+              # niet volledig in de spec, dus zoek de naam overal in de boom.
               if jq -e --arg d "$DEPLOYMENT" 'any(.. | strings; . == $d)' /tmp/zad-deployments-list.json >/dev/null 2>&1; then
-                echo "::error::Lijst-endpoint (HTTP 200) bevat '$DEPLOYMENT', terwijl het scoped endpoint (.../deployments/$DEPLOYMENT) net 404 gaf — dat is tegenstrijdig. Deze 404 is dus GEEN bewijs dat de cleanup gelukt is (het scoped pad is vermoedelijk stuk, of upstream gewijzigd). Controleer handmatig in de Operations Manager UI."
+                echo "::error::Lijst-endpoint (HTTP 200) bevat '$DEPLOYMENT', terwijl het scoped endpoint (.../deployments/$DEPLOYMENT) net 404 gaf — tegenstrijdig, dus die 404 is geen bewijs van verwijdering (scoped pad stuk of upstream gewijzigd). Controleer handmatig in de Operations Manager UI."
                 exit 1
               fi
-              echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts; key/project bevestigd via het lijst-endpoint, '$DEPLOYMENT' komt er niet in voor)."
+              echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts; key/project bevestigd via het lijst-endpoint)."
               exit 0
             fi
 
-            # Tijdelijke transport-/serverfout op de CONFIRMATIE-call (000/5xx) is even transiënt
-            # als hetzelfde op de scoped call hieronder — één blip hier mag een verder correcte
-            # cleanup niet meteen rood laten uitslaan. Alleen een definitieve non-200 (401/403/
-            # 404/422/anders) telt hierna als "kon niet bevestigen".
+            # Transiënte fout op de confirmatie-call: even herhaalbaar als op de scoped call.
             if [ "$list_code" = "000" ] || { [ "$list_code" -ge 500 ] && [ "$list_code" -lt 600 ]; }; then
               if [ "$attempt" -lt "$attempts" ]; then
                 echo "Tijdelijke fout (HTTP $list_code) bij het bevestigen via het lijst-endpoint (poging $attempt/$attempts) — over ${interval}s opnieuw proberen."
@@ -137,7 +102,7 @@ runs:
               exit 1
             fi
 
-            echo "::error::404 op '$DEPLOYMENT', maar het lijst-endpoint gaf HTTP $list_code i.p.v. 200 — key/project kon niet bevestigd worden, dus deze 404 telt niet als bewijs dat de cleanup gelukt is. Controleer de API-key/project-vars en de Operations Manager UI."
+            echo "::error::404 op '$DEPLOYMENT', maar het lijst-endpoint gaf HTTP $list_code i.p.v. 200 — key/project kon niet bevestigd worden, dus deze 404 telt niet als bewijs. Controleer de API-key/project-vars en de Operations Manager UI."
             exit 1
           fi
 
@@ -151,10 +116,8 @@ runs:
             exit 1
           fi
 
-          # Tijdelijke transport-/serverfouten (connectiefout/timeout = '000', of 5xx) op de
-          # SCOPED call krijgen dezelfde begrensde herhaling als "nog aanwezig": één 502 of een
-          # netwerk-hikje mag een verder correcte cleanup niet meteen rood laten uitslaan. Andere
-          # statussen (401, 403, overige 4xx, ...) zijn niet transiënt en falen wél meteen.
+          # 000 = connectiefout/timeout. Andere statussen (401, 403, overige 4xx) zijn niet
+          # transiënt en falen meteen.
           if [ "$http_code" = "000" ] || { [ "$http_code" -ge 500 ] && [ "$http_code" -lt 600 ]; }; then
             if [ "$attempt" -lt "$attempts" ]; then
               echo "Tijdelijke fout (HTTP $http_code) bij het verifiëren van '$DEPLOYMENT' (poging $attempt/$attempts) — over ${interval}s opnieuw proberen."
@@ -169,9 +132,7 @@ runs:
           exit 1
         done
 
-        # Elke tak hierboven eindigt al met exit — dit punt is vandaag onbereikbaar. Maar een
-        # toekomstige edit die per ongeluk een `continue` toevoegt zonder de "laatste
-        # poging"-guard zou de lus stil laten leeglopen en de step alsnog groen laten eindigen.
-        # Deze regel maakt dat door constructie onmogelijk.
+        # Onbereikbaar zolang elke tak exit't; vangt een toekomstige `continue` zonder
+        # laatste-poging-guard af, die de step anders stil groen zou laten eindigen.
         echo "::error::Verificatielus is beëindigd zonder resultaat (elke poging hoort te exit'en) — cleanup NIET geverifieerd. Dit duidt op een bug in de verificatiestap zelf."
         exit 1
