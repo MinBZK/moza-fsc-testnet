@@ -143,7 +143,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   # Bepaalt of er gedeployd moet worden (run) + of de manager-migrate-wrapper wijzigde
-  # (build nodig). PR: via de bestandenlijst (docs-only skip, fork skip, close skip).
+  # (build nodig). PR: docs-only en de paden via de bestandenlijst; fork- en bot-skip uit de
+  # event-payload; `closed` komt hier niet eens (job-`if` hieronder).
   # push: git diff. dispatch: run=true, changed=false (geef desnoods manager_tag mee).
   changes:
     # Een `closed`-event heeft hier niets te classificeren: er valt niets te deployen en
@@ -249,10 +250,12 @@ jobs:
               # Here-string i.p.v. `printf | grep -q`: `grep -q` sluit de pipe bij de eerste match,
               # printf krijgt dan SIGPIPE, en onder `pipefail` wordt de pipeline-status 141 —
               # waardoor een match als "geen match" leest. Dat treedt op zodra de bestandenlijst de
-              # pipe-buffer (64 KB) vult én de match vroeg in de lijst staat: gemeten begint het bij
-              # ~2000 paden en is het hard vanaf ~2500 (bij ~29 byte per pad). Gevolg zou zijn:
-              # `run=false` op een PR die de directory wél raakt, stil groen — anders dan de
-              # SIGPIPE-valkuil bij `head -n1` verderop, die de stap juist luid laat falen.
+              # pipe-buffer vult én de match vroeg in de lijst staat. Let op de vorm: dit is een
+              # kansproces, geen drempel — gemeten (29-byte paden, match op regel 1) mist ~1 op 20 runs
+              # bij 2000 paden en ~6 op 20 bij 2500, en zelfs bij 3200 paden lukt het soms nog wél. De
+              # classificatie zou dus flaky zijn, niet stuk: `run=false` op een PR die de directory wél
+              # raakt, stil groen — anders dan de SIGPIPE-valkuil bij `head -n1` verderop, die de stap
+              # juist luid laat falen.
               # run: raakt een non-docs wijziging deploy/zad/manager-migrate/, group/, deze
               # workflow zelf, of de build-recipe (build-manager-migrate.yml)?
               if grep -qE '^(deploy/zad/manager-migrate/|group/|\.github/workflows/zad-deploy-directory\.yml$|\.github/workflows/build-manager-migrate\.yml$)' <<<"$non_doc_files"; then
@@ -437,9 +440,10 @@ jobs:
           # fail-open (wat er al staat overleeft stilzwijgend, bv. een preview die eerder via een
           # handmatige workflow_dispatch wél is aangemaakt vóórdat het bot-PR opnieuw sloot). De
           # action geeft bij een skip zelf alleen een ::notice:: (onzichtbaar in de praktijk); de
-          # ONGATE-stap hieronder maakt dat zichtbaar met een ::warning::. Merk op dat de primaire
-          # bot-guard sinds de bot-tak in de `changes`-job vóór de build zit; deze input blijft als
-          # vangnet staan (het is bovendien de upstream default).
+          # ONGATE-stap hieronder maakt dat zichtbaar met een ::warning::. Let op: op een
+          # `closed`-event draait de `changes`-job niet (job-`if`), dus de bot-tak daarin dekt dít pad
+          # niet — hier is deze input de énige bot-gate. Niet weghalen omdat "de primaire guard elders
+          # zit".
           skip-bot-prs: 'true'
           # Zelfde reden als bij de deploy-job: upstream default (300s) is krap voor een
           # ArgoCD-sync; bij een timeout degradeert de action een mislukte delete tot ::warning::
@@ -609,7 +613,9 @@ jobs:
       #   - `ref:` op de default branch i.p.v. de impliciete `github.ref`. Die is bij een
       #     `pull_request`-event `refs/pull/<n>/merge`, en die kan na het sluiten van een PR
       #     verdwijnen. Belangrijker: de verificatiecode die de productie-API-key krijgt, komt zo uit
-      #     de gereviewde versie en niet uit de PR-branch. Twee gevolgen om te weten: wijzigingen aan
+      #     de gereviewde versie en niet uit de PR-branch — let op de scope: de workflow-YAML zelf
+      #     (inclusief de `run:`-stappen in deze job) komt bij een `pull_request`-event nog wél uit de
+      #     merge-ref, dus dit dekt alleen de composite action. Twee gevolgen om te weten: wijzigingen aan
       #     deze action valideer je op main (deze PR test ze niet), en voegt een PR een action-input
       #     toe, dan negeert de main-versie die met alleen een GitHub-warning — houd inputs dus
       #     achterwaarts compatibel of merge de action vóór de aanroeper.

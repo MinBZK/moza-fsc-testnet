@@ -1,7 +1,8 @@
 # Bevestigt hard dat een ZAD-deployment weg is. Nodig omdat zad-actions/cleanup een mislukte
 # delete tot ::warning:: degradeert en exit 0 geeft — een groene run zegt dus niets over de
-# werkelijke staat. Deze action kan vervallen zodra upstream een mislukte delete zelf fataal maakt;
-# controleer dat bij een versiebump van zad-actions.
+# werkelijke staat (geverifieerd op zad-actions v4.0.6: `scripts/zad-common.sh` roept de CLI met
+# `--ignore-not-found` aan en logt een fout als `::warning::` zonder non-zero exit). Kan vervallen
+# zodra upstream een mislukte delete zelf fataal maakt; controleer dat bij een versiebump.
 name: "Verifieer ZAD-deployment verwijderd"
 description: "Faalt de job als een ZAD-deployment na cleanup nog bestaat of niet te verifiëren is."
 inputs:
@@ -71,7 +72,7 @@ runs:
         fi
         # Zonder basis-URL bouwt de curl hieronder een pad zonder host: dat faalt met exit 3,
         # `|| true` slikt dat op, de case-normalisatie maakt er '000' van en je kijkt 60s naar
-        # retries op een niet-bestaand netwerkprobleem.
+        # retries op een niet-bestaand netwerkprobleem (per poging 3 calls van max 30s).
         if [ -z "$ZAD_API_BASE" ]; then
           echo "::error::ZAD-API-basis is leeg — kan de verwijdering van '$DEPLOYMENT' niet verifiëren zonder api-base."
           exit 1
@@ -117,8 +118,9 @@ runs:
               # (--max-time midden in de transfer) of een ontbrekende jq-binary als "naam niet
               # gevonden" → "Geverifieerd: bestaat niet meer" + exit 0. Dat is precies de
               # fail-open die deze action moet uitsluiten.
-              # jq -e faalt hier op een parsefout (exit 5), op geen output (exit 4) én op een body
-              # die geldig JSON `null`/`false` is — alle drie zijn hier onbruikbaar, dus dezelfde tak.
+              # jq -e faalt hier op drie dingen die alle drie onbruikbaar zijn, dus dezelfde tak: een
+              # parsefout (exit 5), geen output (exit 4), en een body die letterlijk `null` of `false`
+              # is (exit 1 — dat gaat over de body zelf, niet over een ontbrekende naam).
               if ! jq -e . "$RUNNER_TEMP/zad-deployments-list.json" >/dev/null 2>"$RUNNER_TEMP/zad-jq.err"; then
                 jq_err=$(tr '\n' ' ' <"$RUNNER_TEMP/zad-jq.err")
                 echo "::error::Lijst-endpoint gaf HTTP 200 maar geen bruikbare JSON (${jq_err:-lege body, of de body was letterlijk null/false}) — key/project niet te bevestigen, dus de 404 op '$DEPLOYMENT' telt niet als bewijs van verwijdering. Controleer handmatig in de Operations Manager UI."
@@ -148,9 +150,9 @@ runs:
               # om (bug in de expressie, binary weg, OOM), dan is de uitkomst een lege string, die
               # `!= "true"` is, en dan zou de code doorlopen naar "bestaat niet meer" + exit 0.
               # Alleen een letterlijke `false` mag "afwezig" betekenen; al het andere is een fout.
-              # `jq -s`: slurp naar één document. Zonder slurp print jq per JSON-document een regel,
-              # dus een (illegale, maar waargenomen mogelijke) multi-document- of NDJSON-body levert
-              # "false\ntrue" op — dat is niet gelijk aan "true" en zou de naam dus missen.
+              # Geen `jq -s` hier: slurp zou een lége body stil in `false` veranderen ("naam afwezig"
+              # = bewijs van verwijdering). Een multi-document-body wordt al door de vorm-check
+              # hierboven afgekapt, die dan meerdere regels teruggeeft en dus niet "ok" is.
               present=$(jq -r --arg d "$DEPLOYMENT" \
                 'any(.. | objects | select(has("name")) | .name; . == $d)' \
                 "$RUNNER_TEMP/zad-deployments-list.json" 2>/dev/null || true)

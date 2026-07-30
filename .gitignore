@@ -20,7 +20,9 @@
 *.key
 *.crt
 *.crl
-# Keystores/containerformaten met privésleutel erin (naast de losse *.pem/*.key hierboven).
+# Sleutel-/certformaten naast de losse *.pem/*.key hierboven. p12/pfx/jks zijn containers met een
+# privésleutel; der is een encoding (vaak een publiek cert) en pk8 een kale PKCS#8-sleutel — alle vier
+# uitgesloten omdat ze hier alleen als gegenereerd materiaal voorkomen.
 *.p12
 *.pfx
 *.jks

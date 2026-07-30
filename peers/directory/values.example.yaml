@@ -1,7 +1,8 @@
 # Directory-peer = OpenFSC-manager in DIRECTORY-MODE (geen apart image).
 # "Directory-mode" is geen OpenFSC-schakelaar maar onze naam voor: DIRECTORY_PEER_ID == eigen OIN,
-# lege TX_LOG_API_ADDRESS en SELF_ADDRESS byte-identiek aan DIRECTORY_MANAGER_ADDRESS (die laatste
-# twee samen zijn wat OpenFSC afdwingt — zie peers/directory/manager.env.example).
+# lege TX_LOG_API_ADDRESS en SELF_ADDRESS byte-identiek aan DIRECTORY_MANAGER_ADDRESS. Wat OpenFSC
+# afdwingt is een implicatie, geen conjunctie: is txlog leeg, dán moeten die twee adressen gelijk
+# zijn (zie peers/directory/manager.env.example).
 # Echte env-namen: open-fsc/helm/charts/open-fsc-manager/templates/deployment.yaml.
 peer:
   oin: "00000000000000000010"        # synthetische infra-OIN -> Peer ID (directory)
