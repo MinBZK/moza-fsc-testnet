@@ -8,7 +8,7 @@
 # Docker op de digest en wordt de tag niet gevalideerd, dus een los ARG IMAGE_TAG zou hier
 # feitelijk niets doen. Bij een versie-bump: deze regel én de workflow-default IMAGE_TAG
 # (voor de output-tag) samen updaten.
-FROM busybox:1.36.1-musl@sha256:3c6ae8008e2c2eedd141725c30b20d9c36b026eb796688f88205845ef17aa213 AS busybox
+FROM busybox:1.38.0-musl@sha256:8635836765b0c4c43970660219739baa58b0883c2e429e4b8918f7dd1519455c AS busybox
 
 FROM docker.io/federatedserviceconnectivity/manager:v1.43.7@sha256:e7e6a95c82ba220eaa9b9e2e77ec890fb16fff0f3bdce29a10218d25b56c186f
 COPY --from=busybox /bin/busybox /bin/sh
