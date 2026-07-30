@@ -101,7 +101,9 @@ Vink **"bijlagen"** aan op `dirmgr` en voeg elke file uit `MANIFEST.md` toe als
 | `internal/directory/directory/cert.pem` | `/etc/fsc/internal/directory/directory/cert.pem` |
 | `internal/directory/directory/key.pem` | `/etc/fsc/internal/directory/directory/key.pem` |
 
-`dirui` krijgt zijn subset (group-root + een lezer-cert/key) op dezelfde manier.
+`dirui` krijgt zijn subset (group-root + **dezelfde** directory-cert/key als `dirmgr`) op dezelfde
+manier — dirui presenteert dus de identiteit van de directory-peer zelf, niet een aparte
+lezer-identiteit; zie `peers/directory/dirui.env.example`.
 **Geen `combined.pem` nodig** (modus 2 = pod serveert losse cert/key). Bijlagen zijn read-only +
 binary-safe (spike vraag 4).
 
@@ -117,8 +119,9 @@ Waarden ter referentie:
   - `DIRECTORY_MANAGER_ADDRESS=` idem, incl. `:443` (directory wijst naar zichzelf)
   - `STORAGE_POSTGRES_DSN` uit de managed-Postgres-substitutievars (`$DATABASE_*`) — geen eigen
     postgres-component.
-  - `DISABLE_CRL_CHECKS=true` als **interim** (lege CRL, geen distributiepunt). `TODO(#722)`:
-    CRL-pad mounten + `DISABLE_CRL_CHECKS` weghalen vóór go-live (zie `manager.env.example`).
+  - `DISABLE_CRL_CHECKS=true` als **interim** (lege CRL, geen distributiepunt). Openstaand: CRL-pad
+    mounten + `DISABLE_CRL_CHECKS` weghalen vóór go-live
+    ([#722](https://github.com/MinBZK/MijnOverheidZakelijk/issues/722), zie `manager.env.example`).
 - `dirui`: de waarden uit `peers/directory/dirui.env.example`, met dezelfde
   `DIRECTORY_MANAGER_ADDRESS`-alias (naar dirmgr op dezelfde deployment) als hierboven.
 
@@ -176,8 +179,8 @@ lezen) slaat de job checkout over.
 
 Een `pull_request`-preview ruimt een `cleanup-preview`-job op bij het sluiten van de PR.
 
-Vóór `changes`/`build`/`deploy` bepaalt een `meta`-job eerst de afgeleide waarden die de andere
-jobs delen: de deployment-naam, de OpenFSC-basistag (`image_base`) en de manager-image-suffix
+Naast `changes` (en dus parallel eraan — `changes` heeft geen `needs:`) bepaalt een `meta`-job de
+afgeleide waarden die `build`/`deploy` delen: de deployment-naam, de OpenFSC-basistag (`image_base`) en de manager-image-suffix
 (`manager_suffix`). Diezelfde job valideert ook de ruwe `workflow_dispatch`-inputs (`deployment`,
 `image_tag`, `manager_tag`) tegen een toegestaan-tekens-patroon vóórdat ze als deployment-naam of
 in de `components:`-JSON belanden.
@@ -210,7 +213,8 @@ Handmatige/preview-deploys blijven via `workflow_dispatch` (zie stap 6).
 
 ## Openstaande TODO's
 
-- CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS=true` (#722) — **gate vóór go-live**.
+- CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS=true`
+  ([#722](https://github.com/MinBZK/MijnOverheidZakelijk/issues/722)) — **gate vóór go-live**.
 - **`sslmode=disable`** op `STORAGE_POSTGRES_DSN` (zie `peers/directory/manager.env.example`) is
   géén losse TODO maar een **expliciet geaccepteerde keuze**: intra-cluster verkeer naar ZAD's
   managed Postgres, gesloten testnet, synthetische data. Herzien zodra er échte berichtinhoud of

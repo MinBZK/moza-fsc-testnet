@@ -107,7 +107,7 @@ Gemaakte keuzes:
   (`opened`/`synchronize`/`reopened`) rolt automatisch een preview `pr-<PR-nummer>` uit; bij
   `closed` ruimt een `cleanup-preview`-job die op. `workflow_dispatch` blijft voor handmatige
   overrides. `RijksICTGilde/zad-actions` (`/deploy` en `/cleanup`) is de gedeelde bron.
-- **Eén workflow, jobs in serie** (`meta` → `changes` → `build` → `deploy`, plus een losse
+- **Eén workflow, vier jobs** (`meta` en `changes` parallel → `build` → `deploy`, plus een losse
   `cleanup-preview` op `closed`) tegen de build-deploy-race: een
   image-wijziging bouwt éérst (`build-manager-migrate` als reusable `workflow_call`), pas dán
   deployt de `deploy`-job. Een config/group-only merge skipt de build en herbruikt de bestaande tag.
@@ -139,9 +139,14 @@ gesloten testnet met een eigen test-CA is dat verdedigbaar, maar het is een **ge
 niet alleen een gemak. Drie categorieën deployen nooit een preview: fork-PR's (geen secrets),
 docs-only PR's, en bot-PR's — die laatste uitzondering is permanent en geldt ook als de diff van een
 bot-PR wél in de trigger-paden valt. Alle drie worden in de `changes`-job afgevangen (dus vóór de
-build; `skip-bot-prs: 'true'` op de deploy-/cleanup-aanroep is het vangnet erachter). Dat de bot-guard
-óók vóór de build moet, is geleerd: zat hij alleen in de action, dan bouwde en pushte een
-Dependabot-actions-bump alsnog een preview-image dat daarna nooit werd opgeruimd.
+build; `skip-bot-prs: 'true'` op de deploy-/cleanup-aanroep is het vangnet erachter). Bij docs-only
+geldt één uitzondering: kan de PR-bestandenlijst niet worden opgehaald, dan deployt de fail-safe
+liever een overbodige preview dan dat hij een relevante mist.
+
+Dat de bot-guard óók vóór de build moet, volgt uit wat er anders gebeurt — en dat verschilt per bot:
+bij Dependabot is `GITHUB_TOKEN` read-only, dus de ghcr-push faalt en de PR is structureel rood; bij
+een bot met gewone token-permissies lukt de push en blijft de preview-tag achter, omdat de
+cleanup-action bij het sluiten op diezelfde bot-regel afslaat.
 
 ### Projectconfig verhuisd naar de Operations Manager UI (#723/#729)
 

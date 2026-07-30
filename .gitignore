@@ -1,8 +1,14 @@
-.env
-# `.env` matcht alléén een bestand met exact die naam. De env-templates heten
-# `<component>.env.example` (peers/directory/manager.env.example, dirui.env.example) en nodigen dus
-# uit tot een ingevulde `<component>.env` met DSN + wachtwoord ernaast — die viel hierbuiten.
+# Env-bestanden met echte waarden. De templates heten `<component>.env.example`
+# (peers/directory/manager.env.example, dirui.env.example) en nodigen uit tot een ingevulde
+# `<component>.env` met DSN + wachtwoord ernaast; `.env` alléén dekte dat niet. `.env*` en `*.env.*`
+# vangen ook de varianten die tooling maakt: `.env.local`, `.env.production`, `manager.env.bak`.
+# Let op: dit is voor die klasse de énige barrière — secret-scanning push-protection dekt
+# provider-tokens, geen DSN met wachtwoord erin.
+.env*
 *.env
+*.env.*
+# De negaties houden de templates committable; `!*.env.example` is nodig vanwege `*.env.*` hierboven.
+!.env.example
 !*.env.example
 *.pem
 *.key

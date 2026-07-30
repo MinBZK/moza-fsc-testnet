@@ -9,9 +9,14 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      # Maandelijks, conform CLAUDE.md. `daily` scande een config-only repo met een handvol
-      # action-pins 365× per jaar, en elke resulterende PR trekt de volle CI mee.
-      interval: "monthly"
+      # `weekly`, niet `daily` en niet `monthly`. Daily gaf een force-push (= een volle CI-run) bij
+      # elke upstream-release van elke gepinde action. Monthly zou goedkoper zijn, maar
+      # "Dependabot security updates" staat op deze repo UIT — gemeten via
+      # `gh api repos/{owner}/{repo}` → `dependabot_security_updates: disabled`. Het
+      # version-updateschema is daarmee het enige automatische kanaal waarlangs een kwetsbare
+      # action-pin wordt vervangen, en 30 dagen wachten is niet te verdedigen voor workflows die een
+      # productie-API-key aanroepen (BIO 12.6.1). Zet dat repo-instelling aan en `monthly` mag.
+      interval: "weekly"
     groups:
       # codeql-action publiceert init/autobuild/analyze/upload-sarif als losse
       # sub-actions onder één versie. Ze MOETEN samen bewegen: een enkele

@@ -35,12 +35,19 @@ concurrency:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Worst case: pre-flight (2 calls) + cleanup-action (task-timeout 600) + verificatie
+    # (6 pogingen x 2 calls van 30s + 5x10s sleep) ligt rond 18 min. Op 15 werd de job midden in
+    # de verificatie gekilld: runnertijd verbrand, geen uitkomst. Gelijk aan cleanup-preview.
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
       # Nodig zodat de composite verificatie-action (`uses: ./.github/actions/...` hieronder) uit
       # de repo geladen kan worden — die actions worden gelezen uit de workspace, niet gedownload.
+      # Hier mag de impliciete `github.ref` wél (anders dan in de cleanup-preview-job van
+      # zad-deploy-directory.yml, die 'm op de default branch pint): dit is een workflow_dispatch op
+      # een gewone branch-ref, die niet halverwege kan verdwijnen zoals een PR-merge-ref, en een
+      # operator kan de run desnoods opnieuw starten.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -116,7 +123,7 @@ jobs:
           # 404 gezien: bevestig key + project via het lijst-endpoint vóórdat we 'm als
           # "bestond niet" boeken. Alléén een 200 bevestigt dat; al het andere valt terug op de
           # veilige kant (existed=true).
-          list_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+          list_code=$(curl -sS -o "$RUNNER_TEMP/zad-preflight-list.json" -w '%{http_code}' \
             --connect-timeout 10 --max-time 30 \
             -H "X-API-Key: $ZAD_API_KEY" \
             "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments" \
@@ -125,12 +132,17 @@ jobs:
             [0-9][0-9][0-9]) ;;
             *) list_code="000" ;;
           esac
-          if [ "$list_code" = "200" ]; then
+          # Zelfde vorm-eis als de verificatie-action: een 200 met `{}` of een gateway-pagina is
+          # géén bevestiging van key + project. Zonder deze check zou zo'n antwoord hier
+          # `existed=false` opleveren, en dat is precies de tak die groen eindigt.
+          if [ "$list_code" = "200" ] \
+            && jq -e 'type == "object" and has("project") and has("cluster")' \
+              "$RUNNER_TEMP/zad-preflight-list.json" >/dev/null 2>&1; then
             echo "existed=false" >> "$GITHUB_OUTPUT"
-            echo "Pre-flight: '$DEPLOYMENT' gaf HTTP 404 vóór cleanup, met key/project bevestigd via het lijst-endpoint (HTTP 200) — bestond niet."
+            echo "Pre-flight: '$DEPLOYMENT' gaf HTTP 404 vóór cleanup, met key/project bevestigd via het lijst-endpoint (HTTP 200, juiste body-vorm) — bestond niet."
           else
             echo "existed=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Pre-flight: 404 op '$DEPLOYMENT', maar het lijst-endpoint gaf HTTP $list_code i.p.v. 200 — key/project niet bevestigd, dus die 404 telt niet. Aangenomen dat de deployment bestond (veilige kant); controleer de API-key en ZAD_PROJECT_ID_DIRECTORY."
+            echo "::warning::Pre-flight: 404 op '$DEPLOYMENT', maar het lijst-endpoint gaf geen bruikbare bevestiging (HTTP $list_code) — key/project niet bevestigd, dus die 404 telt niet. Aangenomen dat de deployment bestond (veilige kant); controleer de API-key en ZAD_PROJECT_ID_DIRECTORY."
           fi
 
       - name: Cleanup via zad-actions
@@ -149,7 +161,8 @@ jobs:
           task-timeout: '600'
 
       # De action rapporteert een mislukte/lege delete als ::warning:: en faalt de step niet (zie
-      # zad-actions@v4.0.6:scripts/zad-common.sh, `zad_delete_deployment`) — --ignore-not-found-achtig gedrag: een typo in de deployment-naam levert
+      # zad-actions@v4.0.6:scripts/zad-common.sh, `zad_delete_deployment`, die de CLI letterlijk met
+      # `--ignore-not-found` aanroept): een typo in de deployment-naam levert
       # hier ook gewoon een groene stap op (er was niets te verwijderen). `zad-deleted != 'true'`
       # is het signaal dat "verwijderd" van "niets gebeurd" onderscheidt, maar zegt zelf niet óf
       # dat laatste een probleem is: de pre-flight hierboven maakt dat onderscheid. Bestond de
@@ -172,6 +185,17 @@ jobs:
           DEPLOYMENT: ${{ inputs.deployment }}
         run: |
           echo "::notice::zad-actions meldt zad-deleted='$ZAD_DELETED' voor '$DEPLOYMENT' — de pre-flight-check zag 'm al niet vóór deze run (typo, of al eerder opgeruimd). Niets te doen."
+
+      # De omgekeerde tegenstrijdigheid van de twee stappen hierboven: de pre-flight zag 'm niet,
+      # de action zegt 'm verwijderd te hebben. Dan keek de pre-flight naar het verkeerde pad (of er
+      # was een race met een andere run) — en juist die eerste mogelijkheid is het signaal dat een
+      # kapot scoped endpoint verraadt, dus die mag niet stil blijven.
+      - name: Waarschuw bij een tegenstrijdige pre-flight
+        if: steps.cleanup.outputs.zad-deleted == 'true' && steps.preflight.outputs.existed != 'true'
+        env:
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: |
+          echo "::warning::Pre-flight zag '$DEPLOYMENT' niet vóór deze run, maar zad-actions meldt 'm wél verwijderd — de pre-flight-URL of het scoped endpoint klopt vermoedelijk niet (of een andere run zat ertussen). De verificatie hieronder is dan de enige harde uitspraak."
 
       - name: Verifieer dat de deployment echt weg is
         # Gedeeld met de cleanup-preview-job in zad-deploy-directory.yml via de composite action —

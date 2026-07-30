@@ -59,13 +59,11 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
 - **Verificatie zit in één gedeelde composite action**:
   `.github/actions/verify-zad-deleted/action.yml`, aangeroepen vanuit zowel de
   `cleanup-preview`-job in `zad-deploy-directory.yml` (PR-close) als vanuit `zad-cleanup.yml`
-  (handmatig). Tijdens PR #35 stond deze verificatie korte tijd als ~65-regelig script
-  letterlijk gekopieerd in beide workflows, en die kopieën liepen binnen dezelfde PR al uiteen —
-  vandaar de composite action. (Op `main` heeft die gedupliceerde vorm nooit bestaan, dus je vindt
-  hem niet in de geschiedenis van `main`.)
+  (handmatig). Eén plek, omdat twee kopieën van deze bewijsvoering onvermijdelijk uiteen gaan lopen
+  — en een verificatie die op de ene plek strenger is dan op de andere geeft valse zekerheid.
 - **Een mislukte delete faalt de step niet**: `zad_delete_deployment` (in `zad-actions@v4.0.6:scripts/zad-common.sh`) logt bij
-  een fout eerst een `::warning::`, en laat `report_zad_error` daarna — als de CLI een
-  gestructureerde diagnose teruggaf — ook `::error::`-annotaties zien; geen van beide doet de step
+  een fout eerst een `::warning::`, en laat `report_zad_error` daarna ook `::error::`-annotaties zien
+  (met een gestructureerde CLI-diagnose als die er is, anders de ruwe uitvoer); geen van beide doet de step
   `exit` met een fout, dus de job blijft groen. Een groene job bewijst dus niet dat het deployment
   weg is, ook al staan er soms error-annotaties in de run. Precies dáárom bestaat de
   verificatiestap: die controleert onafhankelijk van wat de `cleanup`-action zelf rapporteert.
@@ -107,9 +105,9 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   een upstream-verzoek aan RijksICTGilde om die twee te pinnen
   ([#898](https://github.com/MinBZK/MijnOverheidZakelijk/issues/898)).
 - **De key komt ook in een `run:`-stap terecht, maar veilig**: de action krijgt 'm als action-input
-  (`api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}`), en de cleanup-verificatiestap (`curl` tegen de
-  deployments-lijst) heeft 'm zelf ook nodig — die stap zet de key via `env: ZAD_API_KEY: ${{
-  secrets... }}` en gebruikt 'm in `run:` alleen als gequote `"$ZAD_API_KEY"`, nooit geïnterpoleerd
+  (`api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}`), en twee eigen `curl`-stappen hebben 'm ook nodig:
+  de verificatie-action en de pre-flight in `zad-cleanup.yml`. Beide zetten de key via
+  `env: ZAD_API_KEY: ${{ secrets... }}` en gebruikt 'm in `run:` alleen als gequote `"$ZAD_API_KEY"`, nooit geïnterpoleerd
   in de commandoregel zelf; de key wordt nergens geëcht of gelogd. De `if`-guard in
   `zad-cleanup.yml` valideert de deployment-naam (`[a-z0-9-]`) tegen injectie vóór de action draait.
 - **`api-key`** komt uit `secrets.ZAD_API_KEY_DIRECTORY` (write-only); nooit gelogd.

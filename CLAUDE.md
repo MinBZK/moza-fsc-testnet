@@ -105,7 +105,8 @@ contracts/   grant → sign → accept bootstrap
   (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
   `Analyze (actions)`.
 - **CI:** `lint.yml` (markdownlint + yamllint + actionlint), `codeql.yml` (Actions-analyse),
-  `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind; Dependabot houdt ze maandelijks bij.
+  `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind; Dependabot houdt ze wekelijks bij (zie `.github/dependabot.yml`
+  voor waarom niet maandelijks).
 - **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
   en `docs/ai-verantwoording.md`. Governance/support/security delegeren naar de MOZa-hoofdrepo.
 - `gh` CLI voor GitHub-operaties.
