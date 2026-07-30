@@ -9,16 +9,18 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      # `monthly`, niet `daily`. Daily liet Dependabot dagelijks kijken en dus bij elke nieuwe
-      # upstream-release een open groep-PR force-pushen — en elke force-push is een volle CI-run.
-      # Monthly kan omdat "Dependabot security updates" op deze repo AAN staat (ingeschakeld
-      # 2026-07-30; controleer met `gh api repos/{owner}/{repo}` →
-      # `security_and_analysis.dependabot_security_updates.status`). Advisories leveren daardoor
-      # direct een fix-PR op, los van dit interval, dus dit schema hoeft alleen routinematige
-      # versiebumps te doen. Zou die instelling ooit weer uitgaan, dan is dit schema het énige
-      # automatische kanaal en hoort het terug naar `weekly` (BIO 12.6.1: tijdige maatregelen, niet
-      # alleen tijdige detectie) — de workflows hier deployen met een productie-API-key.
-      interval: "monthly"
+      # `weekly`: het middenpad, en bewust niet `monthly`. Een maandbatch levert één groep-PR op met
+      # zoveel bumps dat hij niet meer te reviewen is — en gegroepeerde PR's zijn juist bedoeld om
+      # review-ruis te beperken, niet om 'm te verplaatsen. Ook bewust niet `daily`: dan force-pusht
+      # Dependabot een open groep-PR bij elke nieuwe upstream-release, en elke force-push is een volle
+      # CI-run.
+      # Beveiliging hangt niet aan dit interval: "Dependabot security updates" staat op de repo AAN
+      # (2026-07-30; `gh api repos/{owner}/{repo}` →
+      # `security_and_analysis.dependabot_security_updates.status`), dus een advisory levert direct een
+      # fix-PR op. Gaat die instelling ooit uit, dan is dit schema het énige automatische kanaal en mag
+      # het in geen geval langer worden (BIO 12.6.1: tijdige maatregelen, niet alleen tijdige detectie)
+      # — de workflows hier deployen met een productie-API-key.
+      interval: "weekly"
     groups:
       # codeql-action publiceert init/autobuild/analyze/upload-sarif als losse
       # sub-actions onder één versie. Ze MOETEN samen bewegen: een enkele
@@ -40,4 +42,4 @@ updates:
   - package-ecosystem: "docker"
     directory: "/deploy/zad/manager-migrate"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
