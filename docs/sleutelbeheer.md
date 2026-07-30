@@ -1,8 +1,13 @@
 # Sleutel- en secretbeheer
 
 > Operationele kant van secrets in dit repo: waar ze leven, wie erbij kan, en hoe je ze roteert.
-> Een **kwetsbaarheid melden** doe je niet hier — daarvoor geldt het disclosurebeleid uit
-> [`SECURITY.md`](../SECURITY.md).
+> Een **kwetsbaarheid melden** doe je niet hier: daarvoor geldt het org-brede
+> [responsible-disclosurebeleid van MinBZK](https://github.com/MinBZK/.github/blob/main/SECURITY.md)
+> (melden via [GOV-CERT/NCSC](https://www.ncsc.nl/contact/kwetsbaarheid-melden)). Deze repo heeft
+> daarom geen eigen `SECURITY.md`.
+>
+> Voor de impactbeoordeling van zo'n melding is dit relevant: dit is een **gesloten testnet** met een
+> eigen test-CA — geen productiedata, geen PKIoverheid-certificaten.
 
 ## Wat waar staat
 

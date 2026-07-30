@@ -109,7 +109,9 @@ contracts/   grant → sign → accept bootstrap
   manager-migrate-wrapper. Wekelijks houdt de gegroepeerde PR reviewbaar; advisories komen los daarvan
   binnen via Dependabot security updates (staat aan op de repo).
 - **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
-  en `docs/ai-verantwoording.md`. Governance/support/security delegeren naar de MOZa-hoofdrepo.
+  en `docs/ai-verantwoording.md`. Governance/support delegeren naar de MOZa-hoofdrepo; **geen eigen
+  `SECURITY.md`** — melden loopt via het org-brede beleid in `MinBZK/.github`. Operationeel
+  secretbeheer staat in `docs/sleutelbeheer.md`.
 - `gh` CLI voor GitHub-operaties.
 
 ## Issues / stappenplan
