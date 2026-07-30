@@ -130,9 +130,13 @@ PR-preview. Mechaniek: `docs/zad-directory-deploy.md`.
 **PR-preview-eigenschappen:** eigen deployment `pr-<PR-nummer>` met een eigen verse managed DB
 (de SoR-`test`-DB wordt niet gekloond/geleegd). Bijlagen (cert-mount) en "Publicatie op het web"
 zitten op project/component-niveau en worden per deployment automatisch geërfd — geen handwerk per
-PR. Drie categorieën deployen nooit een preview: fork-PR's (geen secrets), docs-only PR's, en
-bot-PR's (`skip-bot-prs: 'true'` op zowel de deploy- als de cleanup-aanroep) — die laatste
-uitzondering is permanent en geldt ook als de diff van een bot-PR wél in de trigger-paden valt.
+PR. Dat betekent ook dat elke ephemere `pr-<n>` op het productiecluster draait met het cert/key van
+de directory-**peer zelf** (OIN `00000000000000000010`) — géén aparte preview-identiteit. Voor een
+gesloten testnet met een eigen test-CA is dat verdedigbaar, maar het is een **geaccepteerd risico**,
+niet alleen een gemak. Drie categorieën deployen nooit een preview: fork-PR's (geen secrets),
+docs-only PR's, en bot-PR's (`skip-bot-prs: 'true'` op zowel de deploy- als de cleanup-aanroep) —
+die laatste uitzondering is permanent en geldt ook als de diff van een bot-PR wél in de
+trigger-paden valt.
 
 ### Projectconfig verhuisd naar de Operations Manager UI (#723/#729)
 

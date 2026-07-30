@@ -164,17 +164,26 @@ trigger-`paths:` van de workflow zelf; de docs-uitzondering zit daar niet bij (d
 loopt alleen via de `changes`-job — zie hieronder). Voor `pull_request` zit de hele filter (paden +
 docs-uitzondering) in de `changes`-job, op basis van de bestandenlijst uit de GitHub PR-API (niet
 `git diff` — dat gebruikt alleen de `push`-tak) — zo blijft bijvoorbeeld het `closed`-event van een PR
-altijd bereikbaar voor de `cleanup-preview`-job, ongeacht welke bestanden die PR wijzigde.
+altijd bereikbaar voor de `cleanup-preview`-job, ongeacht welke bestanden die PR wijzigde. De
+`changes`-job checkt de repo daarom ook alléén uit op het `push`-pad (nodig voor `git diff`); op
+`pull_request` (de GitHub PR-API volstaat) en `workflow_dispatch` (er is geen bestandenlijst om te
+lezen) slaat de job checkout over.
 
 Een `pull_request`-preview ruimt een `cleanup-preview`-job op bij het sluiten van de PR.
 
-Drie jobs voorkomen de build-deploy-race:
+Vóór `changes`/`build`/`deploy` bepaalt een `meta`-job eerst de afgeleide waarden die de andere
+jobs delen: de deployment-naam, de OpenFSC-basistag (`image_base`) en de manager-image-suffix
+(`manager_suffix`). Diezelfde job valideert ook de ruwe `workflow_dispatch`-inputs (`deployment`,
+`image_tag`, `manager_tag`) tegen een toegestaan-tekens-patroon vóórdat ze als deployment-naam of
+in de `components:`-JSON belanden.
+
+Daarna voorkomen drie jobs de build-deploy-race:
 
 | Job | Wanneer | Doet |
 |-----|---------|------|
 | `changes` | elke push mét pad-match, én elke PR (open/sync/reopened/closed) | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
 | `build` | alleen als `manager-migrate/**` óf `build-manager-migrate.yml` zelf non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
-| `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR |
+| `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR; controleert daarna dat élk component een URL kreeg |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór de deploy-stap). Config/group-change
 → build skip → deploy herbruikt de bestaande tag. De manager-migrate-image bouwt via de reusable
@@ -197,6 +206,10 @@ Handmatige/preview-deploys blijven via `workflow_dispatch` (zie stap 6).
 ## Openstaande TODO's
 
 - CRL-configuratie op ZAD i.p.v. `DISABLE_CRL_CHECKS=true` (#722) — **gate vóór go-live**.
+- **`sslmode=disable`** op `STORAGE_POSTGRES_DSN` (zie `peers/directory/manager.env.example`) is
+  géén losse TODO maar een **expliciet geaccepteerde keuze**: intra-cluster verkeer naar ZAD's
+  managed Postgres, gesloten testnet, synthetische data. Herzien zodra er échte berichtinhoud of
+  PKIoverheid in beeld komt.
 - **Health-probe** doet een standaard TCP-poort-check op `:8443` (mTLS) → manager logt
   `TLS handshake error … EOF` (cosmetisch; pod healthy). Protocol-aware probe **aangevraagd bij ZAD**.
 - **Key-permissies**: bijlagen worden read-only gemount (niet 0600) → `invalid PKI key permissions`

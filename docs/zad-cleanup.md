@@ -48,18 +48,34 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   verwijderen over (anders verdwijnt de gedeelde versie mee). `zad-cleanup.yml` heeft géén eigen
   ghcr-stap — een preview-image die je daarmee handmatig opruimt, blijft dus staan tot een latere
   `cleanup-preview`-run 'm meepakt, of tot handmatig opruimen via de package-UI.
+- **Verificatie zit in één gedeelde composite action**:
+  `.github/actions/verify-zad-deleted/action.yml`, aangeroepen vanuit zowel de
+  `cleanup-preview`-job in `zad-deploy-directory.yml` (PR-close) als vanuit `zad-cleanup.yml`
+  (handmatig). Vóór deze wijziging was dit een ~65-regelig script dat letterlijk gekopieerd in
+  beide workflows stond, en de kopieën begonnen al uiteen te lopen — precies de reden om de
+  verificatie op één plek te zetten.
 - **Een mislukte delete faalt de step niet**: `zad_delete_deployment` (in `zad-common.sh`) logt bij
   een fout eerst een `::warning::`, en laat `report_zad_error` daarna — als de CLI een
   gestructureerde diagnose teruggaf — ook `::error::`-annotaties zien; geen van beide doet de step
   `exit` met een fout, dus de job blijft groen. Een groene job bewijst dus niet dat het deployment
-  weg is, ook al staan er soms error-annotaties in de run. Daarom verifiëren beide workflows ná de
-  action met een gerichte call naar de **scoped** endpoint
-  `GET /api/v2/projects/{project}/deployments/{deployment}`: een 404 bevestigt dat het deployment
-  weg is; een 2xx betekent dat het er nog staat (job faalt hard); elke andere respons telt als
-  "niet geverifieerd" (job faalt eveneens). De list-endpoint (`GET .../deployments`) wordt hier
-  bewust niet voor gebruikt: die *"Returns only deployments targeting the current cluster"*
-  (`openapi.json`) — afwezigheid in die lijst bewijst dus niets over verwijdering op een ander
-  cluster.
+  weg is, ook al staan er soms error-annotaties in de run. Precies dáárom bestaat de
+  verificatiestap: die controleert onafhankelijk van wat de `cleanup`-action zelf rapporteert.
+- **Verificatie = twee calls, niet één kale 404**: de composite action pollt eerst het **scoped**
+  endpoint `GET /api/v2/projects/{project}/deployments/{deployment}`. Een 404 daar is op zichzelf
+  géén bewijs — live tegen de API geprobeerd komt diezelfde 404 ook terug op een onbekend pad en
+  op een leeg project-segment, zónder dat de key ooit gecontroleerd wordt. Pas als een
+  vervolgcall naar het lijst-endpoint (`GET .../deployments`, zonder `/{deployment}`) HTTP 200
+  teruggeeft, telt de 404 als bevestigd: dat lijst-endpoint is authenticated + project-scoped, dus
+  alleen een 200 daar bevestigt dat de key en het project kloppen (een foute key geeft 401, een
+  verkeerd project geen 200). Van die 200-lijst telt daarna alléén de **positieve** richting: staat
+  de deployment-naam er, ondanks de 404 op het scoped endpoint, tóch in — dan is dat een
+  tegenspraak en faalt de stap (het scoped pad is vermoedelijk stuk, of upstream gewijzigd).
+  *Afwezigheid* in die lijst bewijst niets: het endpoint is *"Returns only deployments targeting
+  the current cluster"* (`openapi.json`) en `DeploymentListResponse.required` is enkel
+  `["project","cluster"]`, dus `deployments` mag legitiem ontbreken — de negatieve richting is
+  dus niet bruikbaar als bewijs. Transiënte fouten (`000`, 5xx) op zowel de scoped als de
+  bevestigingscall krijgen een begrensde retry (6 pogingen, 10s interval); elke andere status
+  (2xx = nog aanwezig, of een onverwachte 4xx/5xx na de laatste poging) faalt de stap hard.
 - **Beschermde namen** (`test`, `main`, `master`, `production`, `prod`) weigeren tenzij de
   workflow-input `allow_protected` aanstaat. Dat is een `if`-guard-stap vóór de action in
   `zad-cleanup.yml` — de action kent zelf geen beschermde-namen-check. Het cluster is
@@ -97,6 +113,10 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   even reproduceerbaar, en er is niets meer te vendoren.
 - **Task-timeout**: de deploy-actie gebruikt `task-timeout: '600'` (zie `zad-deploy-directory.yml`)
   — dezelfde ruimte als `PREVIEW_TASK_TIMEOUT` in `moza-poc-fbs-berichtenbox`, want verse
-  preview-provisioning duurt langer dan een update. De cleanup-aanroepen in dit repo zetten
-  `task-timeout` niet en draaien dus op de default van `zad-actions/cleanup` zelf (`300`); een
-  cleanup heeft geen verse provisioning nodig, dus dat is bewust ongewijzigd gelaten.
+  preview-provisioning duurt langer dan een update. Beide cleanup-aanroepen (de `cleanup`-stap in
+  `zad-cleanup.yml` én in de `cleanup-preview`-job van `zad-deploy-directory.yml`) zetten
+  inmiddels dezelfde `task-timeout: '600'`, om dezelfde reden: de upstream-default (`300`) is ook
+  voor een delete krap tegenover een ArgoCD-sync, en een delete die daardoor timet uit wordt door
+  de action — zoals hierboven beschreven — sowieso al als `::warning::` gelogd zonder de step te
+  laten falen. De ruimere timeout voorkomt dat de verificatiestap hierna een preview aantreft die
+  nog volop aan het verdwijnen is.
