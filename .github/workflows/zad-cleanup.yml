@@ -36,7 +36,16 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
+      # Nodig zodat de composite verificatie-action (`uses: ./.github/actions/...` hieronder) uit
+      # de repo geladen kan worden — die actions worden gelezen uit de workspace, niet gedownload.
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
       # Vangrail uit het verwijderde cleanup.sh: beschermde deployments niet per ongeluk slopen.
       - name: Weiger beschermde deployment-namen
         env:
@@ -57,6 +66,40 @@ jobs:
               echo "::warning::beschermde deployment '$DEPLOYMENT' wordt verwijderd (allow_protected)." ;;
           esac
 
+      - name: Controleer of de deployment al bestond vóór cleanup
+        # De deployment-naam hier is vrije operator-invoer (workflow_dispatch-input) — een typo
+        # levert bij de action hieronder net zo goed een groene, "niets te verwijderen"-stap op
+        # als een terechte "was al weg". Zonder dit onderscheid ziet de operator geen verschil
+        # tussen "cleanup gelukt (of niets te doen)" en "ik heb de verkeerde naam getypt en er
+        # is niets gebeurd". Eén losse GET vóór de action (geen retry-lus nodig: dit legt alleen
+        # de staat vast vóórdat er iets gebeurt, het bewijst niets over een delete). Bij twijfel
+        # (transiënte fout, 401/403/5xx/000) nemen we aan dat de deployment WEL bestond — dat is
+        # de veilige kant: het duwt een onzekere uitkomst naar de foutmelding hieronder i.p.v.
+        # naar een vals-groene "bestond toch al niet".
+        id: preflight
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          DEPLOYMENT: ${{ inputs.deployment }}
+        run: |
+          set -euo pipefail
+          http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            --connect-timeout 10 --max-time 30 \
+            -H "X-API-Key: $ZAD_API_KEY" \
+            "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments/$DEPLOYMENT" \
+            || true)
+          case "$http_code" in
+            [0-9][0-9][0-9]) ;;
+            *) http_code="000" ;;
+          esac
+          if [ "$http_code" = "404" ]; then
+            echo "existed=false" >> "$GITHUB_OUTPUT"
+            echo "Pre-flight: '$DEPLOYMENT' gaf HTTP 404 vóór cleanup — bestond (voor zover waarneembaar) niet."
+          else
+            echo "existed=true" >> "$GITHUB_OUTPUT"
+            echo "Pre-flight: '$DEPLOYMENT' gaf HTTP $http_code vóór cleanup — aangenomen dat de deployment bestond (bij twijfel: wel bestond)."
+          fi
+
       - name: Cleanup via zad-actions
         id: cleanup
         uses: RijksICTGilde/zad-actions/cleanup@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
@@ -72,101 +115,34 @@ jobs:
           # hieronder ziet dan een deployment die nog volop aan het verdwijnen is.
           task-timeout: '600'
 
-      - name: Waarschuw als de deployment mogelijk nooit bestond
-        # --ignore-not-found-achtig gedrag: een typo in de deployment-naam levert hier ook een
-        # groene stap op (er was niets te verwijderen). zad-deleted != 'true' is het enige signaal
-        # dat onderscheidt "verwijderd" van "nooit bestaan" — meld dat expliciet, want de rest van
-        # de job (inclusief de verificatie hieronder) ziet beide gevallen als succes.
-        if: steps.cleanup.outputs.zad-deleted != 'true'
+      # De action rapporteert een mislukte/lege delete als ::warning:: en faalt de step niet (zie
+      # zad-common.sh) — --ignore-not-found-achtig gedrag: een typo in de deployment-naam levert
+      # hier ook gewoon een groene stap op (er was niets te verwijderen). `zad-deleted != 'true'`
+      # is het signaal dat "verwijderd" van "niets gebeurd" onderscheidt, maar zegt zelf niet óf
+      # dat laatste een probleem is: de pre-flight hierboven maakt dat onderscheid. Bestond de
+      # deployment al niet (pre-flight 404), dan vroeg de operator terecht niets te doen — groen.
+      # Bestond hij wél, dan is er een verwijdering gevraagd die niet is gebeurd — dat hoort ROOD
+      # te zijn, niet een ::warning:: die de rest van de run niet raakt.
+      - name: Faal als er niets verwijderd is terwijl de deployment wél bestond
+        if: steps.cleanup.outputs.zad-deleted != 'true' && steps.preflight.outputs.existed == 'true'
         run: |
-          echo "::warning::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ inputs.deployment }}' — de naam bestond mogelijk niet (typo?), of de delete is niet gelukt. Controleer desgewenst de Operations Manager UI."
+          echo "::error::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ inputs.deployment }}', terwijl de pre-flight-check hierboven bevestigde dat de deployment vóór deze run bestond — er is een verwijdering gevraagd en die is niet gebeurd. Controleer de deployment-naam en de Operations Manager UI."
+          exit 1
+
+      - name: Meld dat er niets te verwijderen was (bestond al niet)
+        if: steps.cleanup.outputs.zad-deleted != 'true' && steps.preflight.outputs.existed != 'true'
+        run: |
+          echo "::notice::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ inputs.deployment }}' — de pre-flight-check zag 'm al niet vóór deze run (typo, of al eerder opgeruimd). Niets te doen."
 
       - name: Verifieer dat de deployment echt weg is
-        # De action rapporteert een mislukte delete als ::warning:: en faalt de step niet (zie
-        # zad-common.sh) — zonder harde verificatie hier zou een 401 (bv. na key-rotatie) of 5xx
-        # een groene run opleveren terwijl de deployment nog live staat op het productiecluster.
-        # Scoped endpoint (GET .../deployments/{deployment}) i.p.v. de lijst: die laatste is
-        # cluster-gefilterd ("Returns only deployments targeting the current cluster" — ZAD
-        # OpenAPI) en DeploymentListResponse.required is enkel ["project","cluster"], dus
-        # `deployments` mag legitiem ontbreken/null zijn — afwezigheid in die lijst bewijst dus
-        # niets. De scoped endpoint geeft gewoon 404 (weg) of 2xx (bestaat nog).
-        # Een kale 404 is echter GEEN bewijs op zichzelf: live tegen de API geprobeerd, komt
-        # diezelfde 404 ook terug op een onbekend pad én op een leeg project-segment — zónder dat
-        # de key ooit gecontroleerd wordt. Staat `vars.ZAD_PROJECT_ID_DIRECTORY` ooit leeg/fout, of
-        # verandert het endpoint-pad upstream, dan zou deze stap voorheen permanent "opgeruimd"
-        # melden terwijl de deployment op het productiecluster blijft draaien. Daarom telt een 404
-        # pas als de key/project ook aantoonbaar kloppen: het lijst-endpoint (zonder /{deployment})
-        # is authenticated + project-scoped, dus een verkeerde key geeft 401 en een verkeerd
-        # project geeft geen 200 — alléén een 200 daar bevestigt dat de 404 hierboven betekent
-        # "weg" i.p.v. "onbevoegd/verkeerd pad".
-        env:
-          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
-          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          DEPLOYMENT: ${{ inputs.deployment }}
-        run: |
-          set -euo pipefail
-          attempts=6
-          interval=10
-          for attempt in $(seq 1 "$attempts"); do
-            # `|| true` (i.p.v. `|| echo "000"`): curl schrijft de -w-uitvoer ('000' bij een
-            # connect-/timeout-fout) zelf al naar stdout vóórdat het faalt; een aparte
-            # `|| echo "000"` erachter plakte daar een tweede '000' aan vast ("HTTP 000000"), en
-            # liet de numerieke vergelijkingen hieronder struikelen op "integer expression
-            # expected". De case-normalisatie hierna is het sluitstuk: elke uitkomst die geen
-            # drie cijfers is (leeg, of iets onverwachts) wordt hard '000'.
-            http_code=$(curl -sS -o /tmp/zad-deployment.json -w '%{http_code}' \
-              --connect-timeout 10 --max-time 30 \
-              -H "X-API-Key: $ZAD_API_KEY" \
-              "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments/$DEPLOYMENT" \
-              || true)
-            case "$http_code" in
-              [0-9][0-9][0-9]) ;;
-              *) http_code="000" ;;
-            esac
-
-            if [ "$http_code" = "404" ]; then
-              list_code=$(curl -sS -o /dev/null -w '%{http_code}' \
-                --connect-timeout 10 --max-time 30 \
-                -H "X-API-Key: $ZAD_API_KEY" \
-                "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments" \
-                || true)
-              case "$list_code" in
-                [0-9][0-9][0-9]) ;;
-                *) list_code="000" ;;
-              esac
-
-              if [ "$list_code" = "200" ]; then
-                echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts; key/project bevestigd via het lijst-endpoint)."
-                exit 0
-              fi
-              echo "::error::404 op '$DEPLOYMENT', maar het lijst-endpoint gaf HTTP $list_code i.p.v. 200 — key/project kon niet bevestigd worden, dus deze 404 telt niet als bewijs dat de cleanup gelukt is. Controleer ZAD_API_KEY_DIRECTORY/ZAD_PROJECT_ID_DIRECTORY en de Operations Manager UI."
-              exit 1
-            fi
-
-            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-              if [ "$attempt" -lt "$attempts" ]; then
-                echo "Deployment '$DEPLOYMENT' nog aanwezig (HTTP $http_code, poging $attempt/$attempts) — delete kan nog async lopen, over ${interval}s opnieuw proberen."
-                sleep "$interval"
-                continue
-              fi
-              echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup (HTTP $http_code, na $attempts pogingen) — check de Operations Manager UI."
-              exit 1
-            fi
-
-            # Tijdelijke transport-/serverfouten (connectiefout/timeout = '000', of 5xx) krijgen
-            # dezelfde begrensde herhaling als "nog aanwezig": één 502 of een netwerk-hikje mag een
-            # verder correcte cleanup niet meteen rood laten uitslaan. Andere statussen (401, 403,
-            # overige 4xx, ...) zijn niet transiënt en falen wél meteen, hieronder.
-            if [ "$http_code" = "000" ] || { [ "$http_code" -ge 500 ] && [ "$http_code" -lt 600 ]; }; then
-              if [ "$attempt" -lt "$attempts" ]; then
-                echo "Tijdelijke fout (HTTP $http_code) bij het verifiëren van '$DEPLOYMENT' (poging $attempt/$attempts) — over ${interval}s opnieuw proberen."
-                sleep "$interval"
-                continue
-              fi
-              echo "::error::Herhaalde tijdelijke fouten (laatst HTTP $http_code) bij het verifiëren van '$DEPLOYMENT' na $attempts pogingen — cleanup NIET geverifieerd."
-              exit 1
-            fi
-
-            echo "::error::Onverwachte HTTP-status $http_code bij het ophalen van '$DEPLOYMENT' — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
-            exit 1
-          done
+        # Gedeeld met de cleanup-preview-job in zad-deploy-directory.yml via de composite action —
+        # zie .github/actions/verify-zad-deleted/action.yml voor de volledige rationale (404 telt
+        # pas als bewijs ná bevestiging via het lijst-endpoint, transiënte-fout-hantering op zowel
+        # de scoped als de confirmatie-call, de positieve-richting-check, en de live-geverifieerde
+        # 401-status die niet in de OpenAPI-spec staat).
+        uses: ./.github/actions/verify-zad-deleted
+        with:
+          deployment: ${{ inputs.deployment }}
+          project: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          api-base: ${{ env.ZAD_API_BASE }}

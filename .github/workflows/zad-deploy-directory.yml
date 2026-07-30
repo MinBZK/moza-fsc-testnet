@@ -138,11 +138,19 @@ jobs:
       run: ${{ steps.c.outputs.run }}
       manager_migrate_changed: ${{ steps.c.outputs.changed }}
     steps:
+      # Alleen het push-pad heeft de repo-inhoud nodig (git diff "$BEFORE" "$SHA" hieronder). Het
+      # pull_request-pad gebruikt de PR-bestandenlijst via `gh api`, workflow_dispatch raakt geen
+      # bestanden — checkout zou daar alleen tijd kosten zonder ooit gelezen te worden.
       - name: Checkout
+        if: github.event_name == 'push'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-          fetch-depth: 0
+          # Begrensde diepte i.p.v. volledige historie (fetch-depth: 0): alleen bereikbaarheid
+          # van $BEFORE telt. Is $BEFORE toch buiten dit bereik (force-push/GC), dan vangt de
+          # bestaande fail-safe hieronder dat af (git diff faalt -> altijd bouwen), i.p.v. dat
+          # deze checkout de volledige geschiedenis moet ophalen om dat te garanderen.
+          fetch-depth: 100
       - name: Classificeer de run
         id: c
         env:
@@ -322,6 +330,13 @@ jobs:
       # zonder dit faalt die lookup stil en blijft de comment op elke gesloten PR staan.
       pull-requests: write
     steps:
+      # Nodig zodat de composite verificatie-action (`uses: ./.github/actions/...` hieronder) uit
+      # de repo geladen kan worden — die actions worden gelezen uit de workspace, niet gedownload.
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
       - name: Ruim de preview op via zad-actions
         id: cleanup
         uses: RijksICTGilde/zad-actions/cleanup@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
@@ -336,9 +351,12 @@ jobs:
           # want moza-fsc-testnet-manager-migrate heeft momenteel maar één versie (v1.43.7, waar
           # de gedeelde `test`-deployment op draait). Zelf afhandelen, zie de stap hieronder.
           delete-container: 'false'
-          # Moet spiegelen met de deploy-job hierboven: als deploy Dependabot-PR's overslaat en
-          # cleanup niet, blijft de preview van een eerdere (wél gedeployde) bot-PR permanent op
-          # het productiecluster staan zodra het beleid weer omgezet wordt.
+          # Moet spiegelen met de deploy-job hierboven (zelfde skip-bot-prs), maar het risico is
+          # NIET symmetrisch: skip bij deploy is fail-safe (er wordt dan nooit iets aangemaakt),
+          # skip bij cleanup is fail-open (wat er al staat overleeft stilzwijgend, bv. een preview
+          # die eerder via een handmatige workflow_dispatch wél is aangemaakt vóórdat het bot-PR
+          # opnieuw sloot). De action geeft bij een skip zelf alleen een ::notice:: (onzichtbaar in
+          # de praktijk); de ONGATE-stap hieronder maakt dat zichtbaar met een ::warning::.
           skip-bot-prs: 'true'
           # Zelfde reden als bij de deploy-job: upstream default (300s) is krap voor een
           # ArgoCD-sync; bij een timeout degradeert de action een mislukte delete tot ::warning::
@@ -346,105 +364,41 @@ jobs:
           # aan het verdwijnen is.
           task-timeout: '600'
 
+      # Expres NIET gegated op steps.cleanup.outputs.skipped: dit is precies de bot-skip die we
+      # zichtbaar moeten maken (zie de skip-bot-prs-comment hierboven). Alle andere stappen in
+      # deze job blijven wél gegate op skipped != 'true', want die veronderstellen dat de
+      # cleanup-actie daadwerkelijk gedraaid heeft.
+      - name: Waarschuw als cleanup werd overgeslagen voor een bot-PR
+        if: steps.cleanup.outputs.skipped == 'true'
+        run: |
+          echo "::warning::Cleanup overgeslagen voor een bot-PR (skip-bot-prs) — deployment '${{ needs.meta.outputs.deployment }}' is NIET gecontroleerd of opgeruimd. Bestond er al een preview (bv. eerder aangemaakt via workflow_dispatch), dan blijft die nu stil op het productiecluster staan. Ruim zo nodig handmatig op via workflow_dispatch 'zad-cleanup'."
+
       - name: Waarschuw als de preview mogelijk nooit bestond
         # Zelfde redenering als in zad-cleanup.yml: zad-deleted != 'true' onderscheidt "verwijderd"
-        # van "nooit bestaan". Overgeslagen op een bot-PR: dan zegt de action niets over deleted.
+        # van "nooit bestaan". Hier blijft dit een ::warning:: (i.p.v. de ::error:: in
+        # zad-cleanup.yml): de deployment-naam komt hier uit `needs.meta` (PR-nummer -> pr-<n>),
+        # geen vrije operator-invoer, dus een "typo" bestaat hier niet — zie zad-cleanup.yml voor
+        # het pad waar dat onderscheid wél nodig is. Overgeslagen op een bot-PR: dan zegt de
+        # action niets over deleted.
         if: steps.cleanup.outputs.skipped != 'true' && steps.cleanup.outputs.zad-deleted != 'true'
         run: |
           echo "::warning::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ needs.meta.outputs.deployment }}' — de preview bestond mogelijk niet, of de delete is niet gelukt. Controleer desgewenst de Operations Manager UI."
 
       - name: Verifieer dat de deployment echt weg is
-        # De action rapporteert een mislukte delete als ::warning:: en faalt de step niet (zie
-        # zad-common.sh) — zonder harde verificatie hier zou een 401 (bv. na key-rotatie) of 5xx
-        # een groene run opleveren terwijl de preview nog live staat op het productiecluster.
-        # Scoped endpoint (GET .../deployments/{deployment}) i.p.v. de lijst: die laatste is
-        # cluster-gefilterd ("Returns only deployments targeting the current cluster" — ZAD
-        # OpenAPI) en DeploymentListResponse.required is enkel ["project","cluster"], dus
-        # `deployments` mag legitiem ontbreken/null zijn — afwezigheid in die lijst bewijst dus
-        # niets. De scoped endpoint geeft gewoon 404 (weg) of 2xx (bestaat nog).
-        # Een kale 404 is echter GEEN bewijs op zichzelf: live tegen de API geprobeerd, komt
-        # diezelfde 404 ook terug op een onbekend pad én op een leeg project-segment — zónder dat
-        # de key ooit gecontroleerd wordt. Staat `vars.ZAD_PROJECT_ID_DIRECTORY` ooit leeg/fout, of
-        # verandert het endpoint-pad upstream, dan zou deze stap voorheen permanent "opgeruimd"
-        # melden terwijl de preview op het productiecluster blijft draaien. Daarom telt een 404 pas
-        # als de key/project ook aantoonbaar kloppen: het lijst-endpoint (zonder /{deployment}) is
-        # authenticated + project-scoped, dus een verkeerde key geeft 401 en een verkeerd project
-        # geeft geen 200 — alléén een 200 daar bevestigt dat de 404 hierboven betekent "weg" i.p.v.
-        # "onbevoegd/verkeerd pad".
+        # Gedeeld met zad-cleanup.yml via de composite action — zie
+        # .github/actions/verify-zad-deleted/action.yml voor de volledige rationale (404 telt pas
+        # als bewijs ná bevestiging via het lijst-endpoint, transiënte-fout-hantering op zowel de
+        # scoped als de confirmatie-call, de positieve-richting-check, en de live-geverifieerde
+        # 401-status die niet in de OpenAPI-spec staat).
         # Overgeslagen op een bot-PR (skip-bot-prs bij de cleanup-stap hierboven): zo'n run heeft
         # geen Actions-secrets, dus ZAD_API_KEY is leeg en deze stap zou anders altijd op 401 lopen.
         if: steps.cleanup.outputs.skipped != 'true'
-        env:
-          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
-          ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
-        run: |
-          set -euo pipefail
-          attempts=6
-          interval=10
-          for attempt in $(seq 1 "$attempts"); do
-            # `|| true` (i.p.v. `|| echo "000"`): curl schrijft de -w-uitvoer ('000' bij een
-            # connect-/timeout-fout) zelf al naar stdout vóórdat het faalt; een aparte
-            # `|| echo "000"` erachter plakte daar een tweede '000' aan vast ("HTTP 000000"), en
-            # liet de numerieke vergelijkingen hieronder struikelen op "integer expression
-            # expected". De case-normalisatie hierna is het sluitstuk: elke uitkomst die geen
-            # drie cijfers is (leeg, of iets onverwachts) wordt hard '000'.
-            http_code=$(curl -sS -o /tmp/zad-deployment.json -w '%{http_code}' \
-              --connect-timeout 10 --max-time 30 \
-              -H "X-API-Key: $ZAD_API_KEY" \
-              "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments/$DEPLOYMENT" \
-              || true)
-            case "$http_code" in
-              [0-9][0-9][0-9]) ;;
-              *) http_code="000" ;;
-            esac
-
-            if [ "$http_code" = "404" ]; then
-              list_code=$(curl -sS -o /dev/null -w '%{http_code}' \
-                --connect-timeout 10 --max-time 30 \
-                -H "X-API-Key: $ZAD_API_KEY" \
-                "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments" \
-                || true)
-              case "$list_code" in
-                [0-9][0-9][0-9]) ;;
-                *) list_code="000" ;;
-              esac
-
-              if [ "$list_code" = "200" ]; then
-                echo "Geverifieerd: deployment '$DEPLOYMENT' bestaat niet meer (poging $attempt/$attempts; key/project bevestigd via het lijst-endpoint)."
-                exit 0
-              fi
-              echo "::error::404 op '$DEPLOYMENT', maar het lijst-endpoint gaf HTTP $list_code i.p.v. 200 — key/project kon niet bevestigd worden, dus deze 404 telt niet als bewijs dat de cleanup gelukt is. Controleer ZAD_API_KEY_DIRECTORY/ZAD_PROJECT_ID_DIRECTORY en de Operations Manager UI."
-              exit 1
-            fi
-
-            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
-              if [ "$attempt" -lt "$attempts" ]; then
-                echo "Deployment '$DEPLOYMENT' nog aanwezig (HTTP $http_code, poging $attempt/$attempts) — delete kan nog async lopen, over ${interval}s opnieuw proberen."
-                sleep "$interval"
-                continue
-              fi
-              echo "::error::Deployment '$DEPLOYMENT' bestaat nog na cleanup (HTTP $http_code, na $attempts pogingen) — check de Operations Manager UI."
-              exit 1
-            fi
-
-            # Tijdelijke transport-/serverfouten (connectiefout/timeout = '000', of 5xx) krijgen
-            # dezelfde begrensde herhaling als "nog aanwezig": één 502 of een netwerk-hikje mag een
-            # verder correcte cleanup niet meteen rood laten uitslaan. Andere statussen (401, 403,
-            # overige 4xx, ...) zijn niet transiënt en falen wél meteen, hieronder.
-            if [ "$http_code" = "000" ] || { [ "$http_code" -ge 500 ] && [ "$http_code" -lt 600 ]; }; then
-              if [ "$attempt" -lt "$attempts" ]; then
-                echo "Tijdelijke fout (HTTP $http_code) bij het verifiëren van '$DEPLOYMENT' (poging $attempt/$attempts) — over ${interval}s opnieuw proberen."
-                sleep "$interval"
-                continue
-              fi
-              echo "::error::Herhaalde tijdelijke fouten (laatst HTTP $http_code) bij het verifiëren van '$DEPLOYMENT' na $attempts pogingen — cleanup NIET geverifieerd."
-              exit 1
-            fi
-
-            echo "::error::Onverwachte HTTP-status $http_code bij het ophalen van '$DEPLOYMENT' — cleanup NIET geverifieerd. Check handmatig in de Operations Manager UI of '$DEPLOYMENT' nog bestaat."
-            exit 1
-          done
+        uses: ./.github/actions/verify-zad-deleted
+        with:
+          deployment: ${{ needs.meta.outputs.deployment }}
+          project: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          api-base: ${{ env.ZAD_API_BASE }}
 
       - name: Verwijder de ghcr preview-tag (indien niet gedeeld)
         # Zelfde reden als hierboven bij delete-container: de action verwijdert het hele package
@@ -470,7 +424,12 @@ jobs:
           # telt. Maar 403 (token mist org-package-rechten) of 5xx betekent dat image-opruiming
           # structureel kapot is en dat moet DEZE stap luid melden, niet stilzwijgend wegwaarschuwen.
           if ! versions=$(gh api --paginate "orgs/${org}/packages/container/${package}/versions" 2>/tmp/gh-versions.err); then
-            gh_status=$(grep -oE '\(HTTP [0-9]+\)' /tmp/gh-versions.err | grep -oE '[0-9]+' | tail -n1)
+            # `|| true` op de grep-pipeline: zonder een "(HTTP <code>)"-match in de foutmelding
+            # (een onbekend foutformaat) faalt de laatste `grep` in de pipe, en zou de
+            # assignment onder `set -e -o pipefail` het hele script hier stil laten stoppen —
+            # vóórdat de ::error:: hieronder ooit gedrukt wordt. `|| true` laat `gh_status` dan
+            # gewoon leeg, zodat de `${gh_status:-onbekend}`-fallback verderop wél wordt bereikt.
+            gh_status=$(grep -oE '\(HTTP [0-9]+\)' /tmp/gh-versions.err | grep -oE '[0-9]+' | tail -n1 || true)
             err_msg=$(tr '\n' ' ' </tmp/gh-versions.err)
             if [ "$gh_status" = "404" ]; then
               echo "::notice::Package '${package}' niet gevonden (HTTP 404) — preview heeft nooit een eigen image gebouwd, niets op te ruimen."
@@ -503,6 +462,23 @@ jobs:
             exit 0
           fi
 
-          if ! gh api "orgs/${org}/packages/container/${package}/versions/${version_id}" -X DELETE; then
-            echo "::warning::Kon package-version $version_id (tag '$TAG') niet verwijderen — de ZAD-deployment is al weg, dat is het belangrijkste."
+          # Zelfde statussplitsing als bij het ophalen hierboven: 404 (version al weg, bv. door
+          # een race met een andere opruimrun) is onschuldig — de ZAD-deployment is al hierboven
+          # geverifieerd weg, dát is de garantie die telt. Maar 403 (token mist rechten, bv. na
+          # een scope-wijziging) of 5xx betekent dat DELETE structureel kapot is; zou dat stil op
+          # een ::warning:: blijven hangen, dan waarschuwt deze stap voortaan op ELKE PR-close
+          # zonder ooit te escaleren — precies het patroon waardoor een team een stap leert
+          # negeren.
+          if ! gh api "orgs/${org}/packages/container/${package}/versions/${version_id}" -X DELETE 2>/tmp/gh-delete.err; then
+            # `|| true` op de grep-pipeline: zelfde reden als bij het ophalen hierboven — zonder
+            # een "(HTTP <code>)"-match zou de assignment onder `set -e -o pipefail` anders het
+            # script hier stil afbreken, vóórdat de ::error:: hieronder gedrukt wordt.
+            gh_status=$(grep -oE '\(HTTP [0-9]+\)' /tmp/gh-delete.err | grep -oE '[0-9]+' | tail -n1 || true)
+            err_msg=$(tr '\n' ' ' </tmp/gh-delete.err)
+            if [ "$gh_status" = "404" ]; then
+              echo "::notice::Package-version $version_id (tag '$TAG') was al weg (HTTP 404) bij het verwijderen — niets meer te doen; de ZAD-deployment is hierboven al geverifieerd weg."
+              exit 0
+            fi
+            echo "::error::Kon package-version $version_id (tag '$TAG') niet verwijderen (HTTP ${gh_status:-onbekend}: ${err_msg}) — opruimen van ghcr-preview-images werkt structureel niet meer. De ZAD-deployment is hierboven al geverifieerd weg, dus dit blokkeert de deployment-cleanup zelf niet, maar mag niet stil weggewaarschuwd worden."
+            exit 1
           fi
