@@ -1,19 +1,23 @@
-# Bouwt + pusht de manager-migrate-wrapper-image naar ghcr.
-# ZAD pullt images uit een registry; de wrapper (deploy/zad/manager-migrate, migrate->serve)
-# bestond tot nu toe alleen lokaal (docker compose build). Deze reusable workflow publiceert 'm zodat
-# zad-deploy-directory.yml (job `build`) de directory-manager op ZAD kan draaien — én previews een
-# eigen pr-<n>-getagde image hebben.
+# Bouwt + pusht de controller-migrate- en txlog-migrate-wrapper-images naar ghcr.
+# Deze componenten draaien NIET in deze repo (ze deployen per-peer bij de app), maar
+# deze repo is de source-of-truth voor de wrapper-images (deploy/zad/*-migrate,
+# migrate->serve). Door ze hier centraal te bouwen kunnen de app-repo's ze uit ghcr
+# pullen i.p.v. elk een eigen wrapper te onderhouden.
 #
-# Alleen workflow_dispatch/workflow_call, geen push-trigger: aanroepers geven de tag expliciet
-# mee via image_suffix (main -> canoniek, PR -> pr-<n>). Geen marketplace docker-actions: docker
-# + buildx op de runner in run-steps, zodat er geen extra action-SHA te pinnen is (alleen
-# checkout) en Scorecard Pinned-Dependencies groen blijft.
-name: build-manager-migrate
+# Parallel aan build-manager-migrate.yml, maar zonder deploy-caller: de manager wordt
+# hier wél gedeployd (directory) en bouwt via workflow_call vanuit die deploy; controller/
+# txlog niet, dus die bouwen op push-naar-main (pad-gefilterd) + handmatig via dispatch.
+# Geen marketplace docker-actions: docker + buildx in run-steps, zodat er geen extra
+# action-SHA te pinnen is (alleen checkout) en Scorecard Pinned-Dependencies groen blijft.
+name: build-migrate-images
 
 on:
-  # Aangeroepen door zad-deploy-directory (build-job) vóór een deploy: main -> canonieke tag,
-  # PR -> pr-<n>-suffix. De losse branch-push-build is vervallen: previews bouwen nu via deze
-  # workflow_call (ordering-veilig in één run), dus een aparte push-build zou dubbel bouwen.
+  push:
+    branches: [main]
+    paths:
+      - "deploy/zad/controller-migrate/**"
+      - "deploy/zad/txlog-migrate/**"
+      - ".github/workflows/build-migrate-images.yml"
   workflow_dispatch:
     inputs:
       image_tag:
@@ -24,25 +28,13 @@ on:
         description: "optioneel: tag-suffix (bv. pr-42); leeg = canonieke tag"
         required: false
         default: ""
-  workflow_call:
-    inputs:
-      image_tag:
-        description: "Output-tag (het basis-image zelf is digest-gepind in de Dockerfile; bump die er apart bij)"
-        required: false
-        type: string
-        default: "v1.43.7"
-      image_suffix:
-        description: "optioneel: tag-suffix (bv. pr-42); leeg = canonieke tag"
-        required: false
-        type: string
-        default: ""
 
 # Top-level read-only; write-scope alleen op de job die pusht (Scorecard Token-Permissions).
 permissions:
   contents: read
 
 concurrency:
-  group: build-manager-migrate-${{ github.ref }}
+  group: build-migrate-images-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -52,16 +44,22 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      # Eén component-fout mag de andere niet afbreken (onafhankelijke images).
+      fail-fast: false
+      matrix:
+        component: [controller, txlog]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Build en push manager-migrate naar ghcr
+      - name: Build en push ${{ matrix.component }}-migrate naar ghcr
         env:
           # Lowercase image-pad zonder slash: zad-actions/cleanup weigert `/` in een containernaam.
-          IMAGE: ghcr.io/minbzk/moza-fsc-testnet-manager-migrate
+          IMAGE: ghcr.io/minbzk/moza-fsc-testnet-${{ matrix.component }}-migrate
+          CONTEXT: deploy/zad/${{ matrix.component }}-migrate
           IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
           IMAGE_SUFFIX: ${{ inputs.image_suffix }}
           REPO: ${{ github.repository }}
@@ -79,5 +77,5 @@ jobs:
             --tag "${IMAGE}:${tag}" \
             --label "org.opencontainers.image.source=https://github.com/${REPO}" \
             --push \
-            deploy/zad/manager-migrate
+            "$CONTEXT"
           echo "Gepusht: ${IMAGE}:${tag}"
