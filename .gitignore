@@ -1,8 +1,19 @@
 .env
+# `.env` matcht alléén een bestand met exact die naam. De env-templates heten
+# `<component>.env.example` (peers/directory/manager.env.example, dirui.env.example) en nodigen dus
+# uit tot een ingevulde `<component>.env` met DSN + wachtwoord ernaast — die viel hierbuiten.
+*.env
+!*.env.example
 *.pem
 *.key
 *.crt
 *.crl
+# Keystores/containerformaten met privésleutel erin (naast de losse *.pem/*.key hierboven).
+*.p12
+*.pfx
+*.jks
+*.der
+*.pk8
 secrets/
 pki/ca/
 pki/out/

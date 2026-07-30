@@ -9,7 +9,9 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      # Maandelijks, conform CLAUDE.md. `daily` scande een config-only repo met een handvol
+      # action-pins 365× per jaar, en elke resulterende PR trekt de volle CI mee.
+      interval: "monthly"
     groups:
       # codeql-action publiceert init/autobuild/analyze/upload-sarif als losse
       # sub-actions onder één versie. Ze MOETEN samen bewegen: een enkele
