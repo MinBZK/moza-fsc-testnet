@@ -7,7 +7,7 @@
 > `docs/superpowers/specs/2026-07-29-zad-actions-convergentie-design.md`; werkende mechaniek:
 > `docs/zad-directory-deploy.md`. Dit document blijft staan als vastlegging van de oorspronkelijke
 > afweging.
-
+>
 > Status: ontwerp goedgekeurd (2026-07-02). Implementatie op branch
 > `feature/auto-deploy-test-directory`.
 
