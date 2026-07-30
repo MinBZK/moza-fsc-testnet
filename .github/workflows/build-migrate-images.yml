@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "OpenFSC-basisversie (build-arg IMAGE_TAG + image-tag)"
+        description: "Output-tag (het basis-image zelf is digest-gepind in de Dockerfile; bump die er apart bij)"
         required: false
         default: "v1.43.7"
       image_suffix:
@@ -40,6 +40,7 @@ concurrency:
 jobs:
   build-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -50,14 +51,14 @@ jobs:
         component: [controller, txlog]
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Build en push ${{ matrix.component }}-migrate naar ghcr
         env:
-          # Lowercase image-pad, exact zoals build-manager-migrate.yml.
-          IMAGE: ghcr.io/minbzk/moza-fsc-testnet/${{ matrix.component }}-migrate
+          # Lowercase image-pad zonder slash: zad-actions/cleanup weigert `/` in een containernaam.
+          IMAGE: ghcr.io/minbzk/moza-fsc-testnet-${{ matrix.component }}-migrate
           CONTEXT: deploy/zad/${{ matrix.component }}-migrate
           IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
           IMAGE_SUFFIX: ${{ inputs.image_suffix }}
@@ -73,7 +74,6 @@ jobs:
           fi
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
           docker buildx build \
-            --build-arg "IMAGE_TAG=${IMAGE_TAG}" \
             --tag "${IMAGE}:${tag}" \
             --label "org.opencontainers.image.source=https://github.com/${REPO}" \
             --push \
