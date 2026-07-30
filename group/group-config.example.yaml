@@ -1,9 +1,9 @@
-# Group-configuratie (#723). Vul in en bewaar de echte versie buiten git.
+# Group-configuratie. Vul in en bewaar de echte versie buiten git.
 # group_id wordt op elke manager gezet als GROUP_ID-env (zie deploy/local + peers/directory).
 group:
   id: moza-fbs-test            # group_id; identificeert de federatie. == GROUP_ID-env op alle managers.
   trust_anchor:
-    # test-CA root (via ZAD attachments gemount, lokaal bind-mount). GEEN PKIoverheid (#720).
+    # test-CA root (via ZAD attachments gemount, lokaal bind-mount). GEEN PKIoverheid.
     ca_cert: /etc/fsc/ca/root.pem            # -> TLS_GROUP_ROOT_CERT
     crl: /etc/fsc/ca/intermediate.crl        # CRL, intermediate als issuer
   rules:

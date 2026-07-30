@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Smoke (#727): bewijst dat het contract-bootstrap-mechanisme een geldig, wederzijds
+# Smoke: bewijst dat het contract-bootstrap-mechanisme een geldig, wederzijds
 # ondertekend serviceConnection-contract oplevert tussen example-consumer en example-provider.
 # Draait eerst de bootstrap (idempotent) en verifieert daarna ONAFHANKELIJK vanaf de
 # consumer-manager (met jq) dat EXACT dat contract (op zijn globaal-unieke content_hash) de
@@ -12,8 +12,8 @@
 # servicePublication-contract voor dezelfde example-service; een losse grep op servicenaam/OIN/
 # "accept" zou daardoor altijd matchen (false green). De content_hash is uniek voor óns contract.
 #
-# Volgorde: `docker compose up` -> publish-service.sh (provider) -> smoke-discover.sh (#725)
-#           -> smoke-contract.sh (#727). De dienst moet bestaan om op te contracteren.
+# Volgorde: `docker compose up` -> publish-service.sh (provider) -> smoke-discover.sh
+#           -> smoke-contract.sh. De dienst moet bestaan om op te contracteren.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

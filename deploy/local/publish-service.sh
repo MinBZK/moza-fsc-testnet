@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Onboarding (#724): maakt example-service aan op de controller Administration-API en
+# Onboarding: maakt example-service aan op de controller Administration-API en
 # publiceert 'm via een servicePublication-contract op de eigen manager Internal-API.
 # Idempotent: slaat create/publish over als ze er al zijn. Manager hasht+signt het
 # contract server-side; de directory (AUTO_SIGN_GRANTS=servicePublication) auto-accept.

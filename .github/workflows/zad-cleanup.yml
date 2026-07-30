@@ -1,25 +1,16 @@
-# ZAD-cleanup (#729): ruimt een deployment op via de v2 Operations Manager API (DELETE .../{deployment}).
-# Roept deploy/zad/cleanup.sh aan (zelfde bron als de CLI) — het tegenovergestelde van
-# zad-deploy-directory.yml. `validate` is read-only, `plan` toont, `apply` verwijdert + pollt.
-#
-# Dit ruimt dít repo's onderdeel op: de centrale DIRECTORY (project uit vars.ZAD_PROJECT_ID_DIRECTORY,
-# key uit secrets.ZAD_API_KEY_DIRECTORY). Een PEER-deployment ruim je op bij de app-repo — dat repo
-# vendort deze `deploy/zad/cleanup.sh` en draait 'm met het eigen project + de eigen key (het
-# script is volledig env-gedreven). Zie docs/zad-cleanup.md + docs/zad-projecten.md (deploy bij de app).
+# ZAD-cleanup via RijksICTGilde/zad-actions/cleanup: verwijdert een deployment uit het
+# directory-project (project uit vars.ZAD_PROJECT_ID_DIRECTORY, key uit
+# secrets.ZAD_API_KEY_DIRECTORY). Het PR-pad ruimt zichzelf op in zad-deploy-directory.yml;
+# deze workflow is voor handmatige gevallen. Een peer-deployment ruim je op bij de app-repo met
+# dezelfde action en het eigen project + de eigen key. Zie docs/zad-cleanup.md.
 name: zad-cleanup
 
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: "validate=auth-check; plan=toon; apply=verwijderen + pollen"
-        type: choice
-        options: [validate, plan, apply]
-        default: validate
       deployment:
-        description: "deployment-naam om op te ruimen (leeg bij validate; bv. een pr-preview)"
-        required: false
-        default: ""
+        description: "deployment-naam om op te ruimen (bv. een pr-preview)"
+        required: true
       allow_protected:
         description: "sta het verwijderen van beschermde namen (test/main/...) toe"
         type: boolean
@@ -28,24 +19,130 @@ on:
 permissions:
   contents: read
 
+env:
+  # Eén bron voor de ZAD-API-basis: zowel de zad-actions-call hieronder (api-base-url) als de
+  # verificatie-curl wijzen hierop, zodat ze nooit stilzwijgend uiteen kunnen lopen. Zónder
+  # /api-suffix: de action-input wil die erbij, de curl bouwt zelf /api/v2/... — elke aanroep
+  # plakt 'm apart aan, anders eindig je op /api/api/v2.
+  ZAD_API_BASE: https://zad.rijksapp.nl
+
 concurrency:
-  group: zad-cleanup-${{ inputs.deployment }}
+  # Group-sleutel gedeeld met zad-deploy-directory.yml (project + deployment): een handmatige
+  # cleanup van bv. `test` mag niet gelijktijdig lopen met een deploy van `test` vanaf main.
+  group: zad-directory-${{ vars.ZAD_PROJECT_ID_DIRECTORY }}-${{ inputs.deployment }}
   cancel-in-progress: false
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
+      # Nodig zodat de composite verificatie-action (`uses: ./.github/actions/...` hieronder) uit
+      # de repo geladen kan worden — die actions worden gelezen uit de workspace, niet gedownload.
       - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Cleanup directory via ZAD v2-API
+      # Vangrail uit het verwijderde cleanup.sh: beschermde deployments niet per ongeluk slopen.
+      - name: Weiger beschermde deployment-namen
+        env:
+          DEPLOYMENT: ${{ inputs.deployment }}
+          ALLOW_PROTECTED: ${{ inputs.allow_protected }}
+        run: |
+          set -euo pipefail
+          case "$DEPLOYMENT" in
+            ""|*[!a-z0-9-]*)
+              echo "::error::ongeldige deployment-naam '$DEPLOYMENT' (alleen a-z0-9-)"; exit 1 ;;
+          esac
+          case "$DEPLOYMENT" in
+            test|main|master|production|prod)
+              if [ "$ALLOW_PROTECTED" != "true" ]; then
+                echo "::error::'$DEPLOYMENT' is beschermd; zet allow_protected aan om te forceren."
+                exit 1
+              fi
+              echo "::warning::beschermde deployment '$DEPLOYMENT' wordt verwijderd (allow_protected)." ;;
+          esac
+
+      - name: Controleer of de deployment al bestond vóór cleanup
+        # De deployment-naam hier is vrije operator-invoer (workflow_dispatch-input) — een typo
+        # levert bij de action hieronder net zo goed een groene, "niets te verwijderen"-stap op
+        # als een terechte "was al weg". Zonder dit onderscheid ziet de operator geen verschil
+        # tussen "cleanup gelukt (of niets te doen)" en "ik heb de verkeerde naam getypt en er
+        # is niets gebeurd". Eén losse GET vóór de action (geen retry-lus nodig: dit legt alleen
+        # de staat vast vóórdat er iets gebeurt, het bewijst niets over een delete). Bij twijfel
+        # (transiënte fout, 401/403/5xx/000) nemen we aan dat de deployment WEL bestond — dat is
+        # de veilige kant: het duwt een onzekere uitkomst naar de foutmelding hieronder i.p.v.
+        # naar een vals-groene "bestond toch al niet".
+        id: preflight
         env:
           ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           ZAD_PROJECT: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
-          ALLOW_PROTECTED: ${{ inputs.allow_protected && '1' || '0' }}
-          MODE: ${{ inputs.mode }}
           DEPLOYMENT: ${{ inputs.deployment }}
-        run: ./deploy/zad/cleanup.sh "${MODE}" "${DEPLOYMENT}"
+        run: |
+          set -euo pipefail
+          http_code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            --connect-timeout 10 --max-time 30 \
+            -H "X-API-Key: $ZAD_API_KEY" \
+            "$ZAD_API_BASE/api/v2/projects/$ZAD_PROJECT/deployments/$DEPLOYMENT" \
+            || true)
+          case "$http_code" in
+            [0-9][0-9][0-9]) ;;
+            *) http_code="000" ;;
+          esac
+          if [ "$http_code" = "404" ]; then
+            echo "existed=false" >> "$GITHUB_OUTPUT"
+            echo "Pre-flight: '$DEPLOYMENT' gaf HTTP 404 vóór cleanup — bestond (voor zover waarneembaar) niet."
+          else
+            echo "existed=true" >> "$GITHUB_OUTPUT"
+            echo "Pre-flight: '$DEPLOYMENT' gaf HTTP $http_code vóór cleanup — aangenomen dat de deployment bestond (bij twijfel: wel bestond)."
+          fi
+
+      - name: Cleanup via zad-actions
+        id: cleanup
+        uses: RijksICTGilde/zad-actions/cleanup@13434cd415db0cd195a2c5f12bf67645acfcb635 # v4.0.6
+        with:
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          deployment-name: ${{ inputs.deployment }}
+          api-base-url: ${{ env.ZAD_API_BASE }}/api
+          delete-github-env: 'false'
+          delete-container: 'false'
+          # Upstream default (300s) is krap voor een ArgoCD-sync; bij een timeout degradeert de
+          # action een mislukte delete tot ::warning:: en gaat groen door — de verificatiestap
+          # hieronder ziet dan een deployment die nog volop aan het verdwijnen is.
+          task-timeout: '600'
+
+      # De action rapporteert een mislukte/lege delete als ::warning:: en faalt de step niet (zie
+      # zad-common.sh) — --ignore-not-found-achtig gedrag: een typo in de deployment-naam levert
+      # hier ook gewoon een groene stap op (er was niets te verwijderen). `zad-deleted != 'true'`
+      # is het signaal dat "verwijderd" van "niets gebeurd" onderscheidt, maar zegt zelf niet óf
+      # dat laatste een probleem is: de pre-flight hierboven maakt dat onderscheid. Bestond de
+      # deployment al niet (pre-flight 404), dan vroeg de operator terecht niets te doen — groen.
+      # Bestond hij wél, dan is er een verwijdering gevraagd die niet is gebeurd — dat hoort ROOD
+      # te zijn, niet een ::warning:: die de rest van de run niet raakt.
+      - name: Faal als er niets verwijderd is terwijl de deployment wél bestond
+        if: steps.cleanup.outputs.zad-deleted != 'true' && steps.preflight.outputs.existed == 'true'
+        run: |
+          echo "::error::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ inputs.deployment }}', terwijl de pre-flight-check hierboven bevestigde dat de deployment vóór deze run bestond — er is een verwijdering gevraagd en die is niet gebeurd. Controleer de deployment-naam en de Operations Manager UI."
+          exit 1
+
+      - name: Meld dat er niets te verwijderen was (bestond al niet)
+        if: steps.cleanup.outputs.zad-deleted != 'true' && steps.preflight.outputs.existed != 'true'
+        run: |
+          echo "::notice::zad-actions meldt zad-deleted='${{ steps.cleanup.outputs.zad-deleted }}' voor '${{ inputs.deployment }}' — de pre-flight-check zag 'm al niet vóór deze run (typo, of al eerder opgeruimd). Niets te doen."
+
+      - name: Verifieer dat de deployment echt weg is
+        # Gedeeld met de cleanup-preview-job in zad-deploy-directory.yml via de composite action —
+        # zie .github/actions/verify-zad-deleted/action.yml voor de volledige rationale (404 telt
+        # pas als bewijs ná bevestiging via het lijst-endpoint, transiënte-fout-hantering op zowel
+        # de scoped als de confirmatie-call, de positieve-richting-check, en de live-geverifieerde
+        # 401-status die niet in de OpenAPI-spec staat).
+        uses: ./.github/actions/verify-zad-deleted
+        with:
+          deployment: ${{ inputs.deployment }}
+          project: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          api-base: ${{ env.ZAD_API_BASE }}

@@ -100,8 +100,9 @@ Nummering = de naar ZAD gestuurde lijst (**1–4** bijlagen, **5–8** "Publicat
   certs zijn prima, geen her-uitgifte nodig.
 
 Hiermee is de cert-mount voor #723-op-ZAD volledig gespecificeerd. Resterende #723-prereqs (image
-via `build-manager-migrate.yml`, managed Postgres via ZAD's `postgresql-database`-service, env via
-`deploy/zad/upsert-directory.sh`) staan onder "Aangrenzende ZAD-prereqs".
+via `build-manager-migrate.yml`, managed Postgres via ZAD's `postgresql-database`-service, env —
+destijds via `deploy/zad/upsert-directory.sh`, inmiddels UI-only, zie `docs/zad-directory-deploy.md`)
+staan onder "Aangrenzende ZAD-prereqs".
 
 ## Aangrenzende ZAD-prereqs (#723-deploy)
 

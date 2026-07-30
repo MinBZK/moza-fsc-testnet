@@ -3,10 +3,24 @@
 #
 # Deze repo bevat geen applicatie-dependencies (config-only). We houden alleen de
 # GitHub Actions up-to-date. Voeg hier later docker/helm toe zodra OpenFSC-images
-# of charts in deze repo gepind worden (#723/#729).
+# of charts in deze repo gepind worden.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
+    groups:
+      # codeql-action publiceert init/autobuild/analyze/upload-sarif als losse
+      # sub-actions onder één versie. Ze MOETEN samen bewegen: een enkele
+      # sub-action bumpen geeft een version-skew ("Loaded a configuration file
+      # for version X, but running version Y") en breekt de CodeQL-analyse.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+      # Overige actions gebundeld in één PR, minder review-ruis.
+      github-actions:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github/codeql-action*"
