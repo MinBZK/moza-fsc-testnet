@@ -28,10 +28,12 @@ een read-only API-call met de nieuwe key (zie `docs/zad-directory-deploy.md`, st
 ```bash
 read -rs ZAD_API_KEY; export ZAD_API_KEY     # plak de key niet inline
 curl -sS -H "X-API-Key: $ZAD_API_KEY" \
-  https://zad.rijksapp.nl/api/v2/projects/mft-tp9/deployments | jq -r '.deployments[].name'
+  https://zad.rijksapp.nl/api/v2/projects/mft-tp9/deployments | jq -r '.deployments[]?.name'
 ```
 
-Een 200 met de deployment-lijst bevestigt dat de nieuwe key werkt. Zet de nieuwe key daarna in
+Een 200 bevestigt dat de nieuwe key werkt — de `?` in `.deployments[]?` is nodig omdat `deployments`
+legitiem kan ontbreken (het endpoint is cluster-gefilterd, zie `docs/zad-cleanup.md`); een lege
+uitvoer is dus géén bewijs dat de key stuk is, de statuscode is dat wel. Zet de nieuwe key daarna in
 **Settings → Secrets and variables → Actions** bij `ZAD_API_KEY_DIRECTORY` (overschrijft de oude
 waarde). Trek de oude key **pas ná die stap** in bij de ZAD Operations Manager — anders revoke je
 een key die CI nog gebruikt.

@@ -138,7 +138,7 @@ er staat, kijk dan in de Operations Manager UI of doe een read-only API-call:
 ```bash
 read -rs ZAD_API_KEY; export ZAD_API_KEY     # plak de key niet inline
 curl -sS -H "X-API-Key: $ZAD_API_KEY" \
-  https://zad.rijksapp.nl/api/v2/projects/mft-tp9/deployments | jq -r '.deployments[].name'
+  https://zad.rijksapp.nl/api/v2/projects/mft-tp9/deployments | jq -r '.deployments[]?.name'
 ```
 
 **Blijft handwerk in de UI (stappen 3 + 5):** bijlagen (certs) + Publicatie op het web modus 2 op
@@ -153,13 +153,18 @@ naar main** — een merge (CI groen) rolt de directory automatisch uit naar depl
 
 Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) een `pr-<PR-nummer>`-preview
 uit zodra de `changes`-job de deploy-paden geraakt ziet — net als bij de push-naar-main hierboven,
-géén automatisme voor élke PR. Dependabot-PR's worden altijd overgeslagen (`skip-bot-prs: 'true'`).
+géén automatisme voor élke PR. Bot-PR's (Dependabot, Renovate, elke auteur van type `Bot`) worden
+altijd overgeslagen: de `changes`-job zet daarvoor `run=false` vóór de build, en `skip-bot-prs: 'true'`
+op de deploy-/cleanup-action is het vangnet erachter.
 `workflow_dispatch` blijft voor handmatige overrides.
 
-Path-filter (alleen deze paden triggeren de auto-deploy, en een docs-only wijziging — `^docs/` of
-`*.md` — telt nooit mee, ook niet binnen zo'n pad): `deploy/zad/manager-migrate/**`, `group/**`, de
+Path-filter (alleen deze paden triggeren de auto-deploy): `deploy/zad/manager-migrate/**`, `group/**`, de
 workflow zelf én `build-manager-migrate.yml` (de build-recipe zelf). Docs- en peer-merges blijven
-dus stil. Voor `push` staat dat pad-filter ook in de
+dus stil. Een docs-only wijziging (`^docs/` of `*.md`) telt niet mee, ook niet binnen zo'n pad — maar
+let op de asymmetrie tussen de twee paden: op **`pull_request`** bepaalt die uitsluiting of er
+überhaupt gedeployd wordt (`run`), terwijl een **`push` naar main** die de trigger-`paths:` haalt
+altijd deployt en de docs-uitsluiting daar alleen bepaalt of er herbouwd wordt (`changed`). Een merge
+die uitsluitend een `.md` onder `group/**` wijzigt, rolt `test` dus wél opnieuw uit. Voor `push` staat dat pad-filter ook in de
 trigger-`paths:` van de workflow zelf; de docs-uitzondering zit daar niet bij (de docs-only-conjunctie
 loopt alleen via de `changes`-job — zie hieronder). Voor `pull_request` zit de hele filter (paden +
 docs-uitzondering) in de `changes`-job, op basis van de bestandenlijst uit de GitHub PR-API (niet
@@ -181,9 +186,9 @@ Daarna voorkomen drie jobs de build-deploy-race:
 
 | Job | Wanneer | Doet |
 |-----|---------|------|
-| `changes` | elke push mét pad-match, én elke PR (open/sync/reopened/closed) | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
+| `changes` | elke push mét pad-match, elke PR (open/sync/reopened) én elke `workflow_dispatch` | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
 | `build` | alleen als `manager-migrate/**` óf `build-manager-migrate.yml` zelf non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
-| `deploy` | ná build-succes, óf meteen als build geskipt | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR; controleert daarna dat élk component een URL kreeg |
+| `deploy` | ná build-succes, óf meteen als build geskipt (ook op `workflow_dispatch`) | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR; controleert daarna dat élk component een URL kreeg |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór de deploy-stap). Config/group-change
 → build skip → deploy herbruikt de bestaande tag. De manager-migrate-image bouwt via de reusable

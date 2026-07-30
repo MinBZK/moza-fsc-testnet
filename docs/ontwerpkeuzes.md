@@ -107,11 +107,14 @@ Gemaakte keuzes:
   (`opened`/`synchronize`/`reopened`) rolt automatisch een preview `pr-<PR-nummer>` uit; bij
   `closed` ruimt een `cleanup-preview`-job die op. `workflow_dispatch` blijft voor handmatige
   overrides. `RijksICTGilde/zad-actions` (`/deploy` en `/cleanup`) is de gedeelde bron.
-- **Eén workflow, 3 jobs** (`changes` → `build` → `deploy`) tegen de build-deploy-race: een
+- **Eén workflow, jobs in serie** (`meta` → `changes` → `build` → `deploy`, plus een losse
+  `cleanup-preview` op `closed`) tegen de build-deploy-race: een
   image-wijziging bouwt éérst (`build-manager-migrate` als reusable `workflow_call`), pas dán
   deployt de `deploy`-job. Een config/group-only merge skipt de build en herbruikt de bestaande tag.
-- **`git diff` in een run-step** detecteert de image-wijziging — geen marketplace-action, dus geen
-  extra action-SHA te pinnen → OpenSSF Scorecard blijft groen. Om dezelfde reden verliest
+- **`git diff` in een run-step** detecteert de image-wijziging — voor die stap geen
+  marketplace-action, dus geen extra action-SHA te pinnen. (De deploy/cleanup zelf gebruikt
+  wél `RijksICTGilde/zad-actions`, SHA-gepind; Scorecard-dekking daarvan staat in
+  `docs/zad-cleanup.md`.) Om een andere reden — dubbele build en ordering — verliest
   `build-manager-migrate.yml` z'n eigen `push`-trigger helemaal: het wordt alleen nog aangeroepen
   via `workflow_dispatch` (handmatig) of `workflow_call` (de reusable-call vanuit de `build`-job,
   zowel op main als op een PR) — geen dubbele build en geen concurrency-clash.
@@ -134,9 +137,11 @@ PR. Dat betekent ook dat elke ephemere `pr-<n>` op het productiecluster draait m
 de directory-**peer zelf** (OIN `00000000000000000010`) — géén aparte preview-identiteit. Voor een
 gesloten testnet met een eigen test-CA is dat verdedigbaar, maar het is een **geaccepteerd risico**,
 niet alleen een gemak. Drie categorieën deployen nooit een preview: fork-PR's (geen secrets),
-docs-only PR's, en bot-PR's (`skip-bot-prs: 'true'` op zowel de deploy- als de cleanup-aanroep) —
-die laatste uitzondering is permanent en geldt ook als de diff van een bot-PR wél in de
-trigger-paden valt.
+docs-only PR's, en bot-PR's — die laatste uitzondering is permanent en geldt ook als de diff van een
+bot-PR wél in de trigger-paden valt. Alle drie worden in de `changes`-job afgevangen (dus vóór de
+build; `skip-bot-prs: 'true'` op de deploy-/cleanup-aanroep is het vangnet erachter). Dat de bot-guard
+óók vóór de build moet, is geleerd: zat hij alleen in de action, dan bouwde en pushte een
+Dependabot-actions-bump alsnog een preview-image dat daarna nooit werd opgeruimd.
 
 ### Projectconfig verhuisd naar de Operations Manager UI (#723/#729)
 
@@ -155,4 +160,5 @@ op het web" dat al deed.
   stap 4) dat uitlegt hoe je ze in de UI invoert.
 - **Geaccepteerde kosten:** git **documenteert** de config, het **handhaaft** 'm niet — een
   UI-wijziging die afwijkt van de `.example`-bestanden wordt niet automatisch gedetecteerd of
-  teruggedraaid.
+  teruggedraaid. TODO(#896): een scheduled read-only vergelijking die dat verschil wél meldt (met
+  `DISABLE_CRL_CHECKS` als scherpste geval).
