@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke (#724): bewijst dat example-service gepubliceerd is en als GELDIGE publicatie
+# Smoke: bewijst dat example-service gepubliceerd is en als GELDIGE publicatie
 # vindbaar is bij de directory. Draait eerst de onboarding, pollt daarna de manager
 # Internal-API (GET /v1/peers/{dir}/services) tot example-service verschijnt.
 set -euo pipefail

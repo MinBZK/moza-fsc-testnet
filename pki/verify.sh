@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Acceptatie-asserts test-PKI (#722). Exit 0 = groen.
+# Acceptatie-asserts test-PKI. Exit 0 = groen.
 set -uo pipefail
 
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"

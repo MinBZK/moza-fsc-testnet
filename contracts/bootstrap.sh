@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Contract-bootstrap (#727): zet idempotent een geldig, wederzijds ondertekend
+# Contract-bootstrap: zet idempotent een geldig, wederzijds ondertekend
 # ServiceConnectionGrant-contract op tussen een consumer en een provider.
 #
 # Stroom (OpenFSC Manager Internal-API, bewezen patroon uit deploy/local/publish-service.sh):
@@ -15,7 +15,7 @@
 #   5. verifieer onafhankelijk (re-GET provider-lijst) dat ons contract nu de provider-accept
 #      draagt (accept-STAAT via jq, niet blote aanwezigheid);
 #   6. best-effort (non-fataal): token-probe als bonus-signaal. Harde token-afdwinging +
-#      transactie-logging = #728 (de outway haalt tokens native op tijdens egress).
+#      transactie-logging volgen als vervolgwerk (de outway haalt tokens native op tijdens egress).
 #
 # WAAROM 2xx-gating + accept-STAAT i.p.v. de contractenlijst grepppen: op de provider-manager staat
 # óók het auto-geaccepteerde servicePublication-contract voor dezelfde `example-service`. Een losse
@@ -266,12 +266,12 @@ fi
 # State-file pas NA succesvolle accept schrijven (bron van waarheid voor idempotentie).
 mkdir -p "$STATE_DIR" && printf '%s\n' "$HASH" > "$STATE_FILE"
 
-# --- 5. Best-effort token (bonus; echte afdwinging + logging = #728) --------------------------
+# --- 5. Best-effort token (bonus; echte afdwinging + logging volgen als vervolgwerk) ----------
 # LET OP: FSC's /token verwacht scope=<GRANT-hash> (de `gth`-claim), niet de contract-content_hash.
 # We hebben alleen de content_hash, dus een NIET-200 is hier VERWACHT — geen rode vlag. De echte,
-# grant-hash-gebonden token haalt de outway native op tijdens egress in #728 (canonicalisatie +
+# grant-hash-gebonden token haalt de outway native op tijdens egress (canonicalisatie +
 # SHA3-512 over enkel het grant-object is versiegevoelig; daarom hier niet nagebouwd).
-echo "bootstrap: (best-effort) token-probe — een niet-200 is verwacht (scope=content_hash); echte token = #728."
+echo "bootstrap: (best-effort) token-probe — een niet-200 is verwacht (scope=content_hash); echte token volgt later."
 : >"$ERRLOG"
 TOK=$("${COMPOSE[@]}" exec -T toolbox curl -s -o /dev/null -w '%{http_code}' \
         --cert /pki/out/example-consumer/outway/cert.pem \
@@ -282,7 +282,7 @@ TOK=$("${COMPOSE[@]}" exec -T toolbox curl -s -o /dev/null -w '%{http_code}' \
         --data-urlencode 'grant_type=client_credentials' \
         --data-urlencode "scope=$HASH" \
         --data-urlencode "client_id=$CONSUMER_OIN" 2>"$ERRLOG" || true)
-echo "  token-endpoint HTTP-status: ${TOK:-<geen>} (niet-200 verwacht; grant-hash-token = #728)."
+echo "  token-endpoint HTTP-status: ${TOK:-<geen>} (niet-200 verwacht; grant-hash-token volgt later)."
 [ "${TOK:-}" = "200" ] || { [ -s "$ERRLOG" ] && echo "  (info) token-diagnostiek: $(tail -n1 "$ERRLOG")" >&2; }
 
 echo "BOOTSTRAP OK."

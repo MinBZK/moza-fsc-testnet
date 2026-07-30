@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
-# Smoke (#728): bewijst de end-to-end afname MÉT verantwoording, tussen example-consumer en
+# Smoke: bewijst de end-to-end afname MÉT verantwoording, tussen example-consumer en
 # example-provider:
 #   (1) een echte data-call loopt  consumer-app -> outway -> inway -> stub-upstream -> terug;
 #   (2) toegang is afgedwongen via een certificate-bound token (Fsc-Authorization): een call
@@ -8,7 +8,7 @@
 #   (3) de keten is correleerbaar via één Fsc-Transaction-Id die zowel bij de outway (direction
 #       out, consumer-txlog) als bij de inway (direction in, provider-txlog) gelogd wordt.
 #
-# Vereist een geldig contract (#727). smoke-e2e draait daarom eerst bootstrap.sh (idempotent).
+# Vereist een geldig contract. smoke-e2e draait daarom eerst bootstrap.sh (idempotent).
 # De outway resolvet grant-hash -> service -> inway native (auto-discovery via de eigen manager);
 # ENABLE_GRANT_HASH_SUGGESTION laat 'm de bruikbare grant-hash teruggeven zodat we die kunnen
 # ontdekken zonder 'm zelf te berekenen (de grant-hash != contract-content_hash).
