@@ -136,7 +136,8 @@ gewone (edge) publicatie krijgen — die doet geen mTLS-mesh.
 
 Deployen doet CI. Handmatig kan via **Actions → zad-deploy-directory → Run workflow**
 (`deployment`, `image_tag`, `manager_tag`). Er is geen lokaal deploy-script meer; wil je zien wat
-er staat, kijk dan in de Operations Manager UI of doe een read-only API-call:
+er staat, kijk dan in de Operations Manager UI of doe een read-only API-call (dezelfde call gebruikt
+`docs/sleutelbeheer.md` om een geroteerde key te verifiëren):
 
 ```bash
 read -rs ZAD_API_KEY; export ZAD_API_KEY     # plak de key niet inline

@@ -46,6 +46,7 @@ contracts/   grant → sign → accept bootstrap
   [AI-verantwoording](docs/ai-verantwoording.md).
 - **Governance / support / security:** [`GOVERNANCE.md`](GOVERNANCE.md) ·
   [`SUPPORT.md`](SUPPORT.md) · [`SECURITY.md`](SECURITY.md) (delegeren naar de MOZa-hoofdrepo).
+  Secretbeheer en sleutelrotatie: [`docs/sleutelbeheer.md`](docs/sleutelbeheer.md).
 - **Metadata:** [`publiccode.yml`](publiccode.yml). **Licentie:** [EUPL-1.2](LICENSE).
 - **CI:** lint (markdown/YAML/workflows), CodeQL en OpenSSF Scorecard draaien op elke PR.
 

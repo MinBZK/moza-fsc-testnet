@@ -84,7 +84,7 @@ voor #722/#723 is opgeheven.
 ## Repo-structuur
 
 ```text
-docs/        ontwerp: topologie.md + ontwerpkeuzes.md
+docs/        ontwerp: topologie.md + ontwerpkeuzes.md; runbooks incl. sleutelbeheer.md
 pki/         test-CA als trust-anchor + cert-generatie
 group/       group-id, trust-anchor, group rules (TLS)
 peers/       per peer: Helm-values + OIN + adressen
