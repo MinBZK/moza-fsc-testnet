@@ -51,9 +51,15 @@ scan() {  # $1=bestand $2=extended-regex $3=minimum aantal treffers
   local file="$1" pattern="$2" min="$3" body out rc match version n=0
   [ -f "$file" ] || { echo "FOUT: $file bestaat niet (guard loopt achter op de repo)" >&2; fail=1; return; }
 
-  body=$(grep -vE '^[[:space:]]*#' "$file") || {
-    echo "FOUT: kon $file niet lezen" >&2; fail=1; return
-  }
+  # Exit 1 betekent hier "alleen comments of leeg" — geen leesfout. Dat mag niet als leesfout
+  # gemeld worden: de min-check hieronder verwoordt het correct ("0 treffers, minimaal N verwacht").
+  set +e
+  body=$(grep -vE '^[[:space:]]*#' "$file")
+  rc=$?
+  set -e
+  if [ "$rc" -ge 2 ]; then
+    echo "FOUT: kon $file niet lezen (grep exit $rc)" >&2; fail=1; return
+  fi
 
   set +e
   out=$(printf '%s\n' "$body" | grep -oE "$pattern")
@@ -122,14 +128,13 @@ while IFS= read -r hit; do
   sweep_version=$(printf '%s' "${hit#*:}" | grep -oE "$VERSIE")
   record "sweep: $sweep_file" "$sweep_version"
   sweep_hits=$((sweep_hits + 1))
-done < <(grep -rhoE "federatedserviceconnectivity/[a-z0-9-]+:${VERSIE}" \
+# `grep -ro` (zonder -h) levert al `bestand:treffer` — één boomdoorloop. Een eerdere vorm haalde
+# eerst de unieke images op en zocht daarna per image nogmaals de hele boom af; dat leverde
+# hetzelfde resultaat met N+1 doorlopen in plaats van één.
+done < <(grep -roE "federatedserviceconnectivity/[a-z0-9-]+:${VERSIE}" \
            --include='*.yaml' --include='*.yml' --include='Dockerfile' \
            deploy .github/workflows 2>/dev/null \
-         | sort -u \
-         | while IFS= read -r img; do
-             grep -rlF "$img" --include='*.yaml' --include='*.yml' --include='Dockerfile' \
-               deploy .github/workflows | while IFS= read -r f; do printf '%s:%s\n' "$f" "$img"; done
-           done)
+         | sort -u)
 [ "$sweep_hits" -gt 0 ] || { echo "FOUT: sweep vond geen enkele OpenFSC-image-verwijzing meer." >&2; fail=1; }
 
 # --- Uitslag ------------------------------------------------------------------------------------
