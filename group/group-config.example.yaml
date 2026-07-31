@@ -8,3 +8,11 @@ group:
     crl: /etc/fsc/ca/intermediate.crl        # CRL, intermediate als issuer
   rules:
     tls_min_version: "1.2"     # NCSC TLS 2.1 / OpenFSC-default
+    # Versie-lockstep is een GROUP-regel, geen repo-regel. De contract-hash en de grant-vorm zijn
+    # versiegebonden: een peer die een oudere FSC-versie draait stelt contracten op die de rest van
+    # de group niet als geldig herkent. Dat faalt STIL — er komt geen "verkeerde versie"-fout, de
+    # peer valt gewoon uit de group. Elke peer deployt in zijn eigen ZAD-project, dus de CI van deze
+    # repo kan dat niet afdwingen; deze twee regels zijn de afspraak waar peer-teams op kunnen
+    # bouwen.
+    fsc_core_version: "2.0.0"      # de Logius-standaard; komt als `fsc_version` in de contract-content
+    openfsc_min_version: "v2.5.2"  # de implementatie; alles vóór v2.0.0 rekent een andere hash

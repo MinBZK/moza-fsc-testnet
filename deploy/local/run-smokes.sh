@@ -93,6 +93,7 @@ run smoke-publish.sh     # dienst publiceren + vindbaar
 run smoke-discover.sh    # consumer announce + discovery
 run smoke-contract.sh    # wederzijds ondertekend serviceConnection-contract
 run smoke-e2e.sh         # echte data-call + token-afdwinging + tx-log-correlatie
+run smoke-groepsversie.sh  # contracten dragen de FSC-versie uit de group-regel
 
 echo; echo "==================================================="
 echo "ALLE SMOKES GROEN."
