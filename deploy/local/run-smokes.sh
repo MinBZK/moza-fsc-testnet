@@ -86,9 +86,9 @@ mv "$tmp_env" "$ENV_FILE"
 # POSTGRES_PASSWORD: eenmalig genereren, daarna met rust laten. Anders dan HOST_UID/GID mag deze
 # NIET bij elke run overschreven worden — postgres bakt het wachtwoord bij `initdb` in het volume,
 # dus een nieuwe waarde op een bestaand volume geeft auth-fouten in plaats van een verse start.
-# Ook de placeholder uit .env.example vervangen: die is een leesbare waarde in een publiek bestand.
-if ! grep -qE '^POSTGRES_PASSWORD=.+$' "$ENV_FILE" \
-   || grep -qE '^POSTGRES_PASSWORD=vervang-mij$' "$ENV_FILE"; then
+# .env.example laat de regel uitgecommentarieerd, juist zodat deze test alleen naar een échte
+# waarde kijkt en een handmatig gezet wachtwoord nooit overschrijft.
+if ! grep -qE '^POSTGRES_PASSWORD=.+$' "$ENV_FILE"; then
   command -v openssl >/dev/null 2>&1 || fail "openssl niet gevonden — nodig om POSTGRES_PASSWORD te genereren."
   tmp_env=$(mktemp)
   grep -vE '^POSTGRES_PASSWORD=' "$ENV_FILE" > "$tmp_env" || true
