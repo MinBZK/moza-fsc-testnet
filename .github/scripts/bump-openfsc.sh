@@ -34,6 +34,7 @@ FILES=(
   .github/workflows/zad-deploy-directory.yml
   deploy/local/docker-compose.yaml
   deploy/local/.env.example
+  group/group-config.example.yaml
 )
 while IFS= read -r dockerfile; do FILES+=("$dockerfile"); done < <(find deploy/zad -name Dockerfile | sort)
 

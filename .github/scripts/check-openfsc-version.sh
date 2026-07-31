@@ -96,6 +96,12 @@ scan ".github/workflows/zad-deploy-directory.yml" \
 scan "deploy/local/docker-compose.yaml" "\\\$\\{IMAGE_TAG:-${VERSIE}\\}" 14
 scan "deploy/local/.env.example" "^[[:space:]]*(export[[:space:]]+)?IMAGE_TAG=\"?${VERSIE}\"?" 1
 
+# 5. De group-regel: `openfsc_min_version` is de versie die peer-teams moeten draaien. Loopt die
+#    achter op wat wij zelf deployen, dan belooft de group-config iets anders dan het testnet doet
+#    — en dat merkt niemand, want geen enkele deploy leest dit bestand. Het inline-comment op die
+#    regel noemt óók een versie; het patroon ankert daarom op de sleutel.
+scan "group/group-config.example.yaml" "openfsc_min_version:[[:space:]]*\"?${VERSIE}\"?" 1
+
 # --- Fase B: sweep over alle OpenFSC-image-verwijzingen ---------------------------------------
 echo "Sweep (alle OpenFSC-image-verwijzingen in deploy/ en .github/workflows/):"
 sweep_hits=0

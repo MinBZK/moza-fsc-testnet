@@ -41,6 +41,11 @@ rules:
   openfsc_min_version: "v2.5.2"  # de implementatie
 ```
 
+Geen enkele deploy leest dit bestand — het is een afspraak, geen configuratie die ergens ingelezen
+wordt. Daarom loopt `openfsc_min_version` mee in de versie-guard en in `bump-openfsc.sh`: blijft die
+achter bij wat wij zelf draaien, dan belooft de group-regel stilzwijgend iets anders dan het testnet
+doet, en is er geen ander signaal dat dat opmerkt.
+
 `deploy/local/smoke-groepsversie.sh` toetst dat achteraf: het leest de regel uit de group-config en
 controleert dat élk contract die `fsc_version` draagt. Wat het **niet** kan: de draaiende
 softwareversie van een externe peer vaststellen, of een peer zien die nog geen contract heeft
@@ -55,6 +60,7 @@ opgesteld. De group-regel is de afspraak; de smoke is het bewijs achteraf, geen 
 | `.github/workflows/build-migrate-images.yml` | idem, voor de controller-/txlog-wrappers |
 | `.github/workflows/zad-deploy-directory.yml` | `IMAGE_TAG_DEFAULT` — de stock-tag voor `dirui` en de manager |
 | `deploy/local/docker-compose.yaml` + `.env.example` | `${IMAGE_TAG:-<tag>}` voor de lokale omgeving |
+| `group/group-config.example.yaml` | `rules.openfsc_min_version` — de versie die peer-teams moeten draaien |
 
 De wrapper-Dockerfiles zijn digest-gepind (Scorecard Pinned-Dependencies). Bij `repo:tag@digest`
 resolvet Docker op de digest en wordt de tag niet gevalideerd — de tag is daar dus documentatie, en
