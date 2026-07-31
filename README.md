@@ -25,7 +25,8 @@ Eén **group** + één **directory** + N **peers** (organisaties). Voor de PoC:
 
 Zie [`docs/topologie.md`](docs/topologie.md), [`docs/ontwerpkeuzes.md`](docs/ontwerpkeuzes.md)
 en [`docs/zad-projecten.md`](docs/zad-projecten.md) (projectverdeling + deploymodel).
-Welke OpenFSC-versie we draaien en hoe we die bumpen staat in
+Het testnet draait **FSC Core v2.0.0** (de vastgestelde Logius-standaard) op **OpenFSC v2.5.2** (de
+reference implementation). Welke versie waar staat en hoe we bumpen:
 [`docs/openfsc-versiebeheer.md`](docs/openfsc-versiebeheer.md).
 
 ## Mappenstructuur

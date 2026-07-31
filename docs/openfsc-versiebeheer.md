@@ -5,6 +5,22 @@ lockstep: elke release krijgt dezelfde versietag op alle images. Ze moeten ook i
 **draaien** — de contract-hash en de vorm van een grant zijn versiegebonden, dus een group waarin
 componenten van verschillende versies staan, praat niet meer met zichzelf.
 
+## Twee versies die je uit elkaar moet houden
+
+| | Nu | Wat het is |
+|---|---|---|
+| **Standaard** | [FSC Core](https://gitdocumentatie.logius.nl/publicatie/fsc/core/) **v2.0.0** | De vastgestelde Logius-specificatie. Bepaalt de contract-content, de hash en de grant-vorm. Dít is het feit dat telt voor een team dat aansluit. |
+| **Implementatie** | OpenFSC **v2.5.2** | De reference implementation die wij draaien. Beweegt vaker en onafhankelijk. |
+
+Sinds v2.0.0 zet OpenFSC de standaardversie expliciet in de contract-content (`fsc_version`) en
+accepteert het alleen contracten met een geldige versie. Upstream: *"Only accept Contracts with a
+valid version (v2.0.0 only currently). When creating a Contract, the current supported version of
+the FSC standard should be used (v2.0.0)."*
+
+De sprong v1.43.7 → v2.5.2 brengt het testnet dus van een pre-v2-contractvorm naar de vastgestelde
+spec — de conformiteit **verbetert**. Draai je zelf geen contract-constructie (dat doet de manager),
+dan hoef je `fsc_version` nergens te zetten.
+
 ## Waar de versie staat
 
 | Plek | Wat |
@@ -57,6 +73,24 @@ groep-PR handmatig mee; de guard hierboven bewaakt dat je het niet vergeet.
    deployt.
 6. Bij een sprong over een major heen: eerst de contract-state op de ZAD-DB's opruimen (zie de
    ZAD-callout hieronder), anders faalt `migrate up` bij de deploy.
+
+### Soak-tijd: bewust geen
+
+Wij pakken een OpenFSC-release op zodra hij bruikbaar is, zonder wachttijd. v2.5.2 is opgepakt op de
+dag van de upstream-release (2026-07-30). Dat is een keuze, geen omissie.
+
+Waarom het hier verdedigbaar is: dit is een **testnet**, geen dienstverlening met een
+beschikbaarheidstoezegging. Vroeg oplopen tegen een regressie is precies waarvoor deze omgeving
+bestaat — teams beproeven hier hun aansluiting vóór er iets richting productie gaat. Wachten
+verplaatst het risico naar het moment dat het duurder is.
+
+Waar dat wringt (BIO 12.1.2, wijzigingsbeheer): het is een **gedeelde** omgeving. Een kapotte release
+blokkeert ook de teams die er net op aan het beproeven zijn. De verzachting zit in de smoke-keten —
+`deploy/local/run-smokes.sh` moet groen zijn vóór een ZAD-deploy — en in het feit dat er geen
+persistente dienstverlening op draait.
+
+Gaat dit testnet ooit iets dragen waar anderen op leunen, dan is dit de eerste afspraak om te
+herzien: pin dan op een patch die enkele dagen upstream draait.
 
 ### v1.43.7 → v2.5.2 (uitgevoerd)
 
