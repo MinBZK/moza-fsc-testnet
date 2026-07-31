@@ -83,7 +83,7 @@ services:
       <<: *manager-common-env
       SELF_ADDRESS: https://directory.fsc-test.local:443
       TX_LOG_API_ADDRESS: ""                 # directory-mode: geen txlog
-      # Sinds OpenFSC v2.5.2 is --controller-registration-api-address VERPLICHT; zonder deze regel
+      # Sinds OpenFSC v2.0.0 is --controller-registration-api-address VERPLICHT; zonder deze regel
       # weigert de manager te starten ("required flag(s) ... not set"). De directory draait bij ons
       # geen controller, en heeft er ook geen nodig: de manager belt de Controller Registration API
       # uitsluitend vanuit het /token-endpoint (get_token.go -> GetService), en dat pad vraagt om een
@@ -137,9 +137,12 @@ services:
     environment:
       <<: *manager-common-env
       SELF_ADDRESS: https://example-provider.fsc-test.local:443
-      # de manager bevraagt bij token-uitgifte de eigen controller naar de dienst
-      # (/v1/groups/{group}/services/{service}); zonder dit adres faalt /token met "unsupported
-      # protocol scheme". Registratie-API :9443, manager presenteert zijn internal-cert.
+      # Verplicht sinds OpenFSC v2.0.0: zonder dit adres start de manager niet eens ("required
+      # flag(s) ... not set"). Op v1.43.7 was de vlag optioneel en faalde pas /token met
+      # "unsupported protocol scheme" — dat faalgedrag geldt niet meer.
+      # Functioneel: de manager bevraagt bij token-uitgifte de eigen controller naar de dienst
+      # (/v1/groups/{group}/services/{service}). Registratie-API :9443, manager presenteert zijn
+      # internal-cert.
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-provider.fsc-test.local:9443
       # echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
       TX_LOG_API_ADDRESS: https://txlog.example-provider.fsc-test.local:9443
@@ -377,7 +380,7 @@ services:
       SELF_ADDRESS: https://example-consumer.fsc-test.local:443
       # echte txlog-api (INTERNAL-PKI mTLS). De manager frontet txlog voor tx-log-queries.
       TX_LOG_API_ADDRESS: https://txlog.example-consumer.fsc-test.local:9443
-      # Verplicht sinds OpenFSC v2.5.2 (zie manager-directory). De consumer heeft een echte
+      # Verplicht sinds OpenFSC v2.0.0 (zie manager-directory). De consumer heeft een echte
       # controller, dus hier het werkelijke registratie-adres — spiegelt de provider.
       CONTROLLER_REGISTRATION_API_ADDRESS: https://controller.example-consumer.fsc-test.local:9443
       LISTEN_ADDRESS_EXTERNAL: 0.0.0.0:8443

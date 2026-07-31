@@ -109,10 +109,11 @@ contracts/   grant → sign → accept bootstrap
   Dependabot houdt ze wekelijks bij, plus de base-images van de drie migrate-wrappers. Wekelijks
   houdt de gegroepeerde PR reviewbaar; advisories komen los daarvan binnen via Dependabot security
   updates (staat aan op de repo).
-- **OpenFSC-versie:** alle componenten draaien in lockstep op één tag; die staat op zeven plekken
-  (drie wrapper-Dockerfiles, drie workflows, de lokale compose). Dependabot ziet alleen de
-  Dockerfiles en groepeert ze in één PR; `.github/scripts/check-openfsc-version.sh` faalt bij een
-  halve bump. Zie `docs/openfsc-versiebeheer.md`.
+- **OpenFSC-versie:** alle componenten draaien in lockstep op één tag; die staat op acht plekken
+  (drie wrapper-Dockerfiles, drie workflows, `deploy/local/docker-compose.yaml` én
+  `deploy/local/.env.example`). Dependabot ziet alleen de Dockerfiles en groepeert ze in één PR;
+  `.github/scripts/bump-openfsc.sh <versie>` doet de rest, `check-openfsc-version.sh` faalt bij een
+  halve bump en heeft een eigen regressietest. Zie `docs/openfsc-versiebeheer.md`.
 - **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
   en `docs/ai-verantwoording.md`. Governance/support delegeren naar de MOZa-hoofdrepo; **geen eigen
   `SECURITY.md`** — melden loopt via het org-brede beleid in `MinBZK/.github`. Operationeel

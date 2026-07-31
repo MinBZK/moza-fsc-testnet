@@ -2,7 +2,7 @@
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 #
 # Deze repo bevat geen applicatie-dependencies (config-only), maar wel gepinde artefacten:
-# GitHub Actions én de base-image van de manager-migrate-wrapper. Beide staan hieronder. Helm-charts
+# GitHub Actions én de base-images van de drie migrate-wrappers. Beide staan hieronder. Helm-charts
 # worden hier niet gepind (ZAD deployt images, geen charts), dus daar is geen ecosystem voor.
 version: 2
 updates:
