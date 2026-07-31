@@ -23,7 +23,12 @@ cases=0
 fresh_copy() {
   local dst; dst="$TMP_ROOT/case-$(date +%s%N)-$RANDOM"
   mkdir -p "$dst"
-  (cd "$REPO_ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$dst"
+  # --others --exclude-standard: neem óók nog niet gestagede bestanden mee. Met alleen `--cached`
+  # zou een nieuw, nog niet toegevoegd wrapper-Dockerfile buiten de kopie vallen en de test groen
+  # blijven op precies het geval waar de guard voor bestaat. Gitignorede paden (pki/out, .env)
+  # blijven buiten de kopie.
+  (cd "$REPO_ROOT" && git ls-files -z --cached --others --exclude-standard \
+     | tar --null -T - -cf -) | tar -xf - -C "$dst"
   printf '%s' "$dst"
 }
 
