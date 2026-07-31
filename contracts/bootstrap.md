@@ -38,6 +38,25 @@ provider staat. Het succes rust op de twee 2xx-responsen (POST = consumer-sig, `
 provider-sig) en checks greppen alléén op de unieke `content_hash` — nooit op servicenaam/`"accept"`,
 want het auto-geaccepteerde publicatie-contract voor dezelfde dienst zou dat altijd laten matchen.
 
+## Let op bij een OpenFSC-versiesprong (v1.x → v2.x)
+
+OpenFSC v2.0.0 heeft de contract-hash gewijzigd: de content wordt nu gecanonicaliseerd met JCS
+(RFC 8785) en de content bevat een `fsc_version`. Hashes van vóór v2 zijn daardoor **niet
+converteerbaar**; upstream schrijft voor om bestaande contracten uit de database te verwijderen
+vóór de upgrade. Ook de grant-vorm veranderde: de outway wordt geïdentificeerd via
+`outway.identification` (union op `type`), niet meer via een platte `outway.public_key_thumbprint`.
+
+Gevolg voor deze bootstrap: de state-file uit `contracts/.bootstrap-state/` houdt een oude hash
+vast die op een v2-manager nooit meer opduikt. Laat je 'm staan, dan valt de idempotentie-check
+terug op een contract dat de nieuwe manager niet meer als geldig ziet. Bij een versiesprong dus:
+
+```bash
+docker compose -f deploy/local/docker-compose.yaml down -v   # wist ook de contract-DB's
+rm -rf contracts/.bootstrap-state
+```
+
+Daarna de normale volgorde uit **Draaien** hierboven.
+
 **Generiek**: alle peers/paden zijn via env te overrulen (`CONSUMER_OIN`, `PROVIDER_OIN`,
 `SERVICE_NAME`, `*_MANAGER`, `*_CERT/KEY/CA`, `OUTWAY_CERT_HOST`). Defaults = de example-peers. De
 FBS-toepassing (magazijn ↔ uitvraag) is een [FBS]-zusterissue in repo B.

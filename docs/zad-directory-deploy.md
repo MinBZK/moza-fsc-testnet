@@ -40,7 +40,7 @@ Manager UI (project `mft-tp9`).
 | Component | Image | Service / Web / Bijlagen | Rol |
 |-----------|-------|--------------------------|-----|
 | `dirmgr` | `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:<tag>` | **`postgresql-database`** + **Web modus 2** + **6 bijlagen** | manager (directory-mode, migrate→serve) + managed Postgres |
-| `dirui` | `docker.io/federatedserviceconnectivity/directory-ui:v1.43.7` | Web (edge) + 3 bijlagen | dienstencatalogus-UI |
+| `dirui` | `docker.io/federatedserviceconnectivity/directory-ui:v2.5.2` | Web (edge) + 3 bijlagen | dienstencatalogus-UI |
 
 **Geen eigen postgres-component** — `dirmgr` gebruikt ZAD's managed Postgres via de
 `postgresql-database`-service. De DSN komt uit substitutievars
@@ -71,9 +71,9 @@ een voorspelbare hostnaam `<component>-<deployment>-<project>.<base_domain>`.
 
 ### 1. Image bouwen + pushen
 
-Draai `build-manager-migrate.yml` (Actions → workflow_dispatch, `image_tag=v1.43.7`), of merge een
-wrapper-wijziging naar `main`. Resultaat: `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:v1.43.7`
-(en/of `…:v1.43.7-pr-<n>` voor previews — de `image_suffix`-input van de reusable
+Draai `build-manager-migrate.yml` (Actions → workflow_dispatch, `image_tag=v2.5.2`), of merge een
+wrapper-wijziging naar `main`. Resultaat: `ghcr.io/minbzk/moza-fsc-testnet-manager-migrate:v2.5.2`
+(en/of `…:v2.5.2-pr-<n>` voor previews — de `image_suffix`-input van de reusable
 `workflow_call` hangt het PR-nummer achter de tag, geen branch-slug). Controleer dat het package
 zichtbaar is voor het ZAD-pull-mechanisme (ghcr-package → repo-linked via de
 `org.opencontainers.image.source`-label).
@@ -153,7 +153,7 @@ curl -sS -H "X-API-Key: $ZAD_API_KEY" \
 `zad-deploy-directory.yml` triggert náást `workflow_dispatch` (previews/handmatig) ook op **push
 naar main** — een merge (CI groen) rolt de directory automatisch uit naar deployment `test`
 (besluit in `docs/ontwerpkeuzes.md`, ontwerp in `docs/superpowers/specs/`). Push-pad zet vast:
-`deployment=test`, `image_tag=v1.43.7`, `manager_tag=""` (canonieke tag).
+`deployment=test`, `image_tag=v2.5.2`, `manager_tag=""` (canonieke tag).
 
 Sinds de PR-preview-uitbreiding rolt een `pull_request` (open/sync) een `pr-<PR-nummer>`-preview
 uit zodra de `changes`-job de deploy-paden geraakt ziet — net als bij de push-naar-main hierboven,
@@ -191,14 +191,14 @@ Daarna voorkomen drie jobs de build-deploy-race:
 | Job | Wanneer | Doet |
 |-----|---------|------|
 | `changes` | elke push mét pad-match, elke PR (open/sync/reopened) én elke `workflow_dispatch` | push: `git diff`; PR: de bestandenlijst uit de GitHub-API → outputs `run` + `manager_migrate_changed` |
-| `build` | alleen als `manager-migrate/**` óf `build-manager-migrate.yml` zelf non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v1.43.7` op main, `v1.43.7-pr-<n>` op een PR |
+| `build` | alleen als `manager-migrate/**` óf `build-manager-migrate.yml` zelf non-docs wijzigde | roept `build-manager-migrate` aan (reusable `workflow_call`); bouwt+pusht `v2.5.2` op main, `v2.5.2-pr-<n>` op een PR |
 | `deploy` | ná build-succes, óf meteen als build geskipt (ook op `workflow_dispatch`) | roept `RijksICTGilde/zad-actions/deploy` aan met `deployment=test` op main, `deployment=pr-<n>` op een PR; controleert daarna dat élk component een URL kreeg |
 
 Image-change → build eerst → deploy (image bestaat gegarandeerd vóór de deploy-stap). Config/group-change
 → build skip → deploy herbruikt de bestaande tag. De manager-migrate-image bouwt via de reusable
 `workflow_call` in `zad-deploy-directory.yml` (build → deploy in één run, ordering-veilig).
 `build-manager-migrate.yml` heeft géén eigen `push`-trigger meer; een preview krijgt zijn image
-(`v1.43.7-pr-<n>`) uit die call, main de canonieke `v1.43.7`.
+(`v2.5.2-pr-<n>`) uit die call, main de canonieke `v2.5.2`.
 
 Faalt de deploy, dan is dat een **kale rode run** in de Actions-tab (bewust, geen auto-issue).
 Handmatige/preview-deploys blijven via `workflow_dispatch` (zie stap 6).

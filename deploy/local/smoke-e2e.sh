@@ -81,7 +81,7 @@ find_tx_table() {  # $1=db ; echoot "schema.table" met een transaction_id-kolom
                ORDER BY table_schema LIMIT 1;" | head -n1
 }
 # Exacte direction-encoding-lijst i.p.v. een substring-LIKE: `%in%` zou óók `outgoing` matchen
-# (out-g-o-i-n-g bevat "in"). Dek de plausibele fsc-logging-encodings af; wijkt v1.43.7 af, dan
+# (out-g-o-i-n-g bevat "in"). Dek de plausibele fsc-logging-encodings af; wijkt de draaiende versie af, dan
 # faalt de correlatie luid (FAIL-dump toont de echte direction-waarden) — nooit stil groen.
 OUT_PRED="lower(direction::text) IN ('out','outgoing','outbound','direction_out')"
 IN_PRED="lower(direction::text) IN ('in','incoming','inbound','direction_in')"
