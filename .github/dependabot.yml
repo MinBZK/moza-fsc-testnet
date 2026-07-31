@@ -2,7 +2,7 @@
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 #
 # Deze repo bevat geen applicatie-dependencies (config-only), maar wel gepinde artefacten:
-# GitHub Actions én de base-image van de manager-migrate-wrapper. Beide staan hieronder. Helm-charts
+# GitHub Actions én de base-images van de drie migrate-wrappers. Beide staan hieronder. Helm-charts
 # worden hier niet gepind (ZAD deployt images, geen charts), dus daar is geen ecosystem voor.
 version: 2
 updates:
@@ -36,10 +36,29 @@ updates:
         exclude-patterns:
           - "github/codeql-action*"
 
-  # De wrapper-image draait op odcn-production; zonder dit ecosystem is er geen enkel automatisch
-  # signaal bij een CVE in de base-image — en juist dat signaal komt nu via de security-updates
+  # De wrapper-images draaien op odcn-production; zonder dit ecosystem is er geen enkel automatisch
+  # signaal bij een CVE in een base-image — en juist dat signaal komt nu via de security-updates
   # binnen (zie de comment bij de actions hierboven).
   - package-ecosystem: "docker"
-    directory: "/deploy/zad/manager-migrate"
+    # `directories` (meervoud): één ecosystem-entry over alle drie de wrappers. Met drie losse
+    # entries krijgt elke wrapper een eigen PR en kan er één los gemerged worden — precies de
+    # versie-skew die hieronder wordt dichtgezet.
+    directories:
+      - "/deploy/zad/manager-migrate"
+      - "/deploy/zad/controller-migrate"
+      - "/deploy/zad/txlog-migrate"
     schedule:
       interval: "weekly"
+    groups:
+      # OpenFSC releaset manager/controller/txlog-api (en inway/outway/directory-ui) in lockstep
+      # onder één versietag, en ze MOETEN ook in lockstep draaien: de contract-hash en de
+      # grant-vorm zijn versiegebonden, dus een half-gebumpte group praat niet meer met zichzelf.
+      # Groeperen over de drie directories geeft één PR die alle drie tegelijk verzet.
+      openfsc-images:
+        patterns:
+          - "*federatedserviceconnectivity/*"
+      # De busybox-donor levert alleen /bin/sh aan het distroless base-image en beweegt op zijn
+      # eigen tempo; los houden zodat een busybox-CVE niet wacht op een OpenFSC-release.
+      busybox:
+        patterns:
+          - "busybox"
