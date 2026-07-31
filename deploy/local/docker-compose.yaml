@@ -23,7 +23,7 @@ x-txlog-common-env: &txlog-common-env
   POSTGRES_HOST: postgres
   POSTGRES_PORT: "5432"
   POSTGRES_USER: postgres
-  POSTGRES_PASSWORD: postgres
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD in deploy/local/.env}
   PGSSLMODE: disable
   PGCONNECT_TIMEOUT: "10"
 
@@ -32,7 +32,7 @@ services:
     image: postgres:17
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD in deploy/local/.env}
     volumes:
       - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
@@ -96,7 +96,7 @@ services:
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
       MONITORING_ADDRESS: 0.0.0.0:8080
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_directory?sslmode=disable
+      STORAGE_POSTGRES_DSN: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_directory?sslmode=disable
       TLS_GROUP_CERT: &dir-grp /pki/out/directory/directory/cert.pem
       TLS_GROUP_KEY: &dir-grp-key /pki/out/directory/directory/key.pem
       TLS_GROUP_TOKEN_CERT: *dir-grp
@@ -122,7 +122,7 @@ services:
       - migrate
       - up
       - --postgres-dsn
-      - postgres://postgres:postgres@postgres:5432/fsc_example_provider?sslmode=disable
+      - postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_example_provider?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,7 +150,7 @@ services:
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
       MONITORING_ADDRESS: 0.0.0.0:8080
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_example_provider?sslmode=disable
+      STORAGE_POSTGRES_DSN: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_example_provider?sslmode=disable
       TLS_GROUP_CERT: &ep-grp /pki/out/example-provider/manager/cert.pem
       TLS_GROUP_KEY: &ep-grp-key /pki/out/example-provider/manager/key.pem
       TLS_GROUP_TOKEN_CERT: *ep-grp
@@ -288,7 +288,7 @@ services:
       - migrate
       - up
       - --postgres-dsn
-      - postgres://postgres:postgres@postgres:5432/fsc_controller_example_provider?sslmode=disable
+      - postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_controller_example_provider?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -314,9 +314,10 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DATABASE: fsc_controller_example_provider
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD in deploy/local/.env}
       PGSSLMODE: disable
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_controller_example_provider?sslmode=disable
+      STORAGE_POSTGRES_DSN: >-
+        postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_controller_example_provider?sslmode=disable
       # Lokaal ZONDER login (AUTHN_TYPE=none — een door OpenFSC ondersteunde modus). De
       # controller-management (dienst publiceren, grant->sign->accept) werkt zonder
       # loginscherm; OIDC is enkel de auth-laag ervoor en is niet nodig om dienst-
@@ -363,7 +364,7 @@ services:
       - migrate
       - up
       - --postgres-dsn
-      - postgres://postgres:postgres@postgres:5432/fsc_example_consumer?sslmode=disable
+      - postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_example_consumer?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -387,7 +388,7 @@ services:
       LISTEN_ADDRESS_INTERNAL: 0.0.0.0:9443
       LISTEN_ADDRESS_INTERNAL_UNAUTHENTICATED: 0.0.0.0:9444
       MONITORING_ADDRESS: 0.0.0.0:8080
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_example_consumer?sslmode=disable
+      STORAGE_POSTGRES_DSN: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_example_consumer?sslmode=disable
       TLS_GROUP_CERT: &ec-grp /pki/out/example-consumer/manager/cert.pem
       TLS_GROUP_KEY: &ec-grp-key /pki/out/example-consumer/manager/key.pem
       TLS_GROUP_TOKEN_CERT: *ec-grp
@@ -420,7 +421,7 @@ services:
       - migrate
       - up
       - --postgres-dsn
-      - postgres://postgres:postgres@postgres:5432/fsc_controller_example_consumer?sslmode=disable
+      - postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_controller_example_consumer?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -446,9 +447,10 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DATABASE: fsc_controller_example_consumer
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD in deploy/local/.env}
       PGSSLMODE: disable
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_controller_example_consumer?sslmode=disable
+      STORAGE_POSTGRES_DSN: >-
+        postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_controller_example_consumer?sslmode=disable
       # Lokaal ZONDER login (AUTHN_TYPE=none); grant-admin (afnemer-toegang) komt in de contract-bootstrap.
       AUTHN_TYPE: none
       AUTHZ_TYPE: rbac
@@ -530,11 +532,12 @@ services:
     # `migrate up` leest de DSN ALLEEN uit --postgres-dsn (niet uit env, anders dan serve) — net als
     # de manager/controller-migrates. Zonder de vlag verbindt migrate met een default en hangt 't.
     command: [/usr/local/bin/txlog-api, migrate, up, --postgres-dsn,
-              "postgres://postgres:postgres@postgres:5432/fsc_txlog_example_provider?sslmode=disable"]
+              "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_txlog_example_provider?sslmode=disable"]
     environment:
       <<: *txlog-common-env
       POSTGRES_DATABASE: fsc_txlog_example_provider
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_provider?sslmode=disable
+      STORAGE_POSTGRES_DSN: >-
+        postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_txlog_example_provider?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -548,7 +551,8 @@ services:
     environment:
       <<: *txlog-common-env
       POSTGRES_DATABASE: fsc_txlog_example_provider
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_provider?sslmode=disable
+      STORAGE_POSTGRES_DSN: >-
+        postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_txlog_example_provider?sslmode=disable
       TLS_ROOT_CERT: /pki/internal/example-provider/ca/root.pem
       TLS_CERT: /pki/internal/example-provider/txlog/cert.pem
       TLS_KEY: /pki/internal/example-provider/txlog/key.pem
@@ -566,11 +570,12 @@ services:
     image: docker.io/federatedserviceconnectivity/txlog-api:${IMAGE_TAG:-v2.5.2}
     # migrate leest de DSN alléén uit --postgres-dsn (zie migrate-txlog-example-provider).
     command: [/usr/local/bin/txlog-api, migrate, up, --postgres-dsn,
-              "postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable"]
+              "postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_txlog_example_consumer?sslmode=disable"]
     environment:
       <<: *txlog-common-env
       POSTGRES_DATABASE: fsc_txlog_example_consumer
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable
+      STORAGE_POSTGRES_DSN: >-
+        postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_txlog_example_consumer?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -584,7 +589,8 @@ services:
     environment:
       <<: *txlog-common-env
       POSTGRES_DATABASE: fsc_txlog_example_consumer
-      STORAGE_POSTGRES_DSN: postgres://postgres:postgres@postgres:5432/fsc_txlog_example_consumer?sslmode=disable
+      STORAGE_POSTGRES_DSN: >-
+        postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/fsc_txlog_example_consumer?sslmode=disable
       TLS_ROOT_CERT: /pki/internal/example-consumer/ca/root.pem
       TLS_CERT: /pki/internal/example-consumer/txlog/cert.pem
       TLS_KEY: /pki/internal/example-consumer/txlog/key.pem
