@@ -117,6 +117,10 @@ contracts/   grant → sign → accept bootstrap
   Dependabot houdt ze wekelijks bij, plus de base-images van de drie migrate-wrappers. Wekelijks
   houdt de gegroepeerde PR reviewbaar; advisories komen los daarvan binnen via Dependabot security
   updates (staat aan op de repo).
+- **Waarschuwingen nalopen:** loop bij elke wijziging de output van `shellcheck`, `yamllint`,
+  `actionlint` en `markdownlint-cli2` na en los elke waarschuwing op, of accepteer 'm bewust met
+  reden erbij. "Groen" zegt alleen iets als er geen onverklaarde nieuwe waarschuwingen bij komen;
+  onverklaarde waarschuwingen blokkeren een PR tot ze getrieerd zijn.
 - **OpenFSC-versie:** alle componenten draaien in lockstep op één tag; die staat op negen plekken
   (drie wrapper-Dockerfiles, drie workflows, `deploy/local/docker-compose.yaml`,
   `deploy/local/.env.example` én `openfsc_min_version` in `group/group-config.yaml`).
@@ -136,6 +140,21 @@ contracts/   grant → sign → accept bootstrap
 dit repo; `[FBS]`-issues bij `moza-poc-fbs-berichtenbox`.
 
 **Huidige stap: #725** (peer `example-consumer`). #724 (`example-provider`) is de voorloper/template.
+
+**Titel en inleiding zijn functioneel, niet technisch.** De Product Owner leest mee en moet
+aanleiding, effect en acceptatiecriteria kunnen volgen zonder Helm-, OpenShift- of
+FSC-implementatiekennis. Geen bestandspaden, `file:line`-verwijzingen of chart-/env-namen in het
+bovenste deel. Technische details horen in een aparte sectie verderop ("Technische context",
+"Oplossingsrichtingen"); daar mogen wel concrete paden, componentnamen en opties staan. Formuleer
+acceptatiecriteria in termen van gedrag — een peer kan aansluiten, een contract komt tot stand, de
+guard faalt bij een halve bump — niet in termen van implementatie. Koppel een issue aan zijn parent
+via de GitHub-issue-relatie, niet via een `> Onderdeel van #N.`-regel in de tekst.
+
+## Review-aanpak
+
+Bevindingen classificeren we op ernst (Hoog/Medium/Laag) met een samenvattingstabel. Hoog pakken we
+direct aan, Medium in overleg, Laag later. Die labels blijven in de review: ze horen niet in
+comments of testnamen terecht te komen.
 
 ## Referenties
 
