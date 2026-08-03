@@ -96,10 +96,18 @@ contracts/   grant → sign → accept bootstrap
 
 - **Secrets nooit committen.** Sleutels/certs/`.env` blijven buiten git (zie `.gitignore`).
   Alleen scripts en `.example`-templates in de repo.
-- Toekomstig werk mag tijdens een PR worden gemarkeerd met `TODO(#nnn)` verwijzend naar het
-  GitHub-issue, **maar de ticketreferentie moet vóór/bij merge weer verwijderd zijn**: een los
-  ticketnummer in een comment is indirecte documentatie. Laat de comment zonder het nummer
-  zelf-verklarend achter (wat + waarom), of haal 'm helemaal weg als het werk klaar is.
+- **Commentaar:** leg het *waarom* vast (niet-evidente beslissing, security-/contract-invariant),
+  niet het *wat* dat de code al toont. Houd het kort: condenseer rationale tot enkele regels; laat
+  opsommingen en voorbeelden weg die niets verduidelijken. Staat de uitleg al in `docs/`? Verwijs
+  ernaar in één regel in plaats van 'm te herhalen — twee kopieën lopen uiteen. Ga uit van
+  werken-naar-productie: geen "PoC"/"voorlopig"/productie-twijfel in comments. Geen verwijzingen
+  naar review-iteratie-bevindingen (`K1`, `B7`, etc.) in comments of testnamen — die labels zijn
+  buiten de review-sessie niet terug te vinden en rotten; beschrijf het probleem zelf, niet hoe het
+  ontdekt werd. Verwijs evenmin naar CLAUDE.md-regels of -secties, zodat een comment zonder
+  CLAUDE.md leesbaar blijft. Toekomstig werk mag tijdens een PR met `TODO(#nnn)` gemarkeerd worden,
+  **maar de ticketreferentie moet vóór/bij merge weer verwijderd zijn**: een los ticketnummer is
+  indirecte documentatie. Laat de comment zonder het nummer zelf-verklarend achter (wat + waarom),
+  of haal 'm helemaal weg als het werk klaar is.
 - **Git:** nooit direct naar `main` pushen — feature branch + PR. Branch-prefix `feature/`,
   `fix/`, `chore/`. Geen reviewer toevoegen bij aanmaken PR. `main` is **branch-protected**
   (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
