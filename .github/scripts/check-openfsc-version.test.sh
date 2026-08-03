@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# Regressietest voor check-openfsc-version.sh.
+# Regressietest voor check-openfsc-version.sh: een guard die stil groen blijft is erger dan geen
+# guard, want dan is de handmatige controle weggeorganiseerd zonder vervanging. Elke case hieronder
+# is een mutatie die de guard rood hoort te maken.
 #
-# Waarom deze test bestaat: de guard is de enige bescherming tegen een halve OpenFSC-bump, en drie
-# Dockerfile-comments plus lint.yml beloven die bescherming. Een guard die stil groen blijft is
-# daarom erger dan geen guard — dan is de handmatige controle weggeorganiseerd zonder dat er iets
-# voor in de plaats staat. Elke case hieronder is een mutatie die ooit groen kwam of dat zou kunnen.
-#
-# Werking: kopieer de WERKBOOM (niet HEAD — je wilt toetsen wat je op het punt staat te committen)
-# naar een tijdelijke map, muteer daar één ding, en verwacht dat de guard rood wordt. De guard doet
-# zelf `cd "$(dirname "$0")/../.."`, dus hij draait vanzelf tegen de kopie.
+# Werking: kopieer de WERKBOOM (niet HEAD — je toetst wat je op het punt staat te committen) naar
+# een tijdelijke map en muteer daar één ding. De guard doet zelf `cd "$(dirname "$0")/../.."` en
+# draait dus vanzelf tegen de kopie.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -23,10 +20,8 @@ cases=0
 fresh_copy() {
   local dst; dst="$TMP_ROOT/case-$(date +%s%N)-$RANDOM"
   mkdir -p "$dst"
-  # --others --exclude-standard: neem óók nog niet gestagede bestanden mee. Met alleen `--cached`
-  # zou een nieuw, nog niet toegevoegd wrapper-Dockerfile buiten de kopie vallen en de test groen
-  # blijven op precies het geval waar de guard voor bestaat. Gitignorede paden (pki/out, .env)
-  # blijven buiten de kopie.
+  # --others --exclude-standard: neem óók ongestagede bestanden mee. Met alleen `--cached` valt een
+  # nieuw wrapper-Dockerfile buiten de kopie — precies het geval waar de guard voor bestaat.
   (cd "$REPO_ROOT" && git ls-files -z --cached --others --exclude-standard \
      | tar --null -T - -cf -) | tar -xf - -C "$dst"
   printf '%s' "$dst"

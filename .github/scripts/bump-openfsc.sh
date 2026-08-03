@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
 # Verzet de OpenFSC-versie op alle plekken die `check-openfsc-version.sh` bewaakt.
 #
-# Waarom dit bestaat: Dependabot kan alleen de `FROM`-regels in de drie wrapper-Dockerfiles
-# verzetten. De workflow-defaults en de lokale compose zijn handwerk, dus elke gegroepeerde
-# `openfsc-images`-PR komt binnen met een rode versie-guard tot iemand de rest natrekt. Dat geldt
-# ook voor security-updates. Dit script maakt die follow-up één commando in plaats van zes edits.
-#
-# Wat dit script NIET doet: de digests in de wrapper-Dockerfiles. Die horen bij de tag en moeten
-# uit de registry komen; het script laat ze staan en waarschuwt erover. Bij een Dependabot-PR heeft
-# Dependabot ze al meegenomen — dan is dit script alleen nog nodig voor de overige plekken.
+# Dependabot raakt alleen de `FROM`-regels in de wrapper-Dockerfiles; de workflow-defaults en de
+# lokale compose zijn handwerk, dus elke gegroepeerde `openfsc-images`-PR komt anders binnen met een
+# rode guard — ook een security-update. Digests laat dit script staan: die moeten uit de registry
+# komen. Zie docs/openfsc-versiebeheer.md.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -31,8 +27,7 @@ fi
 
 echo "OpenFSC $OLD -> $NEW"
 
-# Alleen de bewaakte bestanden, en alleen exacte versiestrings. Bewust géén repo-brede sed: docs
-# houden hun historische versies (spikes, design-notities) en mogen niet meebewegen.
+# Bewust géén repo-brede sed: docs houden hun historische versies en mogen niet meebewegen.
 FILES=(
   .github/workflows/build-manager-migrate.yml
   .github/workflows/build-migrate-images.yml
