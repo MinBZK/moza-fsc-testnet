@@ -16,9 +16,10 @@ Bouwt voort op `docs/spikes/manager-443-sni/`.
 - **Docker** + `docker compose` (v2).
 - **cfssl + cfssljson + openssl** voor de cert-generatie — zie `pki/README.md`
   ("Benodigdheden") voor de `go install`-commando's.
-- **jq** (optioneel, aanbevolen) — laat `bootstrap.sh`/`smoke-contract.sh` (#727) de
-  provider-accept-**staat** van een contract verifiëren i.p.v. blote aanwezigheid. Zonder jq
-  vallen ze terug op een aanwezigheidscheck (de accept is dan al bewezen door de bootstrap-PUT-2xx).
+- **jq** — vereist voor `smoke-groepsversie.sh` (leest `fsc_version` uit de contract-JSON), en dus
+  voor `run-smokes.sh` als geheel; die controleert het vooraf. Voor `bootstrap.sh`/`smoke-contract.sh`
+  is jq optioneel: die verifiëren ermee de provider-accept-**staat** van een contract en vallen
+  zonder jq terug op een aanwezigheidscheck (de accept is dan al bewezen door de bootstrap-PUT-2xx).
 
 ## Draaiboek
 
@@ -36,9 +37,12 @@ git switch feature/directory-group-723
 ./pki/verify.sh           # acceptatie-asserts; verwacht: "== ALLE ASSERTS GROEN =="
 
 # 3. Harness-env. De cert-lezende pods draaien als JOUW UID/GID, zodat ze de
-#    0600-privékeys via de owner-bit lezen (keys blijven dicht).
+#    0600-privékeys via de owner-bit lezen (keys blijven dicht). POSTGRES_PASSWORD
+#    heeft bewust geen default in de compose (publieke repo, zie .env.example) —
+#    genereer 'm eenmalig. `run-smokes.sh` doet stap 3 zelf.
 cp deploy/local/.env.example deploy/local/.env
 printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> deploy/local/.env
+printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> deploy/local/.env
 
 # 4. Start de stack. --build bouwt de directory-manager-wrapper
 #    (deploy/zad/manager-migrate) lokaal -> de harness test meteen het echte
@@ -201,6 +205,14 @@ script voor opties (`--no-build`, `--keep`).
   `docker compose -f deploy/local/docker-compose.yaml up -d --force-recreate`.
 - **`WARN invalid internal PKI key permissions`** → de keys staan te open. Met de
   UID-match + `0600` blijft deze WARN weg; hij is hoe dan ook niet-fataal.
+- **`required variable POSTGRES_PASSWORD is missing a value`** bij `compose up` → stap 3 niet
+  gedraaid, of je `.env` komt van vóór deze wijziging. Zet 'm alsnog:
+  `printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> deploy/local/.env`.
+- **`password authentication failed for user "postgres"`** → je hebt `POSTGRES_PASSWORD` gewijzigd
+  terwijl er nog een postgres-**volume** van een eerdere run staat. Postgres bakt het wachtwoord bij
+  `initdb` in dat volume; een nieuwe waarde matcht dan niet. `docker compose -f
+  deploy/local/docker-compose.yaml down -v` en opnieuw starten. Om die reden genereert
+  `run-smokes.sh` het wachtwoord ook maar één keer en laat het daarna staan.
 - **Poort bezet** (443, 8080, 8081, 8090, 8091) → stop de conflicterende dienst of pas de
   `ports`/`bind` in `docker-compose.yaml` / `haproxy.cfg` aan.
 - **Smoke faalt** → `docker compose -f deploy/local/docker-compose.yaml logs

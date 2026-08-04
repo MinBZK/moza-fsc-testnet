@@ -37,6 +37,12 @@ fail() { echo "XX run-smokes FAALT: $1" >&2; teardown; exit 1; }
 
 cd "$REPO_ROOT"
 
+# --- 0. Harde host-dependencies vooraf. smoke-groepsversie.sh heeft jq nodig (de andere smokes
+#        gebruiken 't optioneel). Zonder deze check valt dat pas op bij de LAATSTE smoke: dan staan
+#        de certs, de stack en vijf groene smokes er al, en gooit de teardown `down -v` het weer
+#        allemaal weg om een ontbrekend hostpakket. Faal vóór er iets gebouwd is. -----------------
+command -v jq >/dev/null 2>&1 || fail "jq niet gevonden — smoke-groepsversie.sh vereist 't (zie README, Benodigdheden)."
+
 # --- 1. Certs (test-CA + per-peer). Regenereer bij --regen-certs, afwezige mappen, óf een CSR
 #        zonder cert (bv. een nieuw endpoint zoals txlog — anders skipt 'aanwezig' die stil). ------
 need_certs() {
@@ -77,6 +83,20 @@ grep -vE '^HOST_(UID|GID)=' "$ENV_FILE" > "$tmp_env" || true
 printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> "$tmp_env"
 mv "$tmp_env" "$ENV_FILE"
 
+# POSTGRES_PASSWORD: eenmalig genereren, daarna met rust laten. Anders dan HOST_UID/GID mag deze
+# NIET bij elke run overschreven worden — postgres bakt het wachtwoord bij `initdb` in het volume,
+# dus een nieuwe waarde op een bestaand volume geeft auth-fouten in plaats van een verse start.
+# .env.example laat de regel uitgecommentarieerd, juist zodat deze test alleen naar een échte
+# waarde kijkt en een handmatig gezet wachtwoord nooit overschrijft.
+if ! grep -qE '^POSTGRES_PASSWORD=.+$' "$ENV_FILE"; then
+  command -v openssl >/dev/null 2>&1 || fail "openssl niet gevonden — nodig om POSTGRES_PASSWORD te genereren."
+  tmp_env=$(mktemp)
+  grep -vE '^POSTGRES_PASSWORD=' "$ENV_FILE" > "$tmp_env" || true
+  printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> "$tmp_env"
+  mv "$tmp_env" "$ENV_FILE"
+  echo ">> POSTGRES_PASSWORD gegenereerd in $ENV_FILE (eenmalig; blijft staan bij volgende runs)."
+fi
+
 # --- 3. Stack starten --------------------------------------------------------------------------
 # --remove-orphans: ruim containers op van een vórige (hernoemde) compose (bv. het oude
 # `controller` vóór de rename naar `controller-example-provider`) die anders een host-poort
@@ -93,6 +113,7 @@ run smoke-publish.sh     # dienst publiceren + vindbaar
 run smoke-discover.sh    # consumer announce + discovery
 run smoke-contract.sh    # wederzijds ondertekend serviceConnection-contract
 run smoke-e2e.sh         # echte data-call + token-afdwinging + tx-log-correlatie
+run smoke-groepsversie.sh  # contracten dragen de FSC-versie uit de group-regel
 
 echo; echo "==================================================="
 echo "ALLE SMOKES GROEN."

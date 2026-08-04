@@ -34,7 +34,6 @@ pki/out/
 pki/internal/
 pki/zad-upload/
 peers/**/values.yaml
-group/group-config.yaml
 
 # IDE
 .idea/

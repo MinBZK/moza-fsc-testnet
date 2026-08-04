@@ -59,9 +59,10 @@ jobs:
           shellcheck --shell=bash --severity=warning .github/scripts/*.sh || rc=1
           exit "$rc"
 
-      # De OpenFSC-componenten moeten in lockstep draaien, maar de versie staat op acht plekken
-      # (drie wrapper-Dockerfiles, drie workflows, de lokale compose én .env.example). Dependabot
-      # ziet alleen de Dockerfiles, dus zonder deze stap wordt een halve bump gewoon groen — en
+      # De OpenFSC-componenten moeten in lockstep draaien, maar de versie staat op negen plekken
+      # (drie wrapper-Dockerfiles, drie workflows, de lokale compose, .env.example én de group-regel
+      # `openfsc_min_version`). Dependabot ziet alleen de Dockerfiles, dus zonder deze stap wordt
+      # een halve bump gewoon groen — en
       # publiceert de build een image dat de oude versie heet en de nieuwe ís.
       # De regressietest draait eerst: een guard die stil groen blijft is erger dan geen guard, want
       # de comments elders beloven dekking en de handmatige controle is daarmee weggeorganiseerd.
