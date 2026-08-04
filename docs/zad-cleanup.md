@@ -52,7 +52,7 @@ blijft mogelijk voor overige gevallen via **Actions → zad-cleanup → Run work
   stap "Delete Container Image"). Precies daarom zetten **beide** workflows `delete-container:
   'false'` en geven ze geen `containers:` mee — maar alleen `zad-deploy-directory.yml`
   (job `cleanup-preview`) heeft daarna een **eigen** stap die de ghcr-preview-tag zelf verwijdert:
-  deelt de tag een versie met een andere tag (bv. `v1.43.7`), dan slaat die eigen stap het
+  deelt de tag een versie met een andere tag (bv. `v2.5.2`), dan slaat die eigen stap het
   verwijderen over (anders verdwijnt de gedeelde versie mee). `zad-cleanup.yml` heeft géén eigen
   ghcr-stap — een preview-image die je daarmee handmatig opruimt, blijft dus staan tot een latere
   `cleanup-preview`-run 'm meepakt, of tot handmatig opruimen via de package-UI.

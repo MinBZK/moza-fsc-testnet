@@ -57,7 +57,7 @@ env:
   # LET OP bij een bump: een wijziging aan alléén deze regel zet `run=true` maar `changed=false`, dus
   # de build draait niet en de deploy wijst naar een tag die nog niet bestaat (met wait-for-ready uit
   # merkt de run dat niet). Bump dus samen met een build, of dispatch eerst build-manager-migrate.
-  IMAGE_TAG_DEFAULT: v1.43.7
+  IMAGE_TAG_DEFAULT: v2.5.2
   # Eén bron voor de manager-image: de components-JSON van de deploy-job én de ghcr-opruimstap in
   # cleanup-preview leiden hier hun waarden uit af. Losse literals liepen anders uiteen bij een
   # rename, waarna de opruimstap stilzwijgend "niets gevonden" meldt.
@@ -480,7 +480,7 @@ jobs:
       - name: Verwijder de ghcr preview-tag (indien niet gedeeld)
         # Zelfde reden als hierboven bij delete-container: de action verwijdert het hele package
         # zodra dit de laatst getagde versie is. Alleen verwijderen als de preview-tag een eigen,
-        # ongedeelde versie heeft; deelt de versie tags met bv. v1.43.7 (byte-identieke rebuild),
+        # ongedeelde versie heeft; deelt de versie tags met bv. v2.5.2 (byte-identieke rebuild),
         # dan blijft de package staan. Die gedeelde-tag-situatie is géén randgeval (een PR die alleen
         # de build-recipe raakt levert een byte-identieke image op), dus preview-tags blijven zich
         # verzamelen op de canonieke version — opruimen daarvan hoort in een periodieke reaper, niet

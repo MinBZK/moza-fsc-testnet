@@ -23,7 +23,7 @@ on:
       image_tag:
         description: "Output-tag (het basis-image zelf is digest-gepind in de Dockerfile; bump die er apart bij)"
         required: false
-        default: "v1.43.7"
+        default: "v2.5.2"
       image_suffix:
         description: "optioneel: tag-suffix (bv. pr-42); leeg = canonieke tag"
         required: false
@@ -60,7 +60,7 @@ jobs:
           # Lowercase image-pad zonder slash: zad-actions/cleanup weigert `/` in een containernaam.
           IMAGE: ghcr.io/minbzk/moza-fsc-testnet-${{ matrix.component }}-migrate
           CONTEXT: deploy/zad/${{ matrix.component }}-migrate
-          IMAGE_TAG: ${{ inputs.image_tag || 'v1.43.7' }}
+          IMAGE_TAG: ${{ inputs.image_tag || 'v2.5.2' }}
           IMAGE_SUFFIX: ${{ inputs.image_suffix }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
