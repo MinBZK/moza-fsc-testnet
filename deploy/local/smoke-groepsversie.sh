@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Smoke: bewijst dat de contracten in de group de FSC-standaardversie dragen die de group-regel
-# voorschrijft (`group/group-config.example.yaml` -> rules.fsc_core_version).
+# voorschrijft (`group/group-config.yaml` -> rules.fsc_core_version).
 #
 # Waarom dit een eigen smoke is: versie-lockstep is een GROUP-invariant, en de bestaande guard
 # (`.github/scripts/check-openfsc-version.sh`) bewaakt alleen déze repo. Peers deployen in hun eigen
@@ -19,7 +19,7 @@ HERE="$(dirname "$0")"
 REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 COMPOSE=(docker compose -f "$HERE/docker-compose.yaml")
 
-GROUP_CONFIG="${GROUP_CONFIG:-${REPO_ROOT}/group/group-config.example.yaml}"
+GROUP_CONFIG="${GROUP_CONFIG:-${REPO_ROOT}/group/group-config.yaml}"
 
 CERT=/pki/internal/example-provider/manager/cert.pem
 KEY=/pki/internal/example-provider/manager/key.pem
@@ -74,7 +74,7 @@ done
 if [ "$afwijkend" -ne 0 ]; then
   echo "FAIL: $afwijkend van ${#VERSIONS[@]} contract(en) wijken af van de group-regel." >&2
   echo "  Een peer die een andere FSC-versie draait valt stil uit de group: zijn contract-hash" >&2
-  echo "  wordt door de rest niet herkend. Zie group/group-config.example.yaml en" >&2
+  echo "  wordt door de rest niet herkend. Zie group/group-config.yaml en" >&2
   echo "  docs/openfsc-versiebeheer.md." >&2
   exit 1
 fi

@@ -32,7 +32,7 @@ Een peer die op een oudere FSC-versie blijft staan produceert contracten met de 
 hash-canonicalisatie. Die worden door de rest niet als geldig herkend — en dat faalt **stil**: er
 komt geen "verkeerde versie"-fout, de peer valt gewoon uit de group. Hier wordt niets rood.
 
-Daarom staat de eis als **group rule** in [`group/group-config.example.yaml`](../group/group-config.example.yaml),
+Daarom staat de eis als **group rule** in [`group/group-config.yaml`](../group/group-config.yaml),
 naast trust-anchor en `tls_min_version`:
 
 ```yaml
@@ -60,7 +60,7 @@ opgesteld. De group-regel is de afspraak; de smoke is het bewijs achteraf, geen 
 | `.github/workflows/build-migrate-images.yml` | idem, voor de controller-/txlog-wrappers |
 | `.github/workflows/zad-deploy-directory.yml` | `IMAGE_TAG_DEFAULT` — de stock-tag voor `dirui` en de manager |
 | `deploy/local/docker-compose.yaml` + `.env.example` | `${IMAGE_TAG:-<tag>}` voor de lokale omgeving |
-| `group/group-config.example.yaml` | `rules.openfsc_min_version` — de versie die peer-teams moeten draaien |
+| `group/group-config.yaml` | `rules.openfsc_min_version` — de versie die peer-teams moeten draaien |
 
 De wrapper-Dockerfiles zijn digest-gepind (Scorecard Pinned-Dependencies). Bij `repo:tag@digest`
 resolvet Docker op de digest en wordt de tag niet gevalideerd — de tag is daar dus documentatie, en

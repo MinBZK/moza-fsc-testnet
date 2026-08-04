@@ -111,7 +111,7 @@ contracts/   grant → sign → accept bootstrap
   updates (staat aan op de repo).
 - **OpenFSC-versie:** alle componenten draaien in lockstep op één tag; die staat op negen plekken
   (drie wrapper-Dockerfiles, drie workflows, `deploy/local/docker-compose.yaml`,
-  `deploy/local/.env.example` én `openfsc_min_version` in `group/group-config.example.yaml`).
+  `deploy/local/.env.example` én `openfsc_min_version` in `group/group-config.yaml`).
   Dependabot ziet alleen de Dockerfiles en groepeert ze in één PR;
   `.github/scripts/bump-openfsc.sh <versie>` doet de rest, `check-openfsc-version.sh` faalt bij een
   halve bump en heeft een eigen regressietest. Zie `docs/openfsc-versiebeheer.md`.

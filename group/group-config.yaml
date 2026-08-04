@@ -1,4 +1,6 @@
-# Group-configuratie. Vul in en bewaar de echte versie buiten git.
+# Group-configuratie van dit testnet: de afspraken die voor élke peer gelden. Staat bewust in git —
+# er zitten geen secrets in (de trust-anchor-paden wijzen naar gemount materiaal, niet naar sleutels)
+# en peer-teams moeten deze waarden kunnen lezen.
 # group_id wordt op elke manager gezet als GROUP_ID-env (zie deploy/local + peers/directory).
 group:
   id: moza-fbs-test            # group_id; identificeert de federatie. == GROUP_ID-env op alle managers.
