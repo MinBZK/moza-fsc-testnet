@@ -8,8 +8,14 @@ set -euo pipefail
 COMPOSE=(docker compose -f "$(dirname "$0")/docker-compose.yaml")
 PROVIDER_OIN="00000000000000000030"
 DIR_OIN="00000000000000000010"
-TIMEOUT=120
-INTERVAL=5
+# Bewust RUIMER dan de andere smokes (die staan op 10s/2s): deze draait als eerste na `compose up`
+# en vangt dus de container-boot mee, waar de latere smokes op een warme stack landen. De 120s van
+# hiervoor rekte een échte storing nodeloos op, maar helemaal terug naar 10s is netto duurder:
+# op de groene weg bespaart een lagere timeout niets (de loop verlaat zich bij succes), terwijl
+# run-smokes.sh bij élke rode smoke `down -v` doet — een vals-rood kost dus een volledige herbouw
+# van de stack. Overrulen kan zonder dit bestand te wijzigen: `TIMEOUT=120 ./smoke-announce.sh`.
+TIMEOUT="${TIMEOUT:-60}"
+INTERVAL="${INTERVAL:-2}"
 
 # Vang psql-stderr op i.p.v. weg te gooien: een persistente DB-fout (auth, ontbrekende
 # kolom/tabel, dode container) mag niet als "nog niet aangemeld" maskeren — surface 'm
