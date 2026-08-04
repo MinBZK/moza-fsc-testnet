@@ -28,7 +28,7 @@ go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 ./pki/zad-bundle.sh directory   # 7. (ZAD) upload-set + manifest per peer -> pki/zad-upload/
 ```
 
-`pki/ca/root.pem` = trust-anchor voor de group rules (`group/group-config.example.yaml`).
+`pki/ca/root.pem` = trust-anchor voor de group rules (`group/group-config.yaml`).
 
 Voor ZAD (zie `docs/spikes/zad-attachments.md`):
 

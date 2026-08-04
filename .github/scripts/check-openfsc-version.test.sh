@@ -102,7 +102,14 @@ sed -i 's|^\(  IMAGE_TAG_DEFAULT: \)v[0-9.]*|  # was: \1v2.5.2\n\1v1.43.7|' \
   "$d/.github/workflows/zad-deploy-directory.yml"
 expect "comment mag niet als bron gelden" 1 "$d"
 
-# --- 10. Bewaakt bestand verdwenen --------------------------------------------------------------
+# --- 10. Group-regel achtergebleven: geen enkele deploy leest dit bestand, dus alleen de guard
+#         merkt dat de afspraak met peer-teams iets anders belooft dan wij draaien ---------------
+d=$(fresh_copy)
+sed -i 's|openfsc_min_version: "v[0-9.]*"|openfsc_min_version: "v1.43.7"|' \
+  "$d/group/group-config.yaml"
+expect "achtergebleven openfsc_min_version in de group-regel" 1 "$d"
+
+# --- 11. Bewaakt bestand verdwenen --------------------------------------------------------------
 d=$(fresh_copy)
 rm -f "$d/deploy/local/.env.example"
 expect "bewaakt bestand verwijderd" 1 "$d"

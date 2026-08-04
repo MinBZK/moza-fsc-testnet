@@ -21,6 +21,36 @@ De sprong v1.43.7 → v2.5.2 brengt het testnet dus van een pre-v2-contractvorm 
 spec — de conformiteit **verbetert**. Draai je zelf geen contract-constructie (dat doet de manager),
 dan hoef je `fsc_version` nergens te zetten.
 
+## Lockstep is group-breed, de guard is repo-breed
+
+`.github/scripts/check-openfsc-version.sh` bewaakt de versies in **deze repo**. De invariant geldt
+voor de **group**, en dat is een grotere verzameling: elke peer deployt zijn eigen
+manager/inway/outway in zijn eigen ZAD-project (zie [`zad-projecten.md`](zad-projecten.md)). Deze
+repo levert de templates, maar draait die peers niet.
+
+Een peer die op een oudere FSC-versie blijft staan produceert contracten met de oude
+hash-canonicalisatie. Die worden door de rest niet als geldig herkend — en dat faalt **stil**: er
+komt geen "verkeerde versie"-fout, de peer valt gewoon uit de group. Hier wordt niets rood.
+
+Daarom staat de eis als **group rule** in [`group/group-config.yaml`](../group/group-config.yaml),
+naast trust-anchor en `tls_min_version`:
+
+```yaml
+rules:
+  fsc_core_version: "2.0.0"      # de Logius-standaard; komt als fsc_version in de contract-content
+  openfsc_min_version: "v2.5.2"  # de implementatie
+```
+
+Geen enkele deploy leest dit bestand — het is een afspraak, geen configuratie die ergens ingelezen
+wordt. Daarom loopt `openfsc_min_version` mee in de versie-guard en in `bump-openfsc.sh`: blijft die
+achter bij wat wij zelf draaien, dan belooft de group-regel stilzwijgend iets anders dan het testnet
+doet, en is er geen ander signaal dat dat opmerkt.
+
+`deploy/local/smoke-groepsversie.sh` toetst dat achteraf: het leest de regel uit de group-config en
+controleert dat élk contract die `fsc_version` draagt. Wat het **niet** kan: de draaiende
+softwareversie van een externe peer vaststellen, of een peer zien die nog geen contract heeft
+opgesteld. De group-regel is de afspraak; de smoke is het bewijs achteraf, geen afdwinging vooraf.
+
 ## Waar de versie staat
 
 | Plek | Wat |
@@ -30,6 +60,7 @@ dan hoef je `fsc_version` nergens te zetten.
 | `.github/workflows/build-migrate-images.yml` | idem, voor de controller-/txlog-wrappers |
 | `.github/workflows/zad-deploy-directory.yml` | `IMAGE_TAG_DEFAULT` — de stock-tag voor `dirui` en de manager |
 | `deploy/local/docker-compose.yaml` + `.env.example` | `${IMAGE_TAG:-<tag>}` voor de lokale omgeving |
+| `group/group-config.yaml` | `rules.openfsc_min_version` — de versie die peer-teams moeten draaien |
 
 De wrapper-Dockerfiles zijn digest-gepind (Scorecard Pinned-Dependencies). Bij `repo:tag@digest`
 resolvet Docker op de digest en wordt de tag niet gevalideerd — de tag is daar dus documentatie, en
