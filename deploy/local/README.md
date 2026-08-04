@@ -217,14 +217,21 @@ script voor opties (`--no-build`, `--keep`).
   `ports`/`bind` in `docker-compose.yaml` / `haproxy.cfg` aan.
 - **Smoke faalt** → `docker compose -f deploy/local/docker-compose.yaml logs
   manager-directory manager-example-provider` voor de mesh-logs.
-- **Podman i.p.v. Docker** → de harness is op Docker gescopet, maar draait ook op podman
-  dankzij twee runtime-agnostische regels (beide onder Docker onschadelijk):
-  - **`router` crasht op `bind :443` (`Permission denied`)** → het haproxy-image draait als
-    non-root en podman zet, anders dan Docker Desktop, `net.ipv4.ip_unprivileged_port_start`
-    niet op 0. De `sysctls:`-regel op de `router`-service (compose) zet dat per-container.
-  - **router logt `dir/<NOSRV> … SC` (backends onbereikbaar)** → podman's DNS (aardvark) zit
-    op de netwerk-gateway, niet op Docker's `127.0.0.11`. `haproxy.cfg` gebruikt daarom
-    `parse-resolv-conf`, dat de nameserver uit `/etc/resolv.conf` leest (werkt op beide).
+- **Podman i.p.v. Docker** → de harness is op Docker gescopet, maar draait ook op podman.
+  - **`podman-compose` start de stack niet op, `docker compose` wel** → let op de naam.
+    `podman-compose` (met streepje) is een losse Python-herimplementatie die de gebruikte
+    compose-v2-features niet volledig dekt: zonder `depends_on: condition:` starten de managers
+    vóór hun migraties, en zonder netwerk-`aliases:` vinden de peers elkaar niet op hun
+    `*.fsc-test.local`-naam. Het subcommando `podman compose` (zónder streepje) is wél goed —
+    dat delegeert naar de compose-v2-binary.
+  - De overige verschillen dekken twee runtime-agnostische regels in de repo af (beide onder
+    Docker onschadelijk):
+    - **`router` crasht op `bind :443` (`Permission denied`)** → het haproxy-image draait als
+      non-root en podman zet, anders dan Docker Desktop, `net.ipv4.ip_unprivileged_port_start`
+      niet op 0. De `sysctls:`-regel op de `router`-service (compose) zet dat per-container.
+    - **router logt `dir/<NOSRV> … SC` (backends onbereikbaar)** → podman's DNS (aardvark) zit
+      op de netwerk-gateway, niet op Docker's `127.0.0.11`. `haproxy.cfg` gebruikt daarom
+      `parse-resolv-conf`, dat de nameserver uit `/etc/resolv.conf` leest (werkt op beide).
 - **`migrate-*` hangt / `database "…" does not exist`** → `postgres-init.sql` draait
   alleen bij een **vers** volume. Heb je al een postgres-volume van een eerdere run en
   voeg je een database toe, maak 'm dan eenmalig aan:
