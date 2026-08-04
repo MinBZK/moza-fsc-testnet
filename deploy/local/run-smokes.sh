@@ -83,6 +83,20 @@ grep -vE '^HOST_(UID|GID)=' "$ENV_FILE" > "$tmp_env" || true
 printf 'HOST_UID=%s\nHOST_GID=%s\n' "$(id -u)" "$(id -g)" >> "$tmp_env"
 mv "$tmp_env" "$ENV_FILE"
 
+# POSTGRES_PASSWORD: eenmalig genereren, daarna met rust laten. Anders dan HOST_UID/GID mag deze
+# NIET bij elke run overschreven worden — postgres bakt het wachtwoord bij `initdb` in het volume,
+# dus een nieuwe waarde op een bestaand volume geeft auth-fouten in plaats van een verse start.
+# .env.example laat de regel uitgecommentarieerd, juist zodat deze test alleen naar een échte
+# waarde kijkt en een handmatig gezet wachtwoord nooit overschrijft.
+if ! grep -qE '^POSTGRES_PASSWORD=.+$' "$ENV_FILE"; then
+  command -v openssl >/dev/null 2>&1 || fail "openssl niet gevonden — nodig om POSTGRES_PASSWORD te genereren."
+  tmp_env=$(mktemp)
+  grep -vE '^POSTGRES_PASSWORD=' "$ENV_FILE" > "$tmp_env" || true
+  printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> "$tmp_env"
+  mv "$tmp_env" "$ENV_FILE"
+  echo ">> POSTGRES_PASSWORD gegenereerd in $ENV_FILE (eenmalig; blijft staan bij volgende runs)."
+fi
+
 # --- 3. Stack starten --------------------------------------------------------------------------
 # --remove-orphans: ruim containers op van een vórige (hernoemde) compose (bv. het oude
 # `controller` vóór de rename naar `controller-example-provider`) die anders een host-poort
