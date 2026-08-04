@@ -9,7 +9,10 @@
 # feitelijk niets doen. Alle OpenFSC-componenten releasen in lockstep en moeten óók in lockstep
 # draaien; de OpenFSC-tag in de TWEEDE FROM hieronder hoort dus gelijk te zijn aan die van de andere
 # wrappers, de workflow-defaults en de lokale compose. De busybox-FROM daarboven staat daar bewust
-# buiten — die donor beweegt op zijn eigen tempo. Bij een bump moeten tag én digest samen mee.
+# buiten — die donor beweegt op zijn eigen tempo (eigen Dependabot-groep).
+# `.github/scripts/check-openfsc-version.sh` (lint-workflow) faalt als de OpenFSC-tags uiteenlopen;
+# een halve bump wordt niet groen. Verzetten gaat met `.github/scripts/bump-openfsc.sh <versie>`,
+# maar de digest hieronder blijft handwerk.
 FROM busybox:1.38.0-musl@sha256:8635836765b0c4c43970660219739baa58b0883c2e429e4b8918f7dd1519455c AS busybox
 
 FROM docker.io/federatedserviceconnectivity/manager:v2.5.2@sha256:e18baa9adca0225df87e32c355ea61241b376b3df5cea669311797eafac7a23b
