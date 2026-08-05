@@ -109,7 +109,7 @@ contracts/   grant → sign → accept bootstrap
   indirecte documentatie. Laat de comment zonder het nummer zelf-verklarend achter (wat + waarom),
   of haal 'm helemaal weg als het werk klaar is.
 - **Git:** nooit direct naar `main` pushen — feature branch + PR. Branch-prefix `feature/`,
-  `fix/`, `chore/`. Geen reviewer toevoegen bij aanmaken PR. `main` is **branch-protected**
+  `fix/`, `chore/`, `docs/`. Geen reviewer toevoegen bij aanmaken PR. `main` is **branch-protected**
   (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
   `Analyze (actions)`.
 - **CI:** `lint.yml` (markdownlint + yamllint + actionlint + OpenFSC-versie-consistentie),
