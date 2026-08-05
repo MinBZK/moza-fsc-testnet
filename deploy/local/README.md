@@ -217,21 +217,22 @@ script voor opties (`--no-build`, `--keep`).
   `ports`/`bind` in `docker-compose.yaml` / `haproxy.cfg` aan.
 - **Smoke faalt** → `docker compose -f deploy/local/docker-compose.yaml logs
   manager-directory manager-example-provider` voor de mesh-logs.
-- **Podman i.p.v. Docker** → de harness is op Docker gescopet, maar draait ook op podman.
-  - **`podman-compose` start de stack niet op, `docker compose` wel** → let op de naam.
-    `podman-compose` (met streepje) is een losse Python-herimplementatie die de gebruikte
-    compose-v2-features niet volledig dekt: zonder `depends_on: condition:` starten de managers
-    vóór hun migraties, en zonder netwerk-`aliases:` vinden de peers elkaar niet op hun
-    `*.fsc-test.local`-naam. Het subcommando `podman compose` (zónder streepje) is wél goed —
-    dat delegeert naar de compose-v2-binary.
-  - De overige verschillen dekken twee runtime-agnostische regels in de repo af (beide onder
-    Docker onschadelijk):
-    - **`router` crasht op `bind :443` (`Permission denied`)** → het haproxy-image draait als
-      non-root en podman zet, anders dan Docker Desktop, `net.ipv4.ip_unprivileged_port_start`
-      niet op 0. De `sysctls:`-regel op de `router`-service (compose) zet dat per-container.
-    - **router logt `dir/<NOSRV> … SC` (backends onbereikbaar)** → podman's DNS (aardvark) zit
-      op de netwerk-gateway, niet op Docker's `127.0.0.11`. `haproxy.cfg` gebruikt daarom
-      `parse-resolv-conf`, dat de nameserver uit `/etc/resolv.conf` leest (werkt op beide).
+- **Podman i.p.v. Docker** → de harness draait ook op podman, mits je `docker compose` (v2)
+  blijft gebruiken: `run-smokes.sh` en de `smoke-*.sh` roepen dat commando letterlijk aan, dus
+  houd de compose-v2-binary in `PATH` en wijs `DOCKER_HOST` naar de podman-socket
+  (`podman system service`). `podman-compose` (mét streepje) is een losse Python-implementatie
+  van de compose-spec en geen vervanging — de scripts vinden 'm niet, en de stack kwam er in de
+  praktijk maar half mee op. Ook `podman compose` (zónder streepje) is geen garantie: dat is een
+  wrapper die de eerste provider uit `compose_providers` draait — default `docker-compose`, maar
+  bij afwezigheid daarvan alsnog `podman-compose`. Twee regels in de repo vangen de resterende
+  runtime-verschillen af:
+  - **`router` crasht op `bind :443` (`Permission denied`)** → het haproxy-image draait als
+    non-root (uid 99). Docker Engine zet `net.ipv4.ip_unprivileged_port_start=0` sinds 20.10 als
+    default-sysctl in elke container, podman niet. De `sysctls:`-regel op de `router`-service
+    zet 'm per-container: onder Docker redundant, onder podman nodig.
+  - **router logt `dir/<NOSRV> … SC` (backends onbereikbaar)** → podman's DNS (aardvark) zit
+    op de netwerk-gateway, niet op Docker's `127.0.0.11`. `haproxy.cfg` gebruikt daarom
+    `parse-resolv-conf`, dat de nameserver uit `/etc/resolv.conf` leest (werkt op beide).
 - **`migrate-*` hangt / `database "…" does not exist`** → `postgres-init.sql` draait
   alleen bij een **vers** volume. Heb je al een postgres-volume van een eerdere run en
   voeg je een database toe, maak 'm dan eenmalig aan:

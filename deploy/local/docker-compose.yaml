@@ -45,9 +45,10 @@ services:
   router:
     image: haproxy:2.9
     # Het haproxy-image draait als non-root (uid 99); een non-root proces mag geen poort
-    # <1024 binden. Docker Desktop zet in z'n VM globaal ip_unprivileged_port_start=0, dus
-    # daar bindt :443 vanzelf. Podman doet dat niet en de sysctl is namespaced (per netns),
-    # dus we zetten 'm hier per-container — zo bindt de router :443 op zowel docker als podman.
+    # <1024 binden. Docker Engine zet ip_unprivileged_port_start=0 sinds 20.10 als default-sysctl
+    # in elke container, dus daar bindt :443 vanzelf. Podman doet dat niet en de sysctl is
+    # namespaced (per netns), dus we zetten 'm hier per-container — onder Docker redundant,
+    # onder podman nodig.
     sysctls:
       - net.ipv4.ip_unprivileged_port_start=0
     volumes:
