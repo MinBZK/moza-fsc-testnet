@@ -218,18 +218,20 @@ script voor opties (`--no-build`, `--keep`).
 - **Smoke faalt** → `docker compose -f deploy/local/docker-compose.yaml logs
   manager-directory manager-example-provider` voor de mesh-logs.
 - **Podman i.p.v. Docker** → de harness draait ook op podman, mits je `docker compose` (v2)
-  blijft gebruiken: `run-smokes.sh` en de `smoke-*.sh` roepen dat commando letterlijk aan, dus
-  houd de compose-v2-binary in `PATH` en wijs `DOCKER_HOST` naar de podman-socket
-  (`podman system service`). `podman-compose` (mét streepje) is een losse Python-implementatie
-  van de compose-spec en geen vervanging — de scripts vinden 'm niet, en de stack kwam er in de
-  praktijk maar half mee op. Ook `podman compose` (zónder streepje) is geen garantie: dat is een
-  wrapper die de eerste provider uit `compose_providers` draait — default `docker-compose`, maar
-  bij afwezigheid daarvan alsnog `podman-compose`. Twee regels in de repo vangen de resterende
-  runtime-verschillen af:
+  blijft gebruiken: `run-smokes.sh` en de `smoke-*.sh` roepen dat commando letterlijk aan.
+  Installeer daarvoor de Docker CLI met de compose-v2-plugin in een `cli-plugins`-map
+  (bijv. `~/.docker/cli-plugins/docker-compose`) — `docker compose` is een plugin-subcommando en
+  zoekt dáár, niet in `PATH` — en wijs `DOCKER_HOST` naar de podman-socket
+  (`podman system service`). Gebruik géén `podman-docker`-shim: dan wordt `docker compose`
+  alsnog `podman compose`, een wrapper die de eerste *gevonden* provider uit `compose_providers`
+  draait. `docker-compose` heeft daarin voorrang, maar bij afwezigheid volgt `podman-compose`
+  (mét streepje) — een losse Python-implementatie van de compose-spec, die de scripts nooit
+  aanroepen. Twee regels in de repo vangen de resterende runtime-verschillen af:
   - **`router` crasht op `bind :443` (`Permission denied`)** → het haproxy-image draait als
     non-root (uid 99). Docker Engine zet `net.ipv4.ip_unprivileged_port_start=0` sinds 20.10 als
-    default-sysctl in elke container, podman niet. De `sysctls:`-regel op de `router`-service
-    zet 'm per-container: onder Docker redundant, onder podman nodig.
+    default-sysctl in elke container met een eigen netwerk-namespace, podman niet. De
+    `sysctls:`-regel op de `router`-service zet 'm per-container: onder Docker redundant,
+    onder podman nodig.
   - **router logt `dir/<NOSRV> … SC` (backends onbereikbaar)** → podman's DNS (aardvark) zit
     op de netwerk-gateway, niet op Docker's `127.0.0.11`. `haproxy.cfg` gebruikt daarom
     `parse-resolv-conf`, dat de nameserver uit `/etc/resolv.conf` leest (werkt op beide).
