@@ -15,6 +15,11 @@
 *.bak
 *.orig
 *~
+# Vim-swapfiles: bevatten de volledige bufferinhoud van het bestand dat openstond, dus ook een
+# nog-niet-opgeslagen `.env` of sleutel. Het gaat om verborgen bestanden (`.README.md.swp`).
+*.swp
+*.swo
+*.swn
 *.local.yaml
 *.pem
 *.key
