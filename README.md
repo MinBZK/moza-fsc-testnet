@@ -42,8 +42,8 @@ contracts/   grant → sign → accept bootstrap
 
 ## Bijdragen & verantwoording
 
-- **Bijdragen:** nooit direct naar `main`; werk via een `feature/`-, `fix/`- of
-  `chore/`-branch en een pull request. De hoofdbranch is beschermd (review + CI verplicht).
+- **Bijdragen:** nooit direct naar `main`; werk via een `feature/`-, `fix/`-, `chore/`- of
+  `docs/`-branch en een pull request. De hoofdbranch is beschermd (review + CI verplicht).
 - **Disclaimer:** dit is een experimentele PoC, grotendeels met AI opgesteld — zie
   [`DISCLAIMER.md`](DISCLAIMER.md) en de volledige
   [AI-verantwoording](docs/ai-verantwoording.md).
