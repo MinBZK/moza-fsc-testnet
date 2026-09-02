@@ -15,13 +15,17 @@ case "$NEW" in
   *) echo "Gebruik: $0 vX.Y.Z   (bv. $0 v2.5.3)" >&2; exit 2 ;;
 esac
 
-# Huidige versie uit de manager-wrapper; die is de referentie van de guard.
-OLD=$(grep -oE 'federatedserviceconnectivity/manager:v[0-9]+\.[0-9]+\.[0-9]+' \
-        deploy/zad/manager-migrate/Dockerfile | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
-[ -n "$OLD" ] || { echo "FOUT: kon de huidige versie niet uit manager-migrate/Dockerfile lezen." >&2; exit 1; }
+# Huidige versie uit de group-regel. Bewust niet uit een wrapper-Dockerfile: Dependabot heeft die
+# op een `openfsc-images`-PR al verzet, en dan leest dit script de nieuwe versie als de oude en doet
+# niets — precies op de PR waarvoor het bestaat. `openfsc_min_version` blijft altijd achter tot
+# iemand 'm hier meeneemt.
+OLD=$(grep -oE 'openfsc_min_version:[[:space:]]*"?v[0-9]+\.[0-9]+\.[0-9]+' \
+        group/group-config.yaml | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')
+[ -n "$OLD" ] || { echo "FOUT: kon openfsc_min_version niet uit group/group-config.yaml lezen." >&2; exit 1; }
 
 if [ "$OLD" = "$NEW" ]; then
-  echo "Niets te doen: staat al op $NEW."
+  echo "De group-regel staat al op $NEW; er is niets te verzetten."
+  echo "Loopt er elders nog een oude versie rond, dan wijst .github/scripts/check-openfsc-version.sh 'm aan."
   exit 0
 fi
 

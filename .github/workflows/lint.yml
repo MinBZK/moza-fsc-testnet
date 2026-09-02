@@ -69,6 +69,12 @@ jobs:
       - name: OpenFSC-versie-guard testen
         run: ./.github/scripts/check-openfsc-version.test.sh
 
+      # De guard wijst een halve bump aan, `bump-openfsc.sh` maakt 'm af. Doet dat script niets
+      # (zoals toen het zijn referentieversie uit een wrapper-Dockerfile las — het bestand dat
+      # Dependabot al verzet heeft), dan blijft de guard rood en is de enige uitweg handwerk.
+      - name: OpenFSC-bumpscript testen
+        run: ./.github/scripts/bump-openfsc.test.sh
+
       - name: OpenFSC-versie-consistentie
         run: ./.github/scripts/check-openfsc-version.sh
 

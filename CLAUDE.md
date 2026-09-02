@@ -126,7 +126,8 @@ contracts/   grant → sign → accept bootstrap
   `deploy/local/.env.example` én `openfsc_min_version` in `group/group-config.yaml`).
   Dependabot ziet alleen de Dockerfiles en groepeert ze in één PR;
   `.github/scripts/bump-openfsc.sh <versie>` doet de rest, `check-openfsc-version.sh` faalt bij een
-  halve bump en heeft een eigen regressietest. Zie `docs/openfsc-versiebeheer.md`.
+  halve bump. Beide scripts hebben een eigen regressietest in de lint-workflow.
+  Zie `docs/openfsc-versiebeheer.md`.
 - **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
   en `docs/ai-verantwoording.md`. Governance/support delegeren naar de MOZa-hoofdrepo; **geen eigen
   `SECURITY.md`** — melden loopt via het org-brede beleid in `MinBZK/.github`. Operationeel
