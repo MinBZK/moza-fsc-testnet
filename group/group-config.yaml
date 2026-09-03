@@ -17,4 +17,4 @@ group:
     # repo kan dat niet afdwingen; deze twee regels zijn de afspraak waar peer-teams op kunnen
     # bouwen.
     fsc_core_version: "2.0.0"      # de Logius-standaard; komt als `fsc_version` in de contract-content
-    openfsc_min_version: "v2.5.2"  # de implementatie; alles vóór v2.0.0 rekent een andere hash
+    openfsc_min_version: "v2.6.0"  # de implementatie; alles vóór v2.0.0 rekent een andere hash
