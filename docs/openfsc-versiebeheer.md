@@ -46,6 +46,12 @@ wordt. Daarom loopt `openfsc_min_version` mee in de versie-guard en in `bump-ope
 achter bij wat wij zelf draaien, dan belooft de group-regel stilzwijgend iets anders dan het testnet
 doet, en is er geen ander signaal dat dat opmerkt.
 
+`bump-openfsc.sh` leest hier ook zijn *huidige* versie. De eis daaraan: de referentie mag niet
+meebewegen met wat het script bumpt. Las het die uit een wrapper-Dockerfile, dan leest het op een
+`openfsc-images`-PR de door Dependabot al verzette versie als de oude en doet het niets — precies op
+de PR waarvoor het bestaat. De group-regel draagt bovendien inhoudelijk de afspraak, dus daar hoort
+de versie hoe dan ook thuis. `bump-openfsc.test.sh` houdt dat vast.
+
 `deploy/local/smoke-groepsversie.sh` toetst dat achteraf: het leest de regel uit de group-config en
 controleert dat élk contract die `fsc_version` draagt. Wat het **niet** kan: de draaiende
 softwareversie van een externe peer vaststellen, of een peer zien die nog geen contract heeft

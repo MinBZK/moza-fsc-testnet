@@ -69,6 +69,12 @@ jobs:
       - name: OpenFSC-versie-guard testen
         run: ./.github/scripts/check-openfsc-version.test.sh
 
+      # De guard wijst een halve bump aan, `bump-openfsc.sh` maakt 'm af. Doet dat script stil
+      # niets, dan blijft de guard rood zonder dat iets aanwijst waarom, en is handwerk de enige
+      # uitweg. Zie docs/openfsc-versiebeheer.md.
+      - name: OpenFSC-bumpscript testen
+        run: ./.github/scripts/bump-openfsc.test.sh
+
       - name: OpenFSC-versie-consistentie
         run: ./.github/scripts/check-openfsc-version.sh
 
