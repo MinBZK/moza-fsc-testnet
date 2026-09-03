@@ -10,7 +10,7 @@ componenten van verschillende versies staan, praat niet meer met zichzelf.
 | | Nu | Wat het is |
 |---|---|---|
 | **Standaard** | [FSC Core](https://gitdocumentatie.logius.nl/publicatie/fsc/core/) **v2.0.0** | De vastgestelde Logius-specificatie. Bepaalt de contract-content, de hash en de grant-vorm. Dít is het feit dat telt voor een team dat aansluit. |
-| **Implementatie** | OpenFSC **v2.5.2** | De reference implementation die wij draaien. Beweegt vaker en onafhankelijk. |
+| **Implementatie** | OpenFSC **v2.6.0** | De reference implementation die wij draaien. Beweegt vaker en onafhankelijk. |
 
 Sinds v2.0.0 zet OpenFSC de standaardversie expliciet in de contract-content (`fsc_version`) en
 accepteert het alleen contracten met een geldige versie. Upstream: *"Only accept Contracts with a
@@ -38,7 +38,7 @@ naast trust-anchor en `tls_min_version`:
 ```yaml
 rules:
   fsc_core_version: "2.0.0"      # de Logius-standaard; komt als fsc_version in de contract-content
-  openfsc_min_version: "v2.5.2"  # de implementatie
+  openfsc_min_version: "v2.6.0"  # de implementatie
 ```
 
 Geen enkele deploy leest dit bestand — het is een afspraak, geen configuratie die ergens ingelezen

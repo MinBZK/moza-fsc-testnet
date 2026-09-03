@@ -15,7 +15,7 @@
 # maar de digest hieronder blijft handwerk.
 FROM busybox:1.38.0-musl@sha256:32b5cdad7cce41dfd53d0ae06baebcf8357a147ee7694dc706911c373bc30c37 AS busybox
 
-FROM docker.io/federatedserviceconnectivity/txlog-api:v2.5.2@sha256:e6d4307f3055c25f8290d4ae45efb5b8367ca05dd7c1f5d63b2e36a043b5173e
+FROM docker.io/federatedserviceconnectivity/txlog-api:v2.6.0@sha256:d59d06d426afe5c91ece975ae3f4803d752f6156d81e81c82fb310bc51617df4
 COPY --from=busybox /bin/busybox /bin/sh
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/migrate-and-serve.sh
 ENTRYPOINT ["/usr/local/bin/migrate-and-serve.sh"]
