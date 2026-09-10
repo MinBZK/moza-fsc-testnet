@@ -23,11 +23,11 @@ Bouwt voort op `docs/spikes/manager-443-sni/`.
 
 ## Draaiboek
 
-Alle commando's vanuit de **repo-root**, op branch `feature/directory-group-723`.
+Alle commando's vanuit de **repo-root**, op `main`.
 
 ```bash
-# 1. Juiste branch (cert-set + harness zitten hier).
-git switch feature/directory-group-723
+# 1. Harness + PKI-tooling staan op main.
+git switch main
 
 # 2. Genereer de test-CA + per-peer certs (#722-tooling, lokaal — nooit in CI).
 ./pki/init-ca.sh          # group root + intermediate -> pki/ca/
