@@ -4,6 +4,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Required check: moet ook op de merge-queue-branch draaien, anders blijft de queue wachten.
+  merge_group:
   workflow_dispatch:
 
 permissions: read-all
