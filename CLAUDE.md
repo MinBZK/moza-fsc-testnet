@@ -111,7 +111,8 @@ contracts/   grant → sign → accept bootstrap
 - **Git:** nooit direct naar `main` pushen — feature branch + PR. Branch-prefix `feature/`,
   `fix/`, `chore/`, `docs/`. Geen reviewer toevoegen bij aanmaken PR. `main` is **branch-protected**
   (1 review verplicht, conversation-resolution, geen force-push); required checks: `lint`,
-  `Analyze (actions)`.
+  `Analyze (actions)`. Merges lopen via de **merge queue**: een nieuwe required check moet ook op
+  `merge_group` triggeren, anders blijft de queue erop wachten.
 - **CI:** `lint.yml` (markdownlint + yamllint + actionlint + OpenFSC-versie-consistentie),
   `codeql.yml` (Actions-analyse), `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind;
   Dependabot houdt ze wekelijks bij, plus de base-images van de drie migrate-wrappers. Wekelijks
