@@ -37,12 +37,17 @@ dockerfile() {
 
 echo "Regressietest openfsc-tag.sh"
 
-# --- 1. De echte wrappers: elke tag is leesbaar ------------------------------------------------
+# --- 1. De echte wrappers: elke tag is leesbaar en heeft de strikte vorm ------------------------
+# Verwacht is de tag die de guard ook ziet; die vergelijkt de wrappers onderling, dit script niet.
 mapfile -t WRAPPERS < <(find "$REPO_ROOT/deploy/zad" -name Dockerfile | sort)
 [ "${#WRAPPERS[@]}" -ge 3 ] || {
   echo "FAAL  opzet: ${#WRAPPERS[@]} wrapper-Dockerfile(s), minimaal 3 verwacht" >&2; exit 1; }
 for wrapper in "${WRAPPERS[@]}"; do
-  expect "echte wrapper ${wrapper#"$REPO_ROOT"/}" 0 "" "$wrapper"
+  want=$(grep -vE '^[[:space:]]*#' "$wrapper" \
+    | grep -oE 'federatedserviceconnectivity/[a-z0-9-]+:v[0-9]+\.[0-9]+\.[0-9]+' \
+    | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+$') || {
+    echo "FAAL  opzet: geen OpenFSC-tag in $wrapper" >&2; exit 1; }
+  expect "echte wrapper ${wrapper#"$REPO_ROOT"/}" 0 "$want" "$wrapper"
 done
 
 # --- 2. Vorm van de FROM-regel -----------------------------------------------------------------
@@ -68,6 +73,18 @@ expect "tag met suffix" 1 "" "$(dockerfile \
   "FROM docker.io/federatedserviceconnectivity/manager:v1.2.3-rc1@$DIGEST")"
 expect "leeg bestand" 1 "" "$(dockerfile "")"
 expect "bestand bestaat niet" 1 "" "$TMP_ROOT/bestaat-niet"
+mkdir -p "$TMP_ROOT/een-map"
+expect "map in plaats van bestand" 1 "" "$TMP_ROOT/een-map"
+
+# --- 4. Aanroep zonder argument -----------------------------------------------------------------
+cases=$((cases + 1))
+got=0; "$SCRIPT" >/dev/null 2>&1 || got=$?
+if [ "$got" -eq 2 ]; then
+  printf 'ok    %s (exit %s)\n' "zonder argument" "$got"
+else
+  printf 'FAAL  %s: verwacht exit 2, kreeg %s\n' "zonder argument" "$got" >&2
+  fails=$((fails + 1))
+fi
 
 echo
 if [ "$fails" -ne 0 ]; then

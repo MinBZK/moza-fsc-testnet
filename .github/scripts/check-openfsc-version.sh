@@ -108,22 +108,29 @@ done < <(grep -roE "federatedserviceconnectivity/[a-z0-9-]+:${VERSIE}" \
 [ "$sweep_hits" -gt 0 ] || { echo "FOUT: sweep vond geen enkele OpenFSC-image-verwijzing meer." >&2; fail=1; }
 
 # --- Fase C: geen eigen versie in de workflows -------------------------------------------------
-# De workflows leiden hun tag af via .github/scripts/openfsc-tag.sh. Een literal hier beweegt niet
-# mee met Dependabot, en dan publiceert de build een image dat de oude versie heet en de nieuwe ís.
-# Comments en `uses:`-regels (action-pins met hun versie-comment) tellen niet mee.
-mapfile -t WORKFLOWS < <(find .github/workflows -name '*.yml' | sort)
+# De workflows leiden hun tag af via .github/scripts/openfsc-tag.sh; een literal beweegt niet mee
+# met Dependabot. Bewust élke `vX.Y.Z`, niet alleen OpenFSC-tags: een versie-literal is in een
+# workflow nergens nodig. Uitgezonderd zijn comments, SHA-gepinde actions (`uses: x@<sha> # vX.Y.Z`)
+# en lokale `uses: ./…`. Een trailing comment telt wél mee, anders glipt `X: v1.2.3 # uses:` erdoor.
+TOEGESTAAN='^[0-9]+:[[:space:]]*(#|(-[[:space:]]+)?uses:[[:space:]]*([^[:space:]@]+@[0-9a-f]{40}|\./[^[:space:]]+)([[:space:]]+#.*)?$)'
+mapfile -t WORKFLOWS < <(find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) | sort)
 [ "${#WORKFLOWS[@]}" -gt 0 ] || { echo "FOUT: geen workflows gevonden onder .github/workflows." >&2; fail=1; }
 literal_hits=0
 for workflow in "${WORKFLOWS[@]}"; do
-  # Leesbaarheid vooraf: in de pipeline hieronder zou een leesfout als "geen treffer" uitkomen.
-  [ -r "$workflow" ] || { echo "FOUT: kon $workflow niet lezen" >&2; fail=1; continue; }
+  # Zelfde onderscheid als in scan(): een leesfout mag niet als "geen treffer" uitkomen.
+  set +e
+  numbered=$(grep -nE "$VERSIE" "$workflow")
+  rc=$?
+  set -e
+  if [ "$rc" -ge 2 ]; then
+    echo "FOUT: kon $workflow niet lezen (grep exit $rc)" >&2; fail=1; continue
+  fi
   while IFS= read -r literal; do
     [ -n "$literal" ] || continue
-    echo "FOUT: $workflow:${literal%%:*} draagt een eigen versie; lees 'm met openfsc-tag.sh uit de Dockerfile." >&2
+    echo "FOUT: $workflow:${literal%%:*} draagt een eigen versie." >&2
     literal_hits=$((literal_hits + 1))
-  done < <(grep -nE "$VERSIE" "$workflow" | grep -vE '^[0-9]+:[[:space:]]*(#|-?[[:space:]]*uses:)' || true)
+  done < <(printf '%s\n' "$numbered" | grep -vE "$TOEGESTAAN" || true)
 done
-[ "$literal_hits" -eq 0 ] || fail=1
 echo "Workflows: ${#WORKFLOWS[@]} gescand, $literal_hits met een eigen versie."
 
 # --- Uitslag ------------------------------------------------------------------------------------
@@ -141,6 +148,16 @@ Bump ze samen — \`.github/scripts/bump-openfsc.sh <versie>\` doet de tags in �
 de drie wrapper-Dockerfiles blijven handwerk. Zie contracts/bootstrap.md voor wat een
 v1.x -> v2.x-sprong verder vergt.
 EOF
+fi
+# Een literal los melden: bump-openfsc.sh raakt geen workflows, dus die uitweg werkt hier niet.
+if [ "$literal_hits" -ne 0 ]; then
+  cat >&2 <<EOF
+
+FOUT: $literal_hits workflow-regel(s) dragen een eigen versie. Haal de literal weg en lees de versie
+met \`.github/scripts/openfsc-tag.sh <Dockerfile>\` uit de wrapper-Dockerfile.
+EOF
+fi
+if [ "$fail" -ne 0 ] || [ "$literal_hits" -ne 0 ]; then
   exit 1
 fi
 

@@ -182,8 +182,12 @@ expect_identical "al op de gevraagde versie laat de kopie ongemoeid" "$ref" "$d"
 # --- 6. .github/workflows/ beweegt niet mee --------------------------------------------------
 # De workflows lezen de versie uit de Dockerfile. Raakt de bump ze toch, dan heeft de auto-fix op
 # Dependabot-PR's een token met workflow-schrijfrecht nodig in plaats van alleen contents.
+# Na het normaliseren dragen de workflows geen versie meer, dus een sed over .github/workflows/
+# zou er toevallig langslopen. Vandaar een gemerkt bestand, net als in case 3; zonder `.yml`- of
+# `.yaml`-extensie valt het buiten de workflow-scan van de guard.
 d=$(fresh_copy); normalize "$d"
 ref=$(fresh_copy); normalize "$ref"
+for dir in "$d" "$ref"; do printf 'OpenFSC %s\n' "$BASE" > "$dir/.github/workflows/.bump-marker"; done
 expect_bump "bump raakt .github/workflows/ niet" 0 "$d" "" "$NEW"
 expect_identical ".github/workflows/ blijft ongemoeid bij een bump" "$ref/.github/workflows" "$d/.github/workflows"
 

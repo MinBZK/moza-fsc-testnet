@@ -78,7 +78,7 @@ jobs:
       image_base: ${{ steps.m.outputs.image_base }}
       manager_suffix: ${{ steps.m.outputs.manager_suffix }}
     steps:
-      # Alleen voor de OpenFSC-basistag hieronder; de rest van deze job leest geen bestanden.
+      # Alleen voor de OpenFSC-basistag hieronder.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -130,7 +130,9 @@ jobs:
           set -euo pipefail
           # De tag van het manager-base-image, ook voor `dirui`: de guard houdt alle OpenFSC-tags in
           # lockstep. Uit de Dockerfile en niet uit een eigen default, want alleen die bumpt Dependabot
-          # — en een bump raakt zo altijd manager-migrate/, dus `changes` laat de build meedraaien.
+          # — en een bump raakt zo altijd manager-migrate/, dus op push en PR draait de build mee.
+          # Een dispatch bouwt niet (`changed=false`): staat de Dockerfile op een nog ongebouwde
+          # versie, dispatch dan eerst build-manager-migrate of geef manager_tag mee.
           image_base="$INPUT_IMAGE_TAG"
           [ -n "$image_base" ] || image_base=$(.github/scripts/openfsc-tag.sh deploy/zad/manager-migrate/Dockerfile)
           if [ "$EVENT" = "pull_request" ]; then
@@ -494,10 +496,10 @@ jobs:
         if: steps.cleanup.outputs.skipped != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          # Zoeken op suffix, niet op een volledige tag: de basisversie in de Dockerfile kan
-          # gebumpt zijn nadat deze PR z'n image bouwde (de PR wordt dan niet meer gesynchroniseerd,
-          # maar de close-run leest de nieuwe waarde). Een exacte match zou die oude tag missen en
-          # "niets op te ruimen" melden terwijl hij blijft staan.
+          # Zoeken op suffix, niet op een volledige tag: de close-run kent de basisversie niet (geen
+          # checkout), en die kan gebumpt zijn nadat deze PR z'n image bouwde. Een exacte match op
+          # een basisversie zou die oude tag missen en "niets op te ruimen" melden terwijl hij
+          # blijft staan.
           TAG_SUFFIX: -pr-${{ github.event.pull_request.number }}
           MANAGER_IMAGE: ${{ env.MANAGER_IMAGE }}
         run: |

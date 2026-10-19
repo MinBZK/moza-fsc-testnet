@@ -70,13 +70,16 @@ resolvet Docker op de digest en wordt de tag niet gevalideerd. De tag in de `FRO
 bron voor de workflows: `build-manager-migrate.yml`, `build-migrate-images.yml` en
 `zad-deploy-directory.yml` dragen geen eigen versie, maar lezen 'm met
 `.github/scripts/openfsc-tag.sh` uit de Dockerfile. Een leeg `image_tag`-veld bij een handmatige
-dispatch betekent dus "de versie uit de Dockerfile". Zo publiceert een build nooit een image dat de
-oude versie heet en de nieuwe ís, en raakt een bump de workflows niet.
+dispatch betekent dus "de versie uit de Dockerfile". Een bump raakt de workflows daardoor niet.
+
+Tag en digest in de `FROM`-regel horen bij elkaar: de tag bepaalt de naam van het gepubliceerde
+image, de digest de inhoud. Zolang ze kloppen en niemand bij een dispatch een afwijkende `image_tag`
+invult, heet een image naar de versie die het is. De guard controleert digests niet.
 
 `.github/scripts/check-openfsc-version.sh` (stap in `lint.yml`, required check) faalt als niet alle
 plekken hierboven dezelfde versie noemen, of als een workflow toch weer een eigen versie draagt.
-Docs blijven er bewust buiten: daar staan versies in een
-historische context (spikes, design-notities).
+Docs blijven er bewust buiten: daar staan versies in een historische context (spikes,
+design-notities).
 
 ## Dependabot
 

@@ -9,7 +9,10 @@ set -euo pipefail
 
 file="${1:-}"
 [ -n "$file" ] || { echo "Gebruik: $0 <Dockerfile>" >&2; exit 2; }
-[ -r "$file" ] || { echo "FOUT: kan $file niet lezen." >&2; exit 1; }
+if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+  echo "FOUT: $file is geen leesbaar bestand." >&2
+  exit 1
+fi
 
 # Comments eruit, net als in check-openfsc-version.sh: een uitgecommentarieerde oude FROM mag niet
 # als bron gelden. Precies één treffer eisen, anders is "welke van de twee?" een gok.
