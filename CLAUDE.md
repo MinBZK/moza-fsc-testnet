@@ -122,12 +122,13 @@ contracts/   grant → sign → accept bootstrap
   `actionlint` en `markdownlint-cli2` na en los elke waarschuwing op, of accepteer 'm bewust met
   reden erbij. "Groen" zegt alleen iets als er geen onverklaarde nieuwe waarschuwingen bij komen;
   onverklaarde waarschuwingen blokkeren een PR tot ze getrieerd zijn.
-- **OpenFSC-versie:** alle componenten draaien in lockstep op één tag; die staat op negen plekken
-  (drie wrapper-Dockerfiles, drie workflows, `deploy/local/docker-compose.yaml`,
-  `deploy/local/.env.example` én `openfsc_min_version` in `group/group-config.yaml`).
+- **OpenFSC-versie:** alle componenten draaien in lockstep op één tag; die staat op zes plekken
+  (drie wrapper-Dockerfiles, `deploy/local/docker-compose.yaml`, `deploy/local/.env.example` én
+  `openfsc_min_version` in `group/group-config.yaml`). De workflows dragen **geen** eigen versie:
+  ze lezen de `FROM`-tag via `.github/scripts/openfsc-tag.sh`; de guard faalt op een literal.
   Dependabot ziet alleen de Dockerfiles en groepeert ze in één PR;
   `.github/scripts/bump-openfsc.sh <versie>` doet de rest, `check-openfsc-version.sh` faalt bij een
-  halve bump. Beide scripts hebben een eigen regressietest in de lint-workflow.
+  halve bump. Alle drie de scripts hebben een eigen regressietest in de lint-workflow.
   Zie `docs/openfsc-versiebeheer.md`.
 - **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
   en `docs/ai-verantwoording.md`. Governance/support delegeren naar de MOZa-hoofdrepo; **geen eigen

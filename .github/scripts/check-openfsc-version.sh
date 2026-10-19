@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Bewaakt dat er précies één OpenFSC-versie in deze repo rondgaat. De componenten draaien in
-# lockstep, en de wrapper-images krijgen hun output-tag uit de workflow-default — een halve bump
-# publiceert dus een image dat v-oud heet en v-nieuw ís. Achtergrond en de lijst bewaakte plekken:
-# docs/openfsc-versiebeheer.md.
+# lockstep, dus een halve bump laat de lokale omgeving of de group-regel iets anders draaien of
+# beloven dan ZAD. Achtergrond en de lijst bewaakte plekken: docs/openfsc-versiebeheer.md.
 #
 # Fase A scant die plekken gericht, elk met een minimum aantal treffers: zonder ondergrens is
 # "patroon matcht niets meer" niet te onderscheiden van "alles is consistent". Fase B sweept deploy/
-# en .github/workflows/ op verwijzingen buiten die lijst. Digests en docs blijven buiten scope.
+# en .github/workflows/ op verwijzingen buiten die lijst. Fase C eist dat de workflows géén eigen
+# versie dragen: die lezen 'm uit de Dockerfile. Digests en docs blijven buiten scope.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -81,22 +81,11 @@ for dockerfile in "${DOCKERFILES[@]}"; do
   scan "$dockerfile" "federatedserviceconnectivity/[a-z0-9-]+:${VERSIE}" 1
 done
 
-# 2. De output-tag van de wrapper-images. Minimum 3 = dispatch + workflow_call + fallback;
-#    build-migrate-images heeft geen workflow_call, dus 2.
-scan ".github/workflows/build-manager-migrate.yml" \
-  "default:[[:space:]]*\"?${VERSIE}\"?|image_tag \|\| '${VERSIE}'" 3
-scan ".github/workflows/build-migrate-images.yml" \
-  "default:[[:space:]]*\"?${VERSIE}\"?|image_tag \|\| '${VERSIE}'" 2
-
-# 3. De deploy-workflow: de stock-tag voor `dirui`, tevens default-tag voor de manager-wrapper.
-scan ".github/workflows/zad-deploy-directory.yml" \
-  "IMAGE_TAG_DEFAULT:[[:space:]]*\"?${VERSIE}\"?" 1
-
-# 4. De lokale compose-omgeving plus de .env-template.
+# 2. De lokale compose-omgeving plus de .env-template.
 scan "deploy/local/docker-compose.yaml" "\\\$\\{IMAGE_TAG:-${VERSIE}\\}" 14
 scan "deploy/local/.env.example" "^[[:space:]]*(export[[:space:]]+)?IMAGE_TAG=\"?${VERSIE}\"?" 1
 
-# 5. De group-regel: `openfsc_min_version` is de versie die peer-teams moeten draaien. Loopt die
+# 3. De group-regel: `openfsc_min_version` is de versie die peer-teams moeten draaien. Loopt die
 #    achter op wat wij zelf deployen, dan belooft de group-config iets anders dan het testnet doet
 #    — en dat merkt niemand, want geen enkele deploy leest dit bestand. Het inline-comment op die
 #    regel noemt óók een versie; het patroon ankert daarom op de sleutel.
@@ -117,6 +106,25 @@ done < <(grep -roE "federatedserviceconnectivity/[a-z0-9-]+:${VERSIE}" \
            deploy .github/workflows 2>/dev/null \
          | sort -u)
 [ "$sweep_hits" -gt 0 ] || { echo "FOUT: sweep vond geen enkele OpenFSC-image-verwijzing meer." >&2; fail=1; }
+
+# --- Fase C: geen eigen versie in de workflows -------------------------------------------------
+# De workflows leiden hun tag af via .github/scripts/openfsc-tag.sh. Een literal hier beweegt niet
+# mee met Dependabot, en dan publiceert de build een image dat de oude versie heet en de nieuwe ís.
+# Comments en `uses:`-regels (action-pins met hun versie-comment) tellen niet mee.
+mapfile -t WORKFLOWS < <(find .github/workflows -name '*.yml' | sort)
+[ "${#WORKFLOWS[@]}" -gt 0 ] || { echo "FOUT: geen workflows gevonden onder .github/workflows." >&2; fail=1; }
+literal_hits=0
+for workflow in "${WORKFLOWS[@]}"; do
+  # Leesbaarheid vooraf: in de pipeline hieronder zou een leesfout als "geen treffer" uitkomen.
+  [ -r "$workflow" ] || { echo "FOUT: kon $workflow niet lezen" >&2; fail=1; continue; }
+  while IFS= read -r literal; do
+    [ -n "$literal" ] || continue
+    echo "FOUT: $workflow:${literal%%:*} draagt een eigen versie; lees 'm met openfsc-tag.sh uit de Dockerfile." >&2
+    literal_hits=$((literal_hits + 1))
+  done < <(grep -nE "$VERSIE" "$workflow" | grep -vE '^[0-9]+:[[:space:]]*(#|-?[[:space:]]*uses:)' || true)
+done
+[ "$literal_hits" -eq 0 ] || fail=1
+echo "Workflows: ${#WORKFLOWS[@]} gescand, $literal_hits met een eigen versie."
 
 # --- Uitslag ------------------------------------------------------------------------------------
 if [ -z "$ref" ]; then

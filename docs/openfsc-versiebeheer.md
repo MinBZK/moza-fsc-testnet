@@ -62,19 +62,20 @@ opgesteld. De group-regel is de afspraak; de smoke is het bewijs achteraf, geen 
 | Plek | Wat |
 |------|-----|
 | `deploy/zad/{manager,controller,txlog}-migrate/Dockerfile` | `FROM …:<tag>@sha256:<digest>` — het base-image van de migrate-wrapper |
-| `.github/workflows/build-manager-migrate.yml` | default van `image_tag` (dispatch + `workflow_call`) en de fallback in de build-stap |
-| `.github/workflows/build-migrate-images.yml` | idem, voor de controller-/txlog-wrappers |
-| `.github/workflows/zad-deploy-directory.yml` | `IMAGE_TAG_DEFAULT` — de stock-tag voor `dirui` en de manager |
 | `deploy/local/docker-compose.yaml` + `.env.example` | `${IMAGE_TAG:-<tag>}` voor de lokale omgeving |
 | `group/group-config.yaml` | `rules.openfsc_min_version` — de versie die peer-teams moeten draaien |
 
 De wrapper-Dockerfiles zijn digest-gepind (Scorecard Pinned-Dependencies). Bij `repo:tag@digest`
-resolvet Docker op de digest en wordt de tag niet gevalideerd — de tag is daar dus documentatie, en
-de output-tag van het gebouwde image komt uit de **workflow-default**. Loopt die uiteen met de
-`FROM`-regel, dan publiceert de build een image dat de oude versie heet en de nieuwe ís.
+resolvet Docker op de digest en wordt de tag niet gevalideerd. De tag in de `FROM`-regel is wél de
+bron voor de workflows: `build-manager-migrate.yml`, `build-migrate-images.yml` en
+`zad-deploy-directory.yml` dragen geen eigen versie, maar lezen 'm met
+`.github/scripts/openfsc-tag.sh` uit de Dockerfile. Een leeg `image_tag`-veld bij een handmatige
+dispatch betekent dus "de versie uit de Dockerfile". Zo publiceert een build nooit een image dat de
+oude versie heet en de nieuwe ís, en raakt een bump de workflows niet.
 
 `.github/scripts/check-openfsc-version.sh` (stap in `lint.yml`, required check) faalt als niet alle
-plekken hierboven dezelfde versie noemen. Docs blijven er bewust buiten: daar staan versies in een
+plekken hierboven dezelfde versie noemen, of als een workflow toch weer een eigen versie draagt.
+Docs blijven er bewust buiten: daar staan versies in een
 historische context (spikes, design-notities).
 
 ## Dependabot
@@ -85,8 +86,9 @@ base-images tegelijk verzet, in plaats van drie los mergebare PR's. De busybox-d
 voor het distroless base-image) zit in een eigen groep, zodat een busybox-CVE niet hoeft te wachten
 op een OpenFSC-release.
 
-Wat Dependabot **niet** kan: de workflow-defaults en de compose meebewegen. Die horen bij de
-groep-PR handmatig mee; de guard hierboven bewaakt dat je het niet vergeet.
+Wat Dependabot **niet** kan: de compose, `.env.example` en de group-regel meebewegen. Die horen bij
+de groep-PR mee via `bump-openfsc.sh`; de guard hierboven bewaakt dat je het niet vergeet. De
+workflows hoeven niet mee: die lezen de versie uit de Dockerfiles die Dependabot al verzet.
 
 ## Bij een versiesprong
 

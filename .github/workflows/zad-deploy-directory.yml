@@ -33,7 +33,7 @@ on:
         required: false
         default: "test"
       image_tag:
-        description: "OpenFSC stock-tag (directory-ui; default voor de manager). Leeg = IMAGE_TAG_DEFAULT."
+        description: "OpenFSC stock-tag (directory-ui; default voor de manager). Leeg = de tag uit de manager-migrate-Dockerfile."
         required: false
         default: ""
       manager_tag:
@@ -50,14 +50,6 @@ env:
   # lopen. Zónder /api-suffix: de action-input wil die erbij, de curl bouwt zelf /api/v2/... —
   # elke aanroep plakt 'm apart aan, anders eindig je op /api/api/v2.
   ZAD_API_BASE: https://zad.rijksapp.nl
-  # Default OpenFSC-basisversie voor déze workflow: de workflow_dispatch-input staat op leeg en valt
-  # hier terug (`on:`-defaults kunnen de env-context niet lezen), zodat handmatige dispatch niet stil
-  # een andere versie deployt dan een push naar main. `build-manager-migrate.yml` heeft z'n eigen
-  # default voor losse dispatch — die twee horen samen te bewegen.
-  # LET OP bij een bump: een wijziging aan alléén deze regel zet `run=true` maar `changed=false`, dus
-  # de build draait niet en de deploy wijst naar een tag die nog niet bestaat (met wait-for-ready uit
-  # merkt de run dat niet). Bump dus samen met een build, of dispatch eerst build-manager-migrate.
-  IMAGE_TAG_DEFAULT: v2.7.0
   # Eén bron voor de manager-image: de components-JSON van de deploy-job én de ghcr-opruimstap in
   # cleanup-preview leiden hier hun waarden uit af. Losse literals liepen anders uiteen bij een
   # rename, waarna de opruimstap stilzwijgend "niets gevonden" meldt.
@@ -86,6 +78,14 @@ jobs:
       image_base: ${{ steps.m.outputs.image_base }}
       manager_suffix: ${{ steps.m.outputs.manager_suffix }}
     steps:
+      # Alleen voor de OpenFSC-basistag hieronder; de rest van deze job leest geen bestanden.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            deploy/zad/manager-migrate
       # Vangrail die de deploy-action zelf niet heeft: ruwe workflow_dispatch-inputs niet
       # ongevalideerd in de components-JSON (manager_tag, image_tag) of als deployment-naam
       # laten belanden.
@@ -110,7 +110,7 @@ jobs:
                 echo "::error::ongeldige manager_tag '$INPUT_MANAGER_TAG' (alleen A-Za-z0-9._-)"; exit 1 ;;
             esac
           fi
-          # image_tag mag leeg zijn (dan valt de volgende stap terug op IMAGE_TAG_DEFAULT); alléén
+          # image_tag mag leeg zijn (dan valt de volgende stap terug op de Dockerfile-tag); alléén
           # valideren als er iets is ingevuld — komt terecht in de components-JSON (dirmgr,
           # dirui) én de cleanup-containers-tag.
           if [ -n "$INPUT_IMAGE_TAG" ]; then
@@ -128,7 +128,11 @@ jobs:
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           set -euo pipefail
-          image_base="${INPUT_IMAGE_TAG:-$IMAGE_TAG_DEFAULT}"
+          # De tag van het manager-base-image, ook voor `dirui`: de guard houdt alle OpenFSC-tags in
+          # lockstep. Uit de Dockerfile en niet uit een eigen default, want alleen die bumpt Dependabot
+          # — en een bump raakt zo altijd manager-migrate/, dus `changes` laat de build meedraaien.
+          image_base="$INPUT_IMAGE_TAG"
+          [ -n "$image_base" ] || image_base=$(.github/scripts/openfsc-tag.sh deploy/zad/manager-migrate/Dockerfile)
           if [ "$EVENT" = "pull_request" ]; then
             deployment="pr-${PR}"
             manager_suffix="pr-${PR}"
@@ -480,7 +484,7 @@ jobs:
       - name: Verwijder de ghcr preview-tag (indien niet gedeeld)
         # Zelfde reden als hierboven bij delete-container: de action verwijdert het hele package
         # zodra dit de laatst getagde versie is. Alleen verwijderen als de preview-tag een eigen,
-        # ongedeelde versie heeft; deelt de versie tags met bv. v2.7.0 (byte-identieke rebuild),
+        # ongedeelde versie heeft; deelt de versie tags met de canonieke tag (byte-identieke rebuild),
         # dan blijft de package staan. Die gedeelde-tag-situatie is géén randgeval (een PR die alleen
         # de build-recipe raakt levert een byte-identieke image op), dus preview-tags blijven zich
         # verzamelen op de canonieke version — opruimen daarvan hoort in een periodieke reaper, niet
@@ -490,7 +494,7 @@ jobs:
         if: steps.cleanup.outputs.skipped != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          # Zoeken op suffix, niet op een volledige tag: de basisversie in IMAGE_TAG_DEFAULT kan
+          # Zoeken op suffix, niet op een volledige tag: de basisversie in de Dockerfile kan
           # gebumpt zijn nadat deze PR z'n image bouwde (de PR wordt dan niet meer gesynchroniseerd,
           # maar de close-run leest de nieuwe waarde). Een exacte match zou die oude tag missen en
           # "niets op te ruimen" melden terwijl hij blijft staan.

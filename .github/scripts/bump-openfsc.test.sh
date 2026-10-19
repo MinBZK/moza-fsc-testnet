@@ -44,8 +44,8 @@ normalize() {  # $1=werkboomkopie
              | awk 'NF==2 && $2 ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/            {print $1, $2}
                     NF==3 && $1=="sweep:" && $3 ~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ {print $2, $3}' \
              | sort -u)
-  [ "$n" -ge 8 ] || {
-    echo "FAAL  opzet: de guard leverde $n bewaakte plek(ken), minimaal 8 verwacht" >&2; exit 1; }
+  [ "$n" -ge 6 ] || {
+    echo "FAAL  opzet: de guard leverde $n bewaakte plek(ken), minimaal 6 verwacht" >&2; exit 1; }
   "$dir/.github/scripts/check-openfsc-version.sh" >/dev/null 2>&1 || {
     echo "FAAL  opzet: de genormaliseerde kopie is niet groen" >&2; exit 1; }
 }
@@ -179,7 +179,15 @@ ref=$(fresh_copy); normalize "$ref"
 expect_bump "al op de gevraagde versie" 0 "$d" "verzet niets meer" "$BASE"
 expect_identical "al op de gevraagde versie laat de kopie ongemoeid" "$ref" "$d"
 
-# --- 6. Argumenten die geen versie zijn --------------------------------------------------------
+# --- 6. .github/workflows/ beweegt niet mee --------------------------------------------------
+# De workflows lezen de versie uit de Dockerfile. Raakt de bump ze toch, dan heeft de auto-fix op
+# Dependabot-PR's een token met workflow-schrijfrecht nodig in plaats van alleen contents.
+d=$(fresh_copy); normalize "$d"
+ref=$(fresh_copy); normalize "$ref"
+expect_bump "bump raakt .github/workflows/ niet" 0 "$d" "" "$NEW"
+expect_identical ".github/workflows/ blijft ongemoeid bij een bump" "$ref/.github/workflows" "$d/.github/workflows"
+
+# --- 7. Argumenten die geen versie zijn --------------------------------------------------------
 # `&` en `/` zijn sed-metatekens: zonder strikte validatie schrijft het script daar stil onzin mee
 # weg (`&` herhaalt de hele match) in plaats van te stoppen.
 d=$(fresh_copy)

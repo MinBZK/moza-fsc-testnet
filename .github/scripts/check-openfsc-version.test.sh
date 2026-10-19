@@ -51,15 +51,20 @@ d=$(fresh_copy)
 sed -i 's|txlog-api:v[0-9.]*|txlog-api:v1.43.7|' "$d/deploy/zad/txlog-migrate/Dockerfile"
 expect "skew in txlog-migrate/Dockerfile" 1 "$d"
 
-# --- 2. Gequote waarde: cosmetische YAML-herformattering mag de guard niet ontwijken -----------
+# --- 2. Eigen versie in een workflow-env: beweegt niet mee met Dependabot ----------------------
 d=$(fresh_copy)
-sed -i 's|IMAGE_TAG_DEFAULT: v[0-9.]*|IMAGE_TAG_DEFAULT: "v1.43.7"|' "$d/.github/workflows/zad-deploy-directory.yml"
-expect "gequote IMAGE_TAG_DEFAULT met oude versie" 1 "$d"
+sed -i 's|^\(  ZAD_API_BASE: .*\)$|\1\n  IMAGE_TAG_DEFAULT: "v1.43.7"|' \
+  "$d/.github/workflows/zad-deploy-directory.yml"
+grep -qF 'IMAGE_TAG_DEFAULT: "v1.43.7"' "$d/.github/workflows/zad-deploy-directory.yml" || {
+  echo "FAAL  opzet case 2: de mutatie sloeg niet aan" >&2; exit 1; }
+expect "eigen versie in een workflow-env" 1 "$d"
 
-# --- 3. Ontquote workflow-default ---------------------------------------------------------------
+# --- 3. Eigen versie als input-default, ongequote ----------------------------------------------
 d=$(fresh_copy)
-sed -i '0,/default: "v[0-9.]*"/s||default: v1.43.7|' "$d/.github/workflows/build-manager-migrate.yml"
-expect "ontquote workflow-default met oude versie" 1 "$d"
+sed -i '0,/default: ""/s||default: v1.43.7|' "$d/.github/workflows/build-manager-migrate.yml"
+grep -qF 'default: v1.43.7' "$d/.github/workflows/build-manager-migrate.yml" || {
+  echo "FAAL  opzet case 3: de mutatie sloeg niet aan" >&2; exit 1; }
+expect "eigen versie als workflow-input-default" 1 "$d"
 
 # --- 4. Hernoemde compose-variabele: alle 14 images vallen in één klap buiten beeld ------------
 d=$(fresh_copy)
@@ -98,9 +103,14 @@ expect "leeg wrapper-Dockerfile (pin weg)" 1 "$d"
 
 # --- 9. Uitgecommentarieerde nieuwe versie naast een live oude ---------------------------------
 d=$(fresh_copy)
-sed -i 's|^\(  IMAGE_TAG_DEFAULT: \)v[0-9.]*|  # was: \1v2.5.2\n\1v1.43.7|' \
-  "$d/.github/workflows/zad-deploy-directory.yml"
+sed -i 's|^IMAGE_TAG=\(.*\)$|# was: IMAGE_TAG=\1\nIMAGE_TAG=v1.43.7|' "$d/deploy/local/.env.example"
 expect "comment mag niet als bron gelden" 1 "$d"
+
+# --- 9b. Een versie in een workflow-comment is geen eigen versie --------------------------------
+# Fase C slaat comments over; zonder dat zou elk voorbeeld in een comment de lint rood maken.
+d=$(fresh_copy)
+sed -i '1i # bv. v1.43.7' "$d/.github/workflows/build-manager-migrate.yml"
+expect "versie in een workflow-comment blijft groen" 0 "$d"
 
 # --- 10. Group-regel achtergebleven: geen enkele deploy leest dit bestand, dus alleen de guard
 #         merkt dat de afspraak met peer-teams iets anders belooft dan wij draaien ---------------
