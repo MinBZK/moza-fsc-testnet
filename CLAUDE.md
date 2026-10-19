@@ -128,7 +128,8 @@ contracts/   grant → sign → accept bootstrap
   ze lezen de `FROM`-tag via `.github/scripts/openfsc-tag.sh`; de guard faalt op een literal.
   Dependabot ziet alleen de Dockerfiles en groepeert ze in één PR;
   `.github/scripts/bump-openfsc.sh <versie>` doet de rest (op Dependabot-PR's automatisch via
-  `dependabot-openfsc-bump.yml`), `check-openfsc-version.sh` faalt bij een halve bump. Alle drie de scripts hebben een eigen regressietest in de lint-workflow.
+  `dependabot-openfsc-bump.yml`), `check-openfsc-version.sh` faalt bij een halve bump. Alle drie de
+  scripts hebben een eigen regressietest in de lint-workflow.
   Zie `docs/openfsc-versiebeheer.md`.
 - **AI-verantwoording:** AI-bijdragen markeren met `Co-Authored-By`-trailer; zie `DISCLAIMER.md`
   en `docs/ai-verantwoording.md`. Governance/support delegeren naar de MOZa-hoofdrepo; **geen eigen

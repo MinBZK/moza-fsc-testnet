@@ -13,7 +13,7 @@
 
 | Wat | Waar | Opmerking |
 |-----|------|-----------|
-| `ZAD_API_KEY_DIRECTORY` | **Actions**-secretstore van dit repo | Expliciet **niet** in de Dependabot-secretstore: bot-PR's horen niet met deze key te kunnen deployen. |
+| `ZAD_API_KEY_DIRECTORY` | **Actions**-secretstore van dit repo | Expliciet **niet** in de Dependabot-secretstore: bot-PR's horen niet met deze key te kunnen deployen. Een commit die `dependabot-openfsc-bump.yml` op zo'n PR pusht, start runs met een menselijke actor, en die zien deze store wél. Daar houden de bot-auteur-checks in `zad-deploy-directory.yml` (`changes`-job, `skip-bot-prs`) de deploy tegen. |
 | `ZAD_PROJECT_ID_DIRECTORY` | Actions-variable (`vars`) | Geen geheim, wel omgevingsspecifiek. |
 | `FBS_DEPENDABOT_PR_SECRET` | **Dependabot**-secretstore van dit repo | Fine-grained PAT, alleen `Contents: write` op deze repo (en de FBS-repo, vandaar de naam). Gebruikt door `dependabot-openfsc-bump.yml` om een OpenFSC-bump af te maken. Hangt aan een persoonlijk account. |
 | Test-CA-sleutel, peer-cert/key | Buiten git, lokaal gegenereerd via `pki/` | Zie `pki/README.md`. Certs komen als ZAD-bijlage in de Operations Manager UI. |
@@ -60,6 +60,9 @@ daarna in de Dependabot-store; `gh` vraagt om de waarde, plak die niet inline:
 ```bash
 gh secret set FBS_DEPENDABOT_PR_SECRET --app dependabot --repo MinBZK/moza-fsc-testnet
 ```
+
+Hetzelfde token staat ook in de Dependabot-store van `MinBZK/moza-poc-fbs-berichtenbox`. Werk het
+daar tegelijk bij (zelfde commando met die `--repo`), anders breekt wat het daar gebruikt.
 
 Verloopt of verdwijnt het token, dan gaat het niet stil mis: de push faalt, en de versie-guard in
 `lint` blijft rood op de Dependabot-PR. Die PR is dan nog steeds met
