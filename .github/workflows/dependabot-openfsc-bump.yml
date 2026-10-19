@@ -1,0 +1,132 @@
+# Maakt een `openfsc-images`-PR van Dependabot af. Dependabot verzet alleen de `FROM`-regels in de
+# wrapper-Dockerfiles; de lokale compose, `.env.example` en de group-regel blijven achter, en dan is
+# de versie-guard in `lint` rood. Deze workflow draait `bump-openfsc.sh` op de PR-branch en pusht
+# het resultaat terug. Zie docs/openfsc-versiebeheer.md.
+#
+# Gepusht wordt met een fine-grained PAT (`FBS_DEPENDABOT_PR_SECRET`, alleen `Contents: write`): een
+# push met GITHUB_TOKEN start geen nieuwe workflow-runs, en dan blijft de required check `lint` op
+# de nieuwe commit uit. Het secret staat in de Dependabot-secretstore, want op een Dependabot-PR ziet
+# een workflow alleen die. Zie docs/sleutelbeheer.md.
+name: dependabot-openfsc-bump
+
+on:
+  # Bewust `pull_request` en niet `pull_request_target`: deze workflow checkt de PR-branch uit en
+  # draait er scripts uit. Onder `pull_request` krijgt een fork-PR geen secrets.
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Dependabot force-pusht een open PR bij een nieuwere release; de oude run is dan achterhaald.
+  group: dependabot-openfsc-bump-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    # `github.actor` en niet alleen de PR-auteur: de push hieronder start een nieuwe run met de
+    # PAT-eigenaar als actor, en die moet hier stoppen. Zo komt er ook geen lus en blijft een
+    # handmatige push op de branch buiten schot. De branch-check beperkt dit tot de OpenFSC-groep;
+    # busybox- en actions-PR's hebben hier niets te zoeken.
+    if: >-
+      github.actor == 'dependabot[bot]'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && startsWith(github.head_ref, 'dependabot/docker/')
+      && contains(github.head_ref, 'openfsc-images')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Zonder PAT en zonder opgeslagen credentials: de scripts hieronder draaien zonder het token
+      # in bereik. Alleen de push-stap krijgt het te zien. Op de exacte head-commit en niet op de
+      # branchnaam: force-pusht Dependabot intussen, dan weigert GitHub de push als non-fast-forward
+      # en maakt de run op die nieuwe commit het af.
+      - name: Checkout PR-head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Bepaal de nieuwe versie
+        id: versie
+        run: |
+          set -euo pipefail
+          if ./.github/scripts/check-openfsc-version.sh >/dev/null 2>&1; then
+            echo "De versies zijn al consistent; niets te doen."
+            echo "nodig=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Dependabot groepeert de drie wrappers in één PR, dus ze horen dezelfde tag te dragen.
+          # Lopen ze uiteen, dan is er geen eenduidige doelversie en is dit handwerk.
+          mapfile -t wrappers < <(find deploy/zad -name Dockerfile | sort)
+          nieuw=""
+          for wrapper in "${wrappers[@]}"; do
+            tag=$(./.github/scripts/openfsc-tag.sh "$wrapper")
+            echo "  $wrapper: $tag"
+            if [ -z "$nieuw" ]; then
+              nieuw="$tag"
+            elif [ "$tag" != "$nieuw" ]; then
+              echo "::error::De wrapper-Dockerfiles noemen verschillende OpenFSC-versies ($nieuw en $tag); maak deze PR met de hand af."
+              exit 1
+            fi
+          done
+          [ -n "$nieuw" ] || { echo "::error::Geen wrapper-Dockerfile gevonden onder deploy/zad."; exit 1; }
+          {
+            echo "nodig=true"
+            echo "nieuw=$nieuw"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Bump en controleer
+        if: steps.versie.outputs.nodig == 'true'
+        env:
+          NIEUW: ${{ steps.versie.outputs.nieuw }}
+        run: |
+          set -euo pipefail
+          ./.github/scripts/bump-openfsc.sh "$NIEUW"
+          ./.github/scripts/check-openfsc-version.sh
+          # De PAT heeft geen workflow-schrijfrecht; een bump die toch `.github/` raakt, faalt hier
+          # met een duidelijke melding in plaats van straks met een kale 403 op de push.
+          if git diff --name-only | grep -q '^\.github/'; then
+            echo "::error::bump-openfsc.sh wijzigde bestanden onder .github/; die mag deze workflow niet pushen."
+            git diff --name-only
+            exit 1
+          fi
+
+      - name: Commit en push naar de PR-branch
+        if: steps.versie.outputs.nodig == 'true'
+        env:
+          TOKEN: ${{ secrets.FBS_DEPENDABOT_PR_SECRET }}
+          NIEUW: ${{ steps.versie.outputs.nieuw }}
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          [ -n "$TOKEN" ] || {
+            echo "::error::Dependabot-secret FBS_DEPENDABOT_PR_SECRET ontbreekt of is leeg; zie docs/sleutelbeheer.md."
+            exit 1
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(deps): OpenFSC $NIEUW ook in compose, .env.example en group-regel" \
+            -m "Dependabot verzet alleen de wrapper-Dockerfiles; de rest via .github/scripts/bump-openfsc.sh $NIEUW."
+          # Het token alleen als header voor deze ene push, niet in .git/config. Hooks uit: de
+          # werkboom komt van de PR-branch, en een hook zou het token in bereik hebben.
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git -c core.hooksPath=/dev/null -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$BRANCH"
+
+      - name: Samenvatting
+        if: steps.versie.outputs.nodig == 'true'
+        env:
+          NIEUW: ${{ steps.versie.outputs.nieuw }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## OpenFSC $NIEUW afgemaakt
+
+          De compose, \`.env.example\` en de group-regel staan nu ook op $NIEUW. Nog met de hand:
+
+          - Lees de upstream CHANGELOG en diff de required-vlaggen (docs/openfsc-versiebeheer.md, "Bij een versiesprong").
+          - Werk de huidige versie bij in README.md en docs/openfsc-versiebeheer.md.
+          EOF

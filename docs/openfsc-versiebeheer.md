@@ -89,9 +89,26 @@ base-images tegelijk verzet, in plaats van drie los mergebare PR's. De busybox-d
 voor het distroless base-image) zit in een eigen groep, zodat een busybox-CVE niet hoeft te wachten
 op een OpenFSC-release.
 
-Wat Dependabot **niet** kan: de compose, `.env.example` en de group-regel meebewegen. Die horen bij
-de groep-PR mee via `bump-openfsc.sh`; de guard hierboven bewaakt dat je het niet vergeet. De
-workflows hoeven niet mee: die lezen de versie uit de Dockerfiles die Dependabot al verzet.
+Wat Dependabot **niet** kan: de compose, `.env.example` en de group-regel meebewegen. De workflows
+hoeven niet mee: die lezen de versie uit de Dockerfiles die Dependabot al verzet.
+
+De rest doet `.github/workflows/dependabot-openfsc-bump.yml`. Op een `openfsc-images`-PR van
+Dependabot draait die `bump-openfsc.sh` met de tag uit de Dockerfiles en pusht het resultaat als
+extra commit op de PR-branch; daarop draait `lint` opnieuw. Wat het bewust niet doet:
+
+- **Uiteenlopende wrapper-tags:** dan is er geen eenduidige doelversie, en faalt de run met de
+  vraag om de PR met de hand af te maken.
+- **Docs en release notes:** de huidige versie in `README.md` en in de tabel bovenaan dit document,
+  en de controle onder "Bij een versiesprong", blijven reviewwerk. De job-samenvatting herinnert
+  eraan.
+
+Na die extra commit rebaset Dependabot de PR niet meer vanzelf. Raakt de PR achter op `main`, geef
+dan `@dependabot recreate` als PR-comment: Dependabot bouwt de branch opnieuw op en de workflow
+maakt 'm weer af.
+
+De push gaat met een PAT in plaats van `GITHUB_TOKEN`, omdat een push met dat laatste geen nieuwe
+workflow-runs start. Zonder nieuwe `lint`-run blijft de required check op de nieuwe commit uit en
+zit de PR vast. Waar het token staat en hoe je het roteert: [`sleutelbeheer.md`](sleutelbeheer.md).
 
 ## Bij een versiesprong
 

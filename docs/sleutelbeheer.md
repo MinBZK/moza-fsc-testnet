@@ -15,6 +15,7 @@
 |-----|------|-----------|
 | `ZAD_API_KEY_DIRECTORY` | **Actions**-secretstore van dit repo | Expliciet **niet** in de Dependabot-secretstore: bot-PR's horen niet met deze key te kunnen deployen. |
 | `ZAD_PROJECT_ID_DIRECTORY` | Actions-variable (`vars`) | Geen geheim, wel omgevingsspecifiek. |
+| `FBS_DEPENDABOT_PR_SECRET` | **Dependabot**-secretstore van dit repo | Fine-grained PAT, alleen `Contents: write` op deze repo (en de FBS-repo, vandaar de naam). Gebruikt door `dependabot-openfsc-bump.yml` om een OpenFSC-bump af te maken. Hangt aan een persoonlijk account. |
 | Test-CA-sleutel, peer-cert/key | Buiten git, lokaal gegenereerd via `pki/` | Zie `pki/README.md`. Certs komen als ZAD-bijlage in de Operations Manager UI. |
 | Env-waarden per component | Operations Manager UI | Git documenteert ze via `peers/directory/*.env.example`, maar handhaaft ze niet. |
 
@@ -48,8 +49,26 @@ Zet de nieuwe key daarna in **Settings → Secrets and variables → Actions** b
 `ZAD_API_KEY_DIRECTORY` (overschrijft de oude waarde). Trek de oude key **pas ná die stap** in bij de
 ZAD Operations Manager — anders revoke je een key die CI nog gebruikt.
 
+## Rotatie `FBS_DEPENDABOT_PR_SECRET`
+
+Fine-grained PAT's verlopen. Maak vóór de vervaldatum een nieuwe aan met dezelfde rechten
+(*Only select repositories*, `Contents: Read and write`; `Metadata: Read` komt automatisch). Ook
+nodig zodra de eigenaar het team verlaat. **Geen** `Workflows`-recht: de bump raakt
+`.github/workflows/` niet, en de workflow faalt expres als dat toch gebeurt. Zet het token
+daarna in de Dependabot-store; `gh` vraagt om de waarde, plak die niet inline:
+
+```bash
+gh secret set FBS_DEPENDABOT_PR_SECRET --app dependabot --repo MinBZK/moza-fsc-testnet
+```
+
+Verloopt of verdwijnt het token, dan gaat het niet stil mis: de push faalt, en de versie-guard in
+`lint` blijft rood op de Dependabot-PR. Die PR is dan nog steeds met
+`.github/scripts/bump-openfsc.sh <versie>` met de hand af te maken.
+
 ## Openstaand
 
+- `FBS_DEPENDABOT_PR_SECRET` hangt aan een persoonlijk account. Een GitHub App in de org zou dat
+  ontkoppelen, maar vraagt een org-admin.
 - Eén key doet lezen, deployen én verwijderen. Een read-only key voor de verificatiestappen zou het
   lek-oppervlak verkleinen; of ZAD scoped keys ondersteunt is nog niet uitgezocht.
 - Rotatie van het test-CA- en peer-certmateriaal is niet beschreven, en `pki/init-ca.sh` zet de CA-key
