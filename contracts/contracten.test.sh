@@ -48,7 +48,7 @@ contract() {
      --arg svc "$SVC" --arg prov "$PROV" --arg cons "$CONS" --arg thumb "$THUMB" '
     { hash: $h, state: $st, has_revoked: false, has_rejected: false,
       signatures: { accept: ($sig | map({(.): {}}) | add // {}) },
-      content: { created_at: 1000, grants: [ {
+      content: { created_at: 1000, group_id: "moza-fbs-test", hash_algorithm: "HASH_ALGORITHM_SHA3_512", grants: [ {
         type: "GRANT_TYPE_SERVICE_CONNECTION", hash: ("$1$3$g" + ($h | split("$") | last)),
         service: { type: "SERVICE_TYPE_SERVICE", peer_id: $prov, name: $svc },
         outway: { peer_id: $cons, identification: {
@@ -57,7 +57,7 @@ contract() {
 }
 
 lijst() { jq -cn '{contracts: $ARGS.positional | map(fromjson)}' --args "$@"; }
-match() { contract_voor_combinatie "$1" "$SVC" "$PROV" "$CONS" "$THUMB"; }
+match() { contract_voor_combinatie "$1" "$SVC" "$PROV" "$CONS" "$THUMB" moza-fbs-test; }
 
 H1='$1$1$AAAA'
 H2='$1$1$BBBB'
@@ -106,6 +106,14 @@ expect "gedelegeerde serviceConnection telt niet mee" \
   "" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.content.grants[0].type = "GRANT_TYPE_DELEGATED_SERVICE_CONNECTION"')")")"
 expect "gedelegeerde dienst in een gewone grant telt niet mee" \
   "" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.content.grants[0].service.type = "SERVICE_TYPE_DELEGATED_SERVICE"')")")"
+expect "contract uit een andere group telt niet mee" \
+  "" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.content.group_id = "andere-group"')")")"
+expect "contract met een ander hash-algoritme telt niet mee" \
+  "" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.content.hash_algorithm = "HASH_ALGORITHM_X"')")")"
+expect "grant met properties (extra token-claims) telt niet mee" \
+  "" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.content.grants[0].properties = {"rol": "beheer"}')")")"
+expect "lege properties zijn geen afwijking" \
+  "$H1" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.content.grants[0].properties = {}')")" | cut -d' ' -f1)"
 expect "contract met een tweede grant telt niet mee" \
   "" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.content.grants += [.content.grants[0]]')")")"
 
@@ -120,7 +128,7 @@ faalt "eigen contract met een newline achter het hash faalt luid" "onverwacht ha
 faalt "respons zonder contractenlijst faalt in plaats van 'geen contracten'" "geen contractenlijst" match '{"items":[]}'
 faalt "lege respons faalt in plaats van 'geen contracten'" "lege contractenlijst" match $' \n'
 faalt "ook zonder pipefail bij de aanroeper" "geen contractenlijst" \
-  bash -c ". '${HERE}/contracten.sh'; contract_voor_combinatie '{\"items\":[]}' a b c d"
+  bash -c ". '${HERE}/contracten.sh'; contract_voor_combinatie '{\"items\":[]}' a b c d e"
 
 expect "oudste eerst (created_at), hash als tiebreak" \
   "$H3|$H1|$H2" \

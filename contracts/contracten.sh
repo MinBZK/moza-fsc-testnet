@@ -74,7 +74,7 @@ contracten_paginas() {
   printf '%s' "$paginas" | jq -cs '{contracts: (map(.contracts) | add // [])}'
 }
 
-# contract_voor_combinatie <json> <service> <provider_oin> <consumer_oin> <thumbprint>:
+# contract_voor_combinatie <json> <service> <provider_oin> <consumer_oin> <thumbprint> <group_id>:
 # per contract van precies deze serviceConnection één regel
 #   <hash> <state> <provider-getekend ja|nee> <consumer-getekend ja|nee> <grant-hash>
 # met <state> lowercase (`contract_state_valid`, `…_proposed`, `…_rejected`, `…_revoked`) of
@@ -83,7 +83,9 @@ contracten_paginas() {
 # bestaat en dus het meest waarschijnlijk al via zijn grant-hash in gebruik is.
 #
 # De identiteit is service + provider + consumer-outway + thumbprint samen, in een contract met
-# precies één grant: een contract met extra grants is niet het onze, ook al zit onze grant erin.
+# precies één grant, zonder grant-properties, in onze group en met ons hash-algoritme. Een contract
+# dat daar afwijkt (bv. via de controller-UI opgesteld) is niet het onze: afmaken zou iets tekenen
+# dat wij niet opstelden, en een contract uit een andere group wijst de inway af.
 #
 # Afwijzen en intrekken lezen we uit `.state`; `has_rejected`/`has_revoked` zeggen alleen of de
 # manager zélf getekend heeft. Een intrekking door de ándere peer blijft dus zichtbaar als
@@ -92,13 +94,15 @@ contract_voor_combinatie() {
   local uit
   # jq draait niet op lege invoer (exit 0, geen uitvoer): dat zou als "geen contracten" lezen.
   case "${1:-}" in *[![:space:]]*) ;; *) echo "lege contractenlijst-respons" >&2; return 1 ;; esac
-  uit=$(printf '%s' "$1" | jq -r --arg svc "$2" --arg prov "$3" --arg cons "$4" --arg thumb "$5" \
+  uit=$(printf '%s' "$1" | jq -r --arg svc "$2" --arg prov "$3" --arg cons "$4" --arg thumb "$5" --arg group "$6" \
           --arg re "$FSC_HASH_RE" '
     def getekend($oin): if ((.signatures.accept // {}) | has($oin)) then "ja" else "nee" end;
     if (.contracts | type) != "array" then error("respons is geen contractenlijst") else .contracts end
     | map(select(type == "object"
         # try: één misvormde rij van een andere peer mag de rest van de lijst niet meenemen.
-        and (try (.content.grants | length == 1 and (.[0]
+        and (try (.content.group_id == $group and .content.hash_algorithm == "HASH_ALGORITHM_SHA3_512"
+              and (.content.grants | length == 1) and (((.content.grants[0].properties // {}) | length) == 0)
+              and (.content.grants[0]
               | .type == "GRANT_TYPE_SERVICE_CONNECTION"
                 and .service.type == "SERVICE_TYPE_SERVICE"
                 and .service.name == $svc

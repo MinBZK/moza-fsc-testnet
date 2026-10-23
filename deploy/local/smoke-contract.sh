@@ -24,10 +24,11 @@ COMPOSE=(docker compose -f "${HERE}/docker-compose.yaml")
 SERVICE_NAME="${SERVICE_NAME:-example-service}"
 CONSUMER_OIN="${CONSUMER_OIN:-00000000000000000020}"
 PROVIDER_OIN="${PROVIDER_OIN:-00000000000000000030}"
+GROUP_ID="${GROUP_ID:-moza-fbs-test}"
 OUTWAY_CERT_HOST="${OUTWAY_CERT_HOST:-${REPO_ROOT}/pki/out/example-consumer/outway/cert.pem}"
 RUNS="${RUNS:-3}"
 # Nul of een tikfout zou nul rondes en toch GROEN opleveren.
-case "$RUNS" in ""|*[!0-9]*|0) echo "FAIL: RUNS moet een positief geheel getal zijn, niet '$RUNS'." >&2; exit 1 ;; esac
+case "$RUNS" in ""|*[!0-9]*|0*) echo "FAIL: RUNS moet een positief geheel getal zijn, niet '$RUNS'." >&2; exit 1 ;; esac
 
 # Verifieer vanaf de CONSUMER-manager: daar resolvet de outway de grant, dus daar moet het contract
 # wederzijds getekend en 'valid' zijn.
@@ -63,7 +64,7 @@ for run in $(seq 1 "$RUNS"); do
 
   JSON=$(contracten_paginas cons "$CONS_MANAGER/v1/contracts?limit=1000&grant_type=GRANT_TYPE_SERVICE_CONNECTION") || {
     echo "FAIL: GET /v1/contracts (consumer) faalde: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
-  REGELS=$(contract_voor_combinatie "$JSON" "$SERVICE_NAME" "$PROVIDER_OIN" "$CONSUMER_OIN" "$THUMB") || {
+  REGELS=$(contract_voor_combinatie "$JSON" "$SERVICE_NAME" "$PROVIDER_OIN" "$CONSUMER_OIN" "$THUMB" "$GROUP_ID") || {
     echo "FAIL: contractenlijst (consumer) niet te lezen." >&2; exit 1; }
 
   # Afgewezen of door de ander ingetrokken contracten blijven in de lijst staan (dat is

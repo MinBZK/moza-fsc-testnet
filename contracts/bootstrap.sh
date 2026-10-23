@@ -15,7 +15,7 @@
 #      consumer en synct het contract via de mesh naar de provider;
 #   3. wacht tot het contract op de provider-manager staat, dan PUT .../accept daar (overgeslagen
 #      als de provider al getekend heeft);
-#   4. wacht tot de consumer-manager het contract als 'valid' ziet (anders her-distributie);
+#   4. wacht tot beide managers het contract als 'valid' zien (anders her-distributie);
 #   5. best-effort (non-fataal): token-probe als bonus-signaal.
 #
 # De provider tekent NIET automatisch: AUTO_SIGN_GRANTS dekt alleen (delegated)servicePublication,
@@ -60,9 +60,10 @@ OUTWAY_CERT="${OUTWAY_CERT:-/pki/out/example-consumer/outway/cert.pem}"
 OUTWAY_KEY="${OUTWAY_KEY:-/pki/out/example-consumer/outway/key.pem}"
 GROUP_CA="${GROUP_CA:-/pki/ca/root.pem}"
 PROVIDER_TOKEN_URL="${PROVIDER_TOKEN_URL:-https://example-provider.fsc-test.local:443/token}"
-# Een tikfout mag geen hot loop (interval 0) of een `[`-fout die als "timeout" leest opleveren.
+# Een tikfout mag geen hot loop (interval 0) of een `[`-fout die als "timeout" leest opleveren;
+# een voorloopnul (`08`) leest bash als octaal.
 for v in SYNC_TIMEOUT SYNC_INTERVAL; do
-  case "${!v}" in ""|*[!0-9]*|0) echo "FAIL: $v moet een positief geheel getal zijn, niet '${!v}'." >&2; exit 1 ;; esac
+  case "${!v}" in ""|*[!0-9]*|0*) echo "FAIL: $v moet een positief geheel getal zijn, niet '${!v}'." >&2; exit 1 ;; esac
 done
 
 # Vang toolbox-/curl-stderr op i.p.v. weg te gooien: een mTLS-/netwerk-/dode-container-fout mag
@@ -90,11 +91,12 @@ eigen_contracten() {
   local json
   json=$(contracten_paginas cons "$CONSUMER_MANAGER/v1/contracts?limit=1000&grant_type=GRANT_TYPE_SERVICE_CONNECTION") || {
     echo "FAIL: contractenlijst van de consumer-manager niet op te halen: $(laatste_fout)" >&2; return 1; }
-  contract_voor_combinatie "$json" "$SERVICE_NAME" "$PROVIDER_OIN" "$CONSUMER_OIN" "$THUMB" || {
+  contract_voor_combinatie "$json" "$SERVICE_NAME" "$PROVIDER_OIN" "$CONSUMER_OIN" "$THUMB" "$GROUP_ID" || {
     echo "FAIL: contractenlijst van de consumer-manager niet te lezen." >&2; return 1; }
 }
 
-# Echoot "ontbreekt" | "open" | "getekend" | "beeindigd": hoe staat contract $1 op de provider?
+# Echoot "ontbreekt" | "open" | "getekend" | "geldig" | "beeindigd": hoe staat contract $1 op de
+# provider?
 # Eén GET, niet gepagineerd: het content_hash-filter negeert cursor en limit maar zet wél een
 # cursor, dus doorlezen zou dezelfde rij eindeloos blijven ophalen.
 provider_status() {
@@ -107,6 +109,7 @@ provider_status() {
     | ($c | map((.state // "") | ascii_downcase)) as $st
     | if ($c | length) == 0 then "ontbreekt"
       elif ($st | any(. == "contract_state_rejected" or . == "contract_state_revoked" or . == "contract_state_expired")) then "beeindigd"
+      elif ($st | any(. == "contract_state_valid")) then "geldig"
       elif ($c | any((.signatures.accept // {}) | has($oin))) then "getekend"
       else "open" end' || { echo "FAIL: antwoord van de provider-manager is geen contractenlijst: ${json:0:300}" >&2; return 1; }
 }
@@ -116,20 +119,40 @@ provider_status() {
 intrekken() {
   local h fouten=0
   for h in "$@"; do
+    # De push naar de provider loopt in OpenFSC asynchroon met eigen backoff; een fout hier is
+    # dus lokaal, en dan is het contract niet ingetrokken.
     if cons -X PUT "$CONSUMER_MANAGER/v1/contracts/$h/revoke" -H 'Content-Type: application/json' >/dev/null; then
       echo "  ingetrokken: $h"
-    # OpenFSC slaat de intrekking eerst lokaal op en pusht daarna; faalt de push, dan ziet een
-    # volgende run het contract niet meer en blijft het bij de provider geldig. Daarom hier al
-    # de her-distributie.
-    elif cons -X PUT "$CONSUMER_MANAGER/v1/contracts/$h/distributions/$PROVIDER_OIN/DISTRIBUTION_ACTION_SUBMIT_REVOKE_SIGNATURE/retry" \
-           -H 'Content-Type: application/json' >/dev/null; then
-      echo "  ingetrokken (push naar de provider via her-distributie): $h"
     else
-      echo "  FAIL: kon $h niet intrekken (mogelijk lokaal wel, push naar de provider faalde): $(laatste_fout)" >&2
-      fouten=$((fouten + 1))
+      echo "  FAIL: kon $h niet intrekken: $(laatste_fout)" >&2; fouten=$((fouten + 1))
     fi
   done
   [ "$fouten" -eq 0 ]
+}
+
+# provider_geldig_maken: het contract moet ook op de provider 'valid' zijn, want daar beoordeelt de
+# manager de token-aanvraag. Strandde de push van de consumer-handtekening (async, eigen backoff),
+# dan één consumer-side her-distributie en opnieuw begrensd wachten.
+provider_geldig_maken() {
+  local elapsed=0 herdist=0 st
+  while :; do
+    st=$(provider_status "$HASH") || exit 1
+    case "$st" in
+      geldig) return 0 ;;
+      beeindigd) echo "FAIL: contract $HASH is op de provider-manager afgewezen, ingetrokken of verlopen." >&2; exit 1 ;;
+    esac
+    if [ "$elapsed" -ge "$SYNC_TIMEOUT" ]; then
+      [ "$herdist" -eq 0 ] || return 1
+      herdist=1; elapsed=0
+      echo "bootstrap: contract $HASH is nog niet 'valid' op de provider; forceer her-distributie van de consumer-accept-sig..."
+      cons -X PUT "$CONSUMER_MANAGER/v1/contracts/$HASH/distributions/$PROVIDER_OIN/DISTRIBUTION_ACTION_SUBMIT_ACCEPT_SIGNATURE/retry" \
+        -H 'Content-Type: application/json' >/dev/null \
+        || echo "  WARN: retry-call fout: $(laatste_fout)" >&2
+      continue
+    fi
+    sleep "$SYNC_INTERVAL"; elapsed=$((elapsed + SYNC_INTERVAL))
+    echo "  ...contract nog niet 'valid' op de provider (${elapsed}s)"
+  done
 }
 
 # --- 0. Host-dependencies + outway-public-key-thumbprint -------------------------------------
@@ -167,8 +190,13 @@ if [ -n "$GELDIG" ]; then
     # mapfile ontbreekt in bash 3.2 (macOS).
     # shellcheck disable=SC2086
     intrekken $OVERIG || { echo "FAIL: niet alle overtollige contracten zijn ingetrokken." >&2; exit 1; }
+    # Een 2xx zegt niet alles; de lijst zelf wel.
+    NA=$(eigen_contracten) || exit 1
+    BLIJFT=$({ geldige_contracten "$NA"; lopende_contracten "$NA"; } | grep -xF "$OVERIG" || true)
+    [ -z "$BLIJFT" ] || { echo "FAIL: na intrekken nog geldig of lopend:" >&2; printf '%s\n' "$BLIJFT" | sed 's/^/  /' >&2; exit 1; }
   fi
 
+  provider_geldig_maken || { echo "FAIL: contract $HASH werd niet 'valid' op de provider-manager." >&2; manager_logs 50; exit 1; }
   echo "BOOTSTRAP OK (bestaand contract)."; exit 0
 fi
 
@@ -257,20 +285,29 @@ case "$PSTAT" in
   beeindigd)
     # Op de provider afgewezen, ingetrokken of verlopen, ook als dat de consumer nog niet bereikte.
     # OpenFSC's accept kent geen state-controle, dus doorgaan zou een dood contract tekenen.
-    echo "FAIL: contract $HASH is op de provider-manager afgewezen, ingetrokken of verlopen." >&2; exit 1 ;;
-  getekend)
+    echo "FAIL: contract $HASH is op de provider-manager afgewezen, ingetrokken of verlopen." >&2
+    if [ "${OPNIEUW_INDIENEN:-0}" = 1 ] && [ -z "${BOOTSTRAP_HERSTART:-}" ]; then
+      # Zelf intrekken haalt het uit de matcher; één herstart dient dan een nieuw contract in.
+      intrekken "$HASH" || exit 1
+      echo "bootstrap: OPNIEUW_INDIENEN=1 — opnieuw starten met een nieuw contract..."
+      BOOTSTRAP_HERSTART=1 exec bash "$0"
+    fi
+    echo "  Los de oorzaak op en draai opnieuw met OPNIEUW_INDIENEN=1 om een nieuw contract in te dienen." >&2
+    exit 1 ;;
+  geldig|getekend)
     # Een eerdere run kwam tot hier; alleen de push naar de consumer ontbreekt nog (stap 4).
     echo "  provider heeft contract $HASH al getekend." ;;
   *)
     echo "bootstrap: provider accepteert (PUT .../accept)..."
     prov -X PUT "$PROVIDER_MANAGER/v1/contracts/$HASH/accept" -H 'Content-Type: application/json' >/dev/null \
-      || { echo "FAIL: PUT accept ($HASH) mislukt (mogelijk lokaal gezet, push faalde; de volgende run hervat): $(laatste_fout)" >&2; exit 1; }
+      || { echo "FAIL: PUT accept ($HASH) geweigerd: $(laatste_fout)" >&2; exit 1; }
     echo "  provider-handtekening gezet (2xx)." ;;
 esac
 
 # --- 4. Wacht tot de CONSUMER-manager het contract als 'valid' ziet ---------------------------
-# 'valid' (OpenFSC ContractStateService) eist BEIDE accept-sigs fysiek in de consumer-DB. De provider-accept-sig wordt async/best-effort naar de consumer gepusht (bounded
-# backoff, GÉÉN cron-retry); landt die niet, dan blijft het contract 'proposed' op de consumer en
+# 'valid' (OpenFSC ContractStateService) eist BEIDE accept-sigs fysiek in de consumer-DB. De
+# provider-accept-sig wordt async/best-effort naar de consumer gepusht (bounded backoff, GÉÉN
+# cron-retry); landt die niet, dan blijft het contract 'proposed' op de consumer en
 # ziet de outway 'm nooit (grant_links: []). Dus pollen we op state=valid en forceren we anders de
 # provider-side her-distributie (het canonieke herstel voor een gestrande failed_distribution).
 consumer_valid() {  # 0=valid, 1=nog niet; onleesbaar, verdwenen of beëindigd is fataal
@@ -278,7 +315,8 @@ consumer_valid() {  # 0=valid, 1=nog niet; onleesbaar, verdwenen of beëindigd i
   regels=$(eigen_contracten) || exit 1
   st=$(printf '%s\n' "$regels" | awk -v h="$HASH" '$1 == h { print $2; exit }')
   case "$st" in
-    "") echo "FAIL: contract $HASH staat niet (meer) op de consumer-manager (ingetrokken of verlopen?)." >&2; exit 1 ;;
+    # Verlopen meteen na indienen wijst op een verlopen signing-cert van een van beide peers.
+    "") echo "FAIL: contract $HASH staat niet (meer) op de consumer-manager (ingetrokken of verlopen; signing-cert verlopen?)." >&2; exit 1 ;;
     contract_state_rejected|contract_state_revoked)
         echo "FAIL: contract $HASH is tijdens het wachten afgewezen of ingetrokken ($st)." >&2; exit 1 ;;
   esac
@@ -312,6 +350,8 @@ else
   fi
   echo "OK: contract $HASH is 'valid' op de consumer-manager (na her-distributie)."
 fi
+provider_geldig_maken || { echo "FAIL: contract $HASH werd niet 'valid' op de provider-manager." >&2; manager_logs 60; exit 1; }
+echo "OK: contract $HASH is ook 'valid' op de provider-manager."
 
 # --- 5. Best-effort token-probe (bonus; de afdwinging bewijst smoke-e2e.sh) -------------------
 # LET OP: FSC's /token verwacht scope=<GRANT-hash> (de `gth`-claim), niet de contract-content_hash.

@@ -40,7 +40,8 @@ lege schijf, dus een onthouden hash zou daar elke run weg zijn. De matcher staat
 [`contracten.sh`](contracten.sh) en wordt ook door `smoke-contract.sh` gebruikt:
 
 - **Identiteit = service + provider + consumer-outway + thumbprint**, in een contract met precies
-  één `GRANT_TYPE_SERVICE_CONNECTION`-grant voor een gewone dienst. Verlopen en zelf ingetrokken
+  één `GRANT_TYPE_SERVICE_CONNECTION`-grant voor een gewone dienst, zonder grant-properties, in de
+  eigen group (`GROUP_ID`) en met SHA3-512. Verlopen en zelf ingetrokken
   contracten tellen niet mee. Alleen op servicenaam matchen volstaat niet: het
   servicePublication-contract voor dezelfde dienst staat op dezelfde managers.
 - **Toestand uit `state`**, niet uit `has_rejected`/`has_revoked`: die zeggen alleen of de manager
@@ -53,14 +54,17 @@ lege schijf, dus een onthouden hash zou daar elke run weg zijn. De matcher staat
 - **Ingediend maar nog niet geldig** → de bootstrap maakt dát contract af in plaats van een tweede
   in te dienen: de consumer-accept als de provider het voorstelde, her-distributie naar de provider
   als het daar nooit aankwam, de accept, of alleen de her-distributie terug als de provider al
-  tekende. Is het op de provider inmiddels afgewezen of ingetrokken, dan stopt de bootstrap.
+  tekende. Is het op de provider inmiddels afgewezen of ingetrokken, dan stopt de bootstrap
+  (met `OPNIEUW_INDIENEN=1`: dat contract intrekken en een nieuw indienen).
+- **Klaar** = 'valid' op beide managers: de consumer resolvet er de grant, de provider beoordeelt er
+  de token-aanvraag. Strandde een handtekening onderweg, dan her-distribueert de bootstrap.
 - **Afgewezen, of door de andere peer ingetrokken** → de bootstrap stopt: dat is een besluit van
   een van beide peers, en een nieuw contract zou de bootstrap zelf als provider tekenen. Na het
   oplossen van de oorzaak dient `OPNIEUW_INDIENEN=1` een nieuw contract in.
 - **Onbekende of ontbrekende `state`** → de bootstrap stopt in plaats van te gokken.
 
-Intrekken slaat OpenFSC eerst lokaal op en pusht daarna naar de provider; faalt die push, dan
-probeert de bootstrap meteen de her-distributie, omdat een volgende run het contract niet meer ziet.
+Intrekken, accepteren en indienen slaat OpenFSC lokaal op; de push naar de andere peer loopt
+asynchroon met eigen backoff. Een HTTP-fout is dus een lokale fout, en dan is er niets veranderd.
 
 De consumer-kant is de maatstaf omdat de outway daar de grant resolvet: op de provider kan een
 contract al geldig zijn terwijl de provider-handtekening nooit bij de consumer aankwam.

@@ -110,18 +110,22 @@ case "$methode $pad" in
         signatures: { accept: { ($cons): {} } },
         content: (.contract_content | .grants[0].hash = ("$1$3$g" + ($h | split("$") | last))) }')
     zet "$db" --argjson c "$nieuw" '. + [$c]'
-    # OpenFSC slaat eerst op en pusht daarna; faalt de push, dan 500 terwijl het contract er al is.
-    [ "${STUB_POST_500:-0}" != 1 ] || { printf '{"title":"failed to submit contract"}'; exit 22; }
+    # Opgeslagen, maar de respons faalt (timeout, audit-log): de client ziet een fout terwijl het
+    # contract er al is. De push naar de provider is in OpenFSC asynchroon en komt dan niet aan.
+    [ "${STUB_POST_500:-0}" != 1 ] || { printf '{"title":"internal error"}'; exit 22; }
     zet "$STUB/prov.json" --argjson c "$nieuw" '. + [$c]'
     printf '{"content_hash":"%s"}' "${STUB_POST_HASH:-$h}" ;;
   "PUT /v1/contracts/"*/accept)
     h=$(hash_uit_pad)
     teken "$db" "$h" "$eigen"
-    # STUB_GESTRAND: de push van de provider-handtekening naar de consumer komt niet aan.
-    { [ "$zijde" = prov ] && [ "${STUB_GESTRAND:-0}" = 1 ]; } || teken "$STUB/$ander_zijde.json" "$h" "$eigen"
+    # STUB_GESTRAND / STUB_CONS_GESTRAND: de push van de provider- resp. consumer-handtekening naar
+    # de andere manager komt niet aan.
+    { [ "$zijde" = prov ] && [ "${STUB_GESTRAND:-0}" = 1 ]; } || { [ "$zijde" = cons ] && [ "${STUB_CONS_GESTRAND:-0}" = 1 ]; } \
+      || teken "$STUB/$ander_zijde.json" "$h" "$eigen"
     printf '{}' ;;
   "PUT /v1/contracts/"*/distributions/*/DISTRIBUTION_ACTION_SUBMIT_ACCEPT_SIGNATURE/retry)
-    [ "$zijde" = prov ] && [ "${STUB_RETRY_NOOP:-0}" != 1 ] && teken "$STUB/cons.json" "$(hash_uit_pad)" "$S_PROV"
+    # OpenFSC: 201 zolang het contract bestaat; de push zelf is asynchroon.
+    [ "${STUB_RETRY_NOOP:-0}" = 1 ] || teken "$STUB/$ander_zijde.json" "$(hash_uit_pad)" "$eigen"
     printf '{}' ;;
   "PUT /v1/contracts/"*/distributions/*/DISTRIBUTION_ACTION_SUBMIT_CONTRACT/retry)
     h=$(hash_uit_pad)
@@ -133,13 +137,6 @@ case "$methode $pad" in
     [ "${STUB_REVOKE_FAAL:-}" != "$h" ] || { printf '{"title":"revoke mislukt"}'; exit 22; }
     [ "${STUB_REVOKE_NOOP:-0}" != 1 ] || { printf '{}'; exit 0; }
     zet "$db" --arg h "$h" 'map(if .hash == $h then .state = "CONTRACT_STATE_REVOKED" | .has_revoked = true else . end)'
-    # Lokaal opgeslagen, push naar de provider faalt: OpenFSC geeft dan een fout.
-    [ "${STUB_REVOKE_PUSH_FAAL:-}" != "$h" ] || { printf '{"title":"failed to submit revoke"}'; exit 22; }
-    zet "$STUB/$ander_zijde.json" --arg h "$h" 'map(if .hash == $h then .state = "CONTRACT_STATE_REVOKED" else . end)'
-    printf '{}' ;;
-  "PUT /v1/contracts/"*/distributions/*/DISTRIBUTION_ACTION_SUBMIT_REVOKE_SIGNATURE/retry)
-    h=$(hash_uit_pad)
-    [ "${STUB_REVOKE_FAAL:-}" != "$h" ] || { printf '{"title":"retry mislukt"}'; exit 22; }
     zet "$STUB/$ander_zijde.json" --arg h "$h" 'map(if .hash == $h then .state = "CONTRACT_STATE_REVOKED" else . end)'
     printf '{}' ;;
   *) printf '{"title":"405 of onbekend endpoint"}'; exit 22 ;;
@@ -175,7 +172,8 @@ contract() {
      --arg svc "$SVC" --arg prov "$PROV" --arg cons "$CONS" --arg thumb "$THUMB" '
     { hash: $h, state: $st, has_revoked: false, has_rejected: false,
       signatures: { accept: ($sig | map({(.): {}}) | add // {}) },
-      content: { created_at: $t, validity: { not_before: 1, not_after: 4102444800 }, grants: [ {
+      content: { created_at: $t, group_id: "moza-fbs-test", hash_algorithm: "HASH_ALGORITHM_SHA3_512",
+                 validity: { not_before: 1, not_after: 4102444800 }, grants: [ {
         type: "GRANT_TYPE_SERVICE_CONNECTION", hash: ("$1$3$g" + ($h | split("$") | last)),
         service: { type: "SERVICE_TYPE_SERVICE", peer_id: $prov, name: $svc },
         outway: { peer_id: $cons, identification: {
@@ -228,7 +226,8 @@ expect "drie runs: precies één contract" 1 "$(niet_ingetrokken)"
 expect "geen enkele POST op een retry-endpoint (OpenFSC routeert die alleen als PUT)" 0 "$(aantal 'POST .*/retry')"
 
 # Bij meer contracten dan één pagina (STUB_PAGINA=1) moet de bootstrap ze nog steeds terugvinden.
-omgeving "[$(contract '$1$1$ANDER' CONTRACT_STATE_VALID "$BEIDE" 500 | jq -c '.content.grants[0].service.name = "x"'),$(contract '$1$1$EIGEN' CONTRACT_STATE_VALID "$BEIDE")]" '[]'
+omgeving "[$(contract '$1$1$ANDER' CONTRACT_STATE_VALID "$BEIDE" 500 | jq -c '.content.grants[0].service.name = "x"'),$(contract '$1$1$EIGEN' CONTRACT_STATE_VALID "$BEIDE")]" \
+  "[$(contract '$1$1$EIGEN' CONTRACT_STATE_VALID "$BEIDE")]"
 draai STUB_PAGINA=1
 expect "eigen contract op pagina 2: exit 0, geen POST" "0 0" "$RC $(aantal 'POST /v1/contracts')"
 
@@ -254,13 +253,15 @@ omgeving '[]' '[]'
 start "$HERE/../deploy/local/smoke-contract.sh" RUNS=0
 expect "smoke-contract.sh: RUNS=0 is rood, niet nul rondes groen" "1 0" "$RC $(aantal 'POST /v1/contracts')"
 
-# Blijft een duplicaat staan (intrekken doet niets), dan hoort de smoke rood te worden.
-omgeving "[$(contract '$1$1$EEN' CONTRACT_STATE_VALID "$BEIDE" 1000),$(contract '$1$1$TWEE' CONTRACT_STATE_VALID "$BEIDE" 2000)]" '[]'
+# Blijft een duplicaat staan (intrekken meldt 2xx maar doet niets), dan stopt de bootstrap al zelf.
+omgeving "[$(contract '$1$1$EEN' CONTRACT_STATE_VALID "$BEIDE" 1000),$(contract '$1$1$TWEE' CONTRACT_STATE_VALID "$BEIDE" 2000)]" \
+  "[$(contract '$1$1$EEN' CONTRACT_STATE_VALID "$BEIDE" 1000)]"
 start "$HERE/../deploy/local/smoke-contract.sh" RUNS=1 STUB_REVOKE_NOOP=1
-expect "smoke-contract.sh: rood bij een tweede contract voor de combinatie" "1 ja" "$RC $(reden 'verwacht precies 1')"
+expect "intrekken met 2xx zonder effect: rood, met die reden" "1 ja" "$RC $(reden 'na intrekken nog geldig of lopend')"
 
 # --- Duplicaten: het oudste blijft, overige geldige én lopende worden ingetrokken ---------------
-omgeving "[$(contract '$1$1$NIEUW' CONTRACT_STATE_VALID "$BEIDE" 2000),$(contract '$1$1$OUD' CONTRACT_STATE_VALID "$BEIDE" 1000),$(contract '$1$1$LOPEND' CONTRACT_STATE_PROPOSED "$ALLEEN_CONS" 3000)]" '[]'
+omgeving "[$(contract '$1$1$NIEUW' CONTRACT_STATE_VALID "$BEIDE" 2000),$(contract '$1$1$OUD' CONTRACT_STATE_VALID "$BEIDE" 1000),$(contract '$1$1$LOPEND' CONTRACT_STATE_PROPOSED "$ALLEEN_CONS" 3000)]" \
+  "[$(contract '$1$1$OUD' CONTRACT_STATE_VALID "$BEIDE" 1000)]"
 draai
 expect "duplicaten: exit 0" 0 "$RC"
 expect "duplicaten: nieuwste en lopende ingetrokken, oudste niet" \
@@ -270,12 +271,9 @@ expect "duplicaten: één over" 1 "$(niet_ingetrokken)"
 
 omgeving "[$(contract '$1$1$OUD' CONTRACT_STATE_VALID "$BEIDE" 1000),$(contract '$1$1$B' CONTRACT_STATE_VALID "$BEIDE" 2000),$(contract '$1$1$C' CONTRACT_STATE_VALID "$BEIDE" 3000)]" '[]'
 draai STUB_REVOKE_FAAL='$1$1$B'
-expect "intrekken faalt voor één duplicaat: exit 1, de rest toch ingetrokken" "1 1" "$RC $(aantal 'PUT /v1/contracts/$1$1$C/revoke')"
+expect "intrekken faalt voor één duplicaat: exit 1, de rest toch ingetrokken, faler nog geldig" \
+  "1 1 CONTRACT_STATE_VALID" "$RC $(aantal 'PUT /v1/contracts/$1$1$C/revoke') $(jq -r '.[] | select(.hash == "$1$1$B") | .state' "$STUB/cons.json")"
 
-omgeving "[$(contract '$1$1$OUD' CONTRACT_STATE_VALID "$BEIDE" 1000),$(contract '$1$1$B' CONTRACT_STATE_VALID "$BEIDE" 2000)]" "[$(contract '$1$1$B' CONTRACT_STATE_VALID "$BEIDE" 2000)]"
-draai STUB_REVOKE_PUSH_FAAL='$1$1$B'
-expect "revoke-push faalt: her-distributie, exit 0, ook bij de provider ingetrokken" \
-  "0 1 CONTRACT_STATE_REVOKED" "$RC $(aantal 'SUBMIT_REVOKE_SIGNATURE/retry') $(jq -r '.[0].state' "$STUB/prov.json")"
 
 # --- Lopend contract: afmaken, niet opnieuw indienen ---------------------------------------------
 L="[$(contract '$1$1$LOPEND' CONTRACT_STATE_PROPOSED "$ALLEEN_CONS")]"
@@ -290,6 +288,19 @@ omgeving "$P" "$P"
 draai
 expect "door de provider voorgesteld: consumer tekent, exit 0" \
   "0 cons PUT /v1/contracts/\$1\$1\$VANPROV/accept" "$RC $(gelogd /accept)"
+
+omgeving "$P" "$P"
+draai STUB_CONS_GESTRAND=1
+expect "consumer-accept strandt richting provider: her-distributie, exit 0, provider valid" \
+  "0 1 CONTRACT_STATE_VALID" "$RC $(aantal 'cons PUT .*SUBMIT_ACCEPT_SIGNATURE/retry') $(jq -r '.[0].state' "$STUB/prov.json")"
+
+omgeving "[$(contract '$1$1$HALF' CONTRACT_STATE_VALID "$BEIDE")]" "[$(contract '$1$1$HALF' CONTRACT_STATE_PROPOSED "$ALLEEN_PROV")]"
+draai
+expect "bestaand contract alleen op de consumer valid: geen no-op maar her-distributie" \
+  "0 1" "$RC $(aantal 'cons PUT .*SUBMIT_ACCEPT_SIGNATURE/retry')"
+omgeving "[$(contract '$1$1$HALF' CONTRACT_STATE_VALID "$BEIDE")]" "[$(contract '$1$1$HALF' CONTRACT_STATE_PROPOSED "$ALLEEN_PROV")]"
+draai STUB_RETRY_NOOP=1
+expect "provider blijft niet-valid: begrensd exit 1" "1 ja" "$RC $(reden "niet 'valid' op de provider")"
 
 omgeving "$L" '[]'
 draai
@@ -317,6 +328,9 @@ expect "ook na her-distributie niet geldig: begrensd exit 1" "1 ja" "$RC $(reden
 omgeving "$L" "[$(contract '$1$1$LOPEND' CONTRACT_STATE_REJECTED "$ALLEEN_CONS")]"
 draai
 expect "provider wees af, consumer weet het nog niet: geen accept, exit 1" "1 0 ja" "$RC $(aantal '/accept') $(reden 'afgewezen, ingetrokken of verlopen')"
+draai OPNIEUW_INDIENEN=1
+expect "… met OPNIEUW_INDIENEN=1: intrekken, één nieuw contract, exit 0" "0 1 1" \
+  "$RC $(aantal 'cons PUT /v1/contracts/\$1\$1\$LOPEND/revoke') $(aantal 'POST /v1/contracts')"
 
 omgeving "$L" "[$(contract '$1$1$LOPEND' CONTRACT_STATE_REVOKED "$ALLEEN_CONS")]"
 draai
@@ -367,6 +381,8 @@ expect "'valid' zonder provider-handtekening: exit 1, geen POST" "1 0" "$RC $(aa
 omgeving '[]' '[]'
 draai SYNC_INTERVAL=0
 expect "SYNC_INTERVAL=0 (hot loop) wordt geweigerd zonder één call" "1 0" "$RC $(wc -l <"$STUB/calls.log" | tr -d ' ')"
+draai SYNC_INTERVAL=08
+expect "SYNC_INTERVAL=08 (octaal) wordt geweigerd" 1 "$RC"
 
 echo
 if [ "$fails" -eq 0 ]; then
