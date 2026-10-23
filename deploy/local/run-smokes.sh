@@ -37,11 +37,11 @@ fail() { echo "XX run-smokes FAALT: $1" >&2; teardown; exit 1; }
 
 cd "$REPO_ROOT"
 
-# --- 0. Harde host-dependencies vooraf. smoke-groepsversie.sh heeft jq nodig (de andere smokes
-#        gebruiken 't optioneel). Zonder deze check valt dat pas op bij de LAATSTE smoke: dan staan
-#        de certs, de stack en vijf groene smokes er al, en gooit de teardown `down -v` het weer
-#        allemaal weg om een ontbrekend hostpakket. Faal vóór er iets gebouwd is. -----------------
-command -v jq >/dev/null 2>&1 || fail "jq niet gevonden — smoke-groepsversie.sh vereist 't (zie README, Benodigdheden)."
+# --- 0. Harde host-dependencies vooraf. De contract-bootstrap en smoke-groepsversie.sh hebben jq
+#        nodig. Zonder deze check valt dat pas op midden in de reeks: dan staan de certs, de stack
+#        en de eerste groene smokes er al, en gooit de teardown `down -v` het weer allemaal weg om
+#        een ontbrekend hostpakket. Faal vóór er iets gebouwd is. --------------------------------
+command -v jq >/dev/null 2>&1 || fail "jq niet gevonden — de contract-bootstrap vereist 't (zie README, Benodigdheden)."
 
 # --- 1. Certs (test-CA + per-peer). Regenereer bij --regen-certs, afwezige mappen, óf een CSR
 #        zonder cert (bv. een nieuw endpoint zoals txlog — anders skipt 'aanwezig' die stil). ------

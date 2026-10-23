@@ -137,8 +137,8 @@ je ooit terug op een tussenliggende v2.x, dan gelden ze onverkort.
 
 - **Contract-hash.** De contract-content wordt nu gecanonicaliseerd met JCS (RFC 8785) en bevat een
   `fsc_version`. Hashes van vóór v2 zijn niet converteerbaar; upstream schrijft voor bestaande
-  contracten uit de database te verwijderen vóór de upgrade. Lokaal: `docker compose … down -v` plus
-  `rm -rf contracts/.bootstrap-state`. Zie [`contracts/bootstrap.md`](../contracts/bootstrap.md).
+  contracten uit de database te verwijderen vóór de upgrade. Lokaal: `docker compose … down -v`.
+  Zie [`contracts/bootstrap.md`](../contracts/bootstrap.md).
 - **Outway-identificatie in een grant.** `outway.public_key_thumbprint` is vervangen door een union
   `outway.identification` met `type` als discriminator
   (`OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT` of `…_DOMAIN_NAME`). `contracts/bootstrap.sh`
