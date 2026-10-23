@@ -149,6 +149,9 @@ Spiegelt `deploy/local/publish-service.sh` (zelfde toolbox-mTLS-, idempotentie- 
 
 ### Idempotentie via state-file
 
+> **Vervangen.** De bootstrap leidt het bestaan van een contract nu af uit de contracten zelf,
+> zonder state-bestand; zie [`contracts/bootstrap.md`](../../../contracts/bootstrap.md).
+
 De `content_hash` van een succesvol geaccepteerd contract wordt weggeschreven naar
 `contracts/.bootstrap-state/<consumer>-<provider>-<service>.hash` (gitignored; niet-geheim,
 host-lokaal). Een herstart leest 'm terug en no-opt **als dat contract nog de provider-accept

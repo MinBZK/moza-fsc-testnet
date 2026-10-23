@@ -32,11 +32,26 @@ Idempotent mechanisme dat na deploy een geldig, **wederzijds ondertekend**
 ./deploy/local/smoke-contract.sh         # bewijst: wederzijds ondertekend contract  (SMOKE-CONTRACT GROEN)
 ```
 
-**Idempotent**: `bootstrap.sh` legt de `content_hash` van het geaccepteerde contract vast in
-`contracts/.bootstrap-state/` (gitignored). Een 2e run no-opt als díe exacte hash nog op de
-provider staat. Het succes rust op de twee 2xx-responsen (POST = consumer-sig, `PUT …/accept` =
-provider-sig) en checks greppen alléén op de unieke `content_hash` — nooit op servicenaam/`"accept"`,
-want het auto-geaccepteerde publicatie-contract voor dezelfde dienst zou dat altijd laten matchen.
+**Idempotent zonder state-bestand**: `bootstrap.sh` leidt het bestaan van een contract af uit de
+contractenlijst van de **consumer**-manager, niet uit een lokaal bestand — een deploy start met een
+lege schijf, dus een onthouden hash zou daar elke run weg zijn. De matcher staat in
+[`contracten.sh`](contracten.sh) en wordt ook door `smoke-contract.sh` gebruikt:
+
+- **Identiteit = service + provider + consumer-outway + thumbprint**, in een contract met precies
+  één `GRANT_TYPE_SERVICE_CONNECTION`-grant, niet ingetrokken. Alleen op servicenaam matchen
+  volstaat niet: het servicePublication-contract voor dezelfde dienst staat op dezelfde managers.
+- **Geldig en door de provider getekend** (op de consumer) → no-op. Liggen er meerdere, dan blijft
+  de gesorteerd-eerste staan en worden de overige ingetrokken (twee gelijktijdige runs kunnen elk
+  indienen; zonder gedeeld lock is dat niet te voorkomen, wel bij de volgende run te herstellen).
+- **Ingediend maar nog niet geldig** → de bootstrap maakt dát contract af (accept, of alleen de
+  her-distributie als de provider al tekende) in plaats van een tweede in te dienen.
+- **Afgewezen** → gemeld, niet afgemaakt; de bootstrap dient een nieuw contract in.
+
+De consumer-kant is de maatstaf omdat de outway daar de grant resolvet: op de provider kan een
+contract al geldig zijn terwijl de provider-handtekening nooit bij de consumer aankwam.
+
+`jq` is vereist: zonder het uitlezen van de contract-JSON is idempotentie niet vast te stellen.
+`./contracts/contracten.test.sh` toetst de matcher zonder draaiende managers (draait ook in CI).
 
 ## Let op bij een OpenFSC-versiesprong (v1.x → v2.x)
 
@@ -46,13 +61,10 @@ converteerbaar**; upstream schrijft voor om bestaande contracten uit de database
 vóór de upgrade. Ook de grant-vorm veranderde: de outway wordt geïdentificeerd via
 `outway.identification` (union op `type`), niet meer via een platte `outway.public_key_thumbprint`.
 
-Gevolg voor deze bootstrap: de state-file uit `contracts/.bootstrap-state/` houdt een oude hash
-vast die op een v2-manager nooit meer opduikt. Laat je 'm staan, dan valt de idempotentie-check
-terug op een contract dat de nieuwe manager niet meer als geldig ziet. Bij een versiesprong dus:
+Bij een versiesprong dus de contract-DB's wissen:
 
 ```bash
 docker compose -f deploy/local/docker-compose.yaml down -v   # wist ook de contract-DB's
-rm -rf contracts/.bootstrap-state
 ```
 
 Daarna de normale volgorde uit **Draaien** hierboven.

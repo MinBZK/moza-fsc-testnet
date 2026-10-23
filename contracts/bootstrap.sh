@@ -5,28 +5,29 @@
 #
 # Stroom (OpenFSC Manager Internal-API, bewezen patroon uit deploy/local/publish-service.sh):
 #   1. bereken de outway-GROUP-public-key-thumbprint (SPKI SHA-256 hex);
-#   2. idempotentie: draagt een eerder geaccepteerd contract (state-file-hash) NOG de
-#      provider-accept op de provider? -> no-op;
+#   2. idempotentie: zoek in de contractenlijst van de CONSUMER-manager het contract van precies
+#      deze combinatie (service, provider, consumer-outway, thumbprint):
+#        - geldig en door de provider getekend -> no-op (overtollige duplicaten intrekken);
+#        - ingediend maar nog niet geldig       -> dát contract afmaken, geen nieuwe indienen;
+#        - niets                                -> nieuw contract indienen (stap 3);
 #   3. POST /v1/contracts (contract_content) op de EIGEN (consumer-)manager -> die tekent
-#      server-side namens de consumer (2xx + content_hash = consumer-handtekening) en synct
-#      het contract via de mesh naar de provider;
-#   4. poll de provider-manager tot het contract (op content_hash) gesynct is, dan
-#      PUT /v1/contracts/{hash}/accept op de PROVIDER-manager (2xx = provider-handtekening);
-#   5. verifieer onafhankelijk (re-GET provider-lijst) dat ons contract nu de provider-accept
-#      draagt (accept-STAAT via jq, niet blote aanwezigheid);
-#   6. best-effort (non-fataal): token-probe als bonus-signaal. Harde token-afdwinging +
-#      transactie-logging volgen als vervolgwerk (de outway haalt tokens native op tijdens egress).
+#      server-side namens de consumer en synct het contract via de mesh naar de provider;
+#   4. poll de provider-manager tot het contract (op hash) gesynct is, dan
+#      PUT /v1/contracts/{hash}/accept op de PROVIDER-manager (overgeslagen als die al getekend heeft);
+#   5. wacht tot de consumer-manager het contract als 'valid' ziet (anders her-distributie forceren);
+#   6. best-effort (non-fataal): token-probe als bonus-signaal.
 #
-# WAAROM 2xx-gating + accept-STAAT i.p.v. de contractenlijst grepppen: op de provider-manager staat
-# óók het auto-geaccepteerde servicePublication-contract voor dezelfde `example-service`. Een losse
-# grep op servicenaam/OIN/"accept" over de hele lijst matcht dus altijd (false green); en blote
-# aanwezigheid van de content_hash bewijst geen accept (de consumer stelt 't contract zélf op).
-# Daarom:
-#   - consumer-handtekening  = POST gaf 2xx + content_hash;
-#   - provider-handtekening  = PUT .../accept gaf 2xx (scoped op exact die hash);
-#   - idempotentie/verify     = jq accept-STAAT-check (signatures.accept bevat de provider-OIN),
-#     gescoped op de GLOBAAL UNIEKE content_hash. Zonder jq: fallback op aanwezigheid (de PUT-2xx
-#     bewees de accept dan al).
+# WAAROM GEEN STATE-FILE: een deploy start met een lege schijf, dus een onthouden hash is daar elke
+# run weg en elke run maakte er een contract bij. Het bestaan volgt nu uit de contracten zelf.
+# WAAROM DE CONSUMER-KANT: daar resolvet de outway de grant, en `valid_contracts` eist beide
+# accept-handtekeningen in díe database. Op de provider kan het contract al VALID zijn terwijl de
+# push van de provider-handtekening naar de consumer gestrand is; dat is dan geen "bestaand
+# contract" maar een her-distributie.
+# WAAROM DE VOLLEDIGE COMBINATIE: op beide managers staat ook het servicePublication-contract voor
+# dezelfde dienst. Matchen op alleen servicenaam/OIN zou dat altijd laten meetellen (false green).
+#
+# Check en POST zijn niet atomair: twee gelijktijdige runs kunnen elk een contract indienen. Dat is
+# zonder gedeeld lock niet te voorkomen, wel te herstellen: de volgende run trekt de overtollige in.
 #
 # De provider tekent NIET automatisch: AUTO_SIGN_GRANTS dekt alleen (delegated)servicePublication,
 # dus de serviceConnection-accept is een expliciete PUT (zie docs/.../contract-bootstrap-design.md).
@@ -39,17 +40,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/.." && pwd)"
 COMPOSE=(docker compose -f "${REPO_ROOT}/deploy/local/docker-compose.yaml")
 
+# shellcheck source-path=SCRIPTDIR source=contracten.sh
+. "${HERE}/contracten.sh"
+
 # --- Parameters (defaults = example-peers; override via env voor andere peers) --------------
 CONSUMER_OIN="${CONSUMER_OIN:-00000000000000000020}"
 PROVIDER_OIN="${PROVIDER_OIN:-00000000000000000030}"
 SERVICE_NAME="${SERVICE_NAME:-example-service}"
 GROUP_ID="${GROUP_ID:-moza-fbs-test}"
 
-# Outway-GROUP-cert (host-pad): hiervan de public-key-thumbprint voor de grant. BEVESTIGD via de
-# OpenFSC-source: de outway registreert bij zijn controller met zijn GROUP-cert (externalCert) en
-# stuurt datzelfde group-thumbprint (externalCert.PublicKeyThumbprint()) naar GetOutwayServices; de
-# manager matcht dat tegen gsc.outway_public_key_thumbprint. Dus het GROUP-cert, niet het internal.
-# Thumbprint = SPKI-SHA256-hex van de publieke sleutel (stabiel bij cert-rotatie).
+# Outway-GROUP-cert (host-pad): hiervan de public-key-thumbprint voor de grant (zie
+# outway_thumbprint in contracten.sh voor waarom het group-cert).
 OUTWAY_CERT_HOST="${OUTWAY_CERT_HOST:-${REPO_ROOT}/pki/out/example-consumer/outway/cert.pem}"
 
 # Consumer-manager (indienen) + provider-manager (accepteren): Internal-API :9443, internal-certs.
@@ -65,11 +66,6 @@ PROVIDER_CA="${PROVIDER_CA:-/pki/internal/example-provider/ca/root.pem}"
 
 SYNC_TIMEOUT="${SYNC_TIMEOUT:-10}"; SYNC_INTERVAL="${SYNC_INTERVAL:-2}"
 
-# State-file: content_hash van een eerder succesvol geaccepteerd contract. Bron van waarheid voor
-# idempotentie (gitignored; hash is niet-geheim maar host-lokaal). Zie contracts/.bootstrap-state/.
-STATE_DIR="${STATE_DIR:-${REPO_ROOT}/contracts/.bootstrap-state}"
-STATE_FILE="${STATE_DIR}/${CONSUMER_OIN}-${PROVIDER_OIN}-${SERVICE_NAME}.hash"
-
 # Vang toolbox-/curl-stderr op i.p.v. weg te gooien: een mTLS-/netwerk-/dode-container-fout mag
 # niet als "nog niet klaar" maskeren (spiegelt publish-service.sh). Surface 'm op de FAIL-paden.
 ERRLOG=$(mktemp)
@@ -83,146 +79,148 @@ tb() { local c="$1" k="$2" a="$3"; shift 3
 cons() { tb "$CONSUMER_CERT" "$CONSUMER_KEY" "$CONSUMER_CA" "$@"; }
 prov() { tb "$PROVIDER_CERT" "$PROVIDER_KEY" "$PROVIDER_CA" "$@"; }
 
-# Haalt de contractenlijst van de provider-manager op; surfacet een GET-fout i.p.v. 'm te slikken.
+# Volledige contractenlijst (alle pagina's) van een manager; surfacet een fout i.p.v. 'm te slikken.
+consumer_contracts() {
+  contracten_paginas cons "$CONSUMER_MANAGER/v1/contracts?limit=1000" || {
+    echo "FAIL: contractenlijst van de consumer-manager niet op te halen: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2
+    return 1; }
+}
 provider_contracts() {
-  local out; out=$(prov "$PROVIDER_MANAGER/v1/contracts") || {
-    echo "  WARN: GET /v1/contracts (provider) faalde: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; : >"$ERRLOG"; }
-  printf '%s' "$out"
+  contracten_paginas prov "$PROVIDER_MANAGER/v1/contracts?limit=1000" || {
+    echo "FAIL: contractenlijst van de provider-manager niet op te halen: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2
+    return 1; }
 }
 
-# jq (host-side) laat ons de accept-STAAT checken i.p.v. blote hash-aanwezigheid: de consumer
-# heeft het contract zélf opgesteld, dus de content_hash staat in de lijst vanaf creatie —
-# aanwezigheid bewijst dus géén provider-accept. Alleen een provider-handtekening onder
-# signatures.accept doet dat. jq is een repo-dependency.
-HAVE_JQ=0; command -v jq >/dev/null 2>&1 && HAVE_JQ=1
-
-# Echoot "yes" | "no" | "unknown": draagt het contract met content_hash $2 een accept-handtekening
-# van OIN $3? Shape-tolerant (recursieve `..`; content_hash op top-niveau óf onder .content).
-# Faalt bewust NAAR "unknown" (i.p.v. "no") bij twijfel, zodat een afwijkende JSON-vorm nooit een
-# al-geaccepteerd contract ten onrechte afkeurt (de PUT-2xx bewees de accept al):
-#   - contract niet gevonden op deze hash        -> unknown (val terug op aanwezigheid)
-#   - geen herkenbaar signatures.accept-object   -> unknown (vorm wijkt af)
-#   - accept-object bevat provider-OIN           -> yes
-#   - accept-object aanwezig, zónder provider-OIN -> no  (échte pending/afgewezen -> opnieuw opzetten)
-# "unknown" ook als jq ontbreekt. In dit gesloten testnet volstaat de aanwezigheids-fallback.
-accept_state() {  # $1=json $2=content_hash $3=oin
-  [ "$HAVE_JQ" -eq 1 ] || { echo unknown; return; }
-  printf '%s' "$1" | jq -r --arg h "$2" --arg oin "$3" '
-    [.. | objects | select((.hash? // .content_hash? // .content?.content_hash?) == $h)] as $c
-    | if ($c | length) == 0 then "unknown"
-      elif ([ $c[] | .signatures?.accept? | objects ] | length) == 0 then "unknown"
-      elif ($c | any((.signatures?.accept? // {}) | has($oin))) then "yes"
-      else "no" end' 2>/dev/null || echo unknown
+# Contracten van deze combinatie op de consumer-manager, als regels uit contract_voor_combinatie.
+eigen_contracten() {
+  local json; json=$(consumer_contracts) || return 1
+  contract_voor_combinatie "$json" "$SERVICE_NAME" "$PROVIDER_OIN" "$CONSUMER_OIN" "$THUMB" || {
+    echo "FAIL: contractenlijst van de consumer-manager niet te lezen." >&2; return 1; }
 }
 
-# Echoot de lifecycle-state (lowercased) van het contract met content_hash $2, of "unknown".
-# valid_contracts eist dat de state 'valid' is (beide accept-sigs fysiek in DÍT manager's DB).
-contract_state() {  # $1=json $2=content_hash
-  [ "$HAVE_JQ" -eq 1 ] || { echo unknown; return; }
-  printf '%s' "$1" | jq -r --arg h "$2" '
-    [.. | objects | select((.hash? // .content_hash? // .content?.content_hash?) == $h) | .state?]
-    | map(select(. != null)) | (first // "unknown") | ascii_downcase' 2>/dev/null || echo unknown
+# Echoot "ontbreekt" | "open" | "getekend": hoe staat contract $1 op de provider-manager?
+provider_status() {
+  local json; json=$(provider_contracts) || return 1
+  printf '%s' "$json" | jq -r --arg h "$1" --arg oin "$PROVIDER_OIN" '
+    [.contracts[] | objects | select(.hash == $h)] as $c
+    | if ($c | length) == 0 then "ontbreekt"
+      elif ($c | any((.signatures.accept // {}) | has($oin))) then "getekend"
+      else "open" end'
 }
 
-# --- 0. Outway-public-key-thumbprint (host-side openssl; de toolbox heeft geen openssl-CLI) ----
+# --- 0. Host-dependencies + outway-public-key-thumbprint -------------------------------------
+# jq is hier geen optie maar de idempotentie zelf: zonder het uitlezen van de contract-JSON zou
+# elke run een nieuw contract indienen in plaats van het bestaande te herkennen.
+command -v jq >/dev/null 2>&1 || { echo "FAIL: jq niet gevonden op de host (zie deploy/local/README.md)." >&2; exit 1; }
 command -v openssl >/dev/null 2>&1 || { echo "FAIL: openssl niet gevonden op de host (zie pki/README.md)." >&2; exit 1; }
 [ -r "$OUTWAY_CERT_HOST" ] || { echo "FAIL: outway-cert niet leesbaar: $OUTWAY_CERT_HOST (draai pki/issue.sh?)" >&2; exit 1; }
-THUMB=$(openssl x509 -in "$OUTWAY_CERT_HOST" -pubkey -noout \
-          | openssl pkey -pubin -outform DER \
-          | openssl dgst -sha256 -r | cut -d' ' -f1) || THUMB=""
-case "$THUMB" in
-  [0-9a-f]*) [ "${#THUMB}" -eq 64 ] || { echo "FAIL: thumbprint geen 64 hex-tekens: '$THUMB'" >&2; exit 1; } ;;
-  *) echo "FAIL: kon outway-public-key-thumbprint niet berekenen uit $OUTWAY_CERT_HOST." >&2; exit 1 ;;
-esac
+THUMB=$(outway_thumbprint "$OUTWAY_CERT_HOST") \
+  || { echo "FAIL: kon outway-public-key-thumbprint niet berekenen uit $OUTWAY_CERT_HOST." >&2; exit 1; }
 echo "bootstrap: outway public-key-thumbprint = $THUMB"
 
-# --- 1. Idempotentie: is een eerder geaccepteerd contract (state-file-hash) NOG geaccepteerd? -----
-# Scoped op de GLOBAAL UNIEKE content_hash. We checken de accept-STAAT (niet blote aanwezigheid):
-# een ge-revoke't/afgewezen contract staat óók nog in de lijst, dus presence != geaccepteerd.
-if [ -f "$STATE_FILE" ]; then
-  SAVED=$(cat "$STATE_FILE" 2>/dev/null || true)
-  if [ -n "$SAVED" ]; then
-    LIST=$(provider_contracts)
-    case "$(accept_state "$LIST" "$SAVED" "$PROVIDER_OIN")" in
-      yes)
-        echo "OK: eerder geaccepteerd contract $SAVED draagt nog de provider-accept (idempotent, skip)."
-        echo "BOOTSTRAP OK (bestaand contract)."; exit 0 ;;
-      unknown)
-        # Geen jq (of afwijkende JSON-vorm): val terug op aanwezigheid. De state-file wordt pas ná
-        # een geslaagde accept geschreven, dus in dit gesloten testnet (geen revoke-pad) volstaat dat.
-        if printf '%s' "$LIST" | grep -qF "$SAVED"; then
-          echo "OK: eerder geaccepteerd contract $SAVED nog aanwezig (idempotent, skip; jq afwezig → geen staat-check)."
-          echo "BOOTSTRAP OK (bestaand contract)."; exit 0
-        fi ;;
-      no) echo "bootstrap: state-file-contract $SAVED draagt geen provider-accept meer." ;;
-    esac
+# --- 1. Idempotentie: staat er al een contract voor deze combinatie? -------------------------
+REGELS=$(eigen_contracten) || exit 1
+GELDIG=$(geldige_contracten "$REGELS")
+
+if [ -n "$GELDIG" ]; then
+  HASH=$(printf '%s\n' "$GELDIG" | head -n1)
+  echo "OK: geldig contract $HASH voor $SERVICE_NAME ($CONSUMER_OIN -> $PROVIDER_OIN) bestaat al."
+
+  # Duplicaten (gelijktijdige runs) zijn functioneel inwisselbaar; houd de gesorteerd-eerste aan
+  # zodat de keuze stabiel is over runs heen, en trek de rest in.
+  DUPS=$(printf '%s\n' "$GELDIG" | tail -n +2)
+  if [ -n "$DUPS" ]; then
+    echo "  $(printf '%s\n' "$DUPS" | grep -c .) overtollig(e) contract(en) voor dezelfde combinatie; intrekken..."
+    while IFS= read -r dup; do
+      # </dev/null: `compose exec` leest anders de rest van de duplicatenlijst van stdin op.
+      cons -X PUT "$CONSUMER_MANAGER/v1/contracts/$dup/revoke" -H 'Content-Type: application/json' </dev/null >/dev/null \
+        || { echo "FAIL: kon duplicaat $dup niet intrekken: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
+      echo "  ingetrokken: $dup"
+    done <<<"$DUPS"
   fi
-  echo "bootstrap: geen bruikbaar bestaand contract — opnieuw opzetten."
+
+  echo "BOOTSTRAP OK (bestaand contract)."; exit 0
 fi
 
-# --- 2. Contract opstellen + indienen bij de eigen (consumer-)manager -------------------------
-# UUID v4: /proc is Linux-only, op macOS valt 'ie terug op uuidgen (lowercase).
-# Bij 400 op iv-formaat -> UUID v7 genereren.
-IV=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr '[:upper:]' '[:lower:]')
-# Docker Desktop (macOS) draait in een VM waarvan de klok op de host kan achterlopen; de manager
-# weigert dan created_at "in the future" (HTTP 500). Backdate met een skew-marge — op Linux is de
-# skew ~0, dus onschadelijk. Blijft persistent falen? Herstart de Docker-VM (klok resynct).
-NBF=$(( $(date -u +%s) - 60 ))
-NAF=$((NBF + 315360000))                 # +10 jaar
-# De connection-grant's `service` VEREIST de discriminator `type: SERVICE_TYPE_SERVICE` (anders
-# 500 "invalid service type"; de publicatie-grant defaultte 'm, de connection-grant niet). Géén
-# `protocol` (dat hoort bij de service-PUBLICATIE, niet bij de connection).
-# Het `outway`-blok is sinds OpenFSC v2.0.0 een union: de outway wordt geïdentificeerd op
-# public-key-thumbprint óf op domeinnaam, met `type` als discriminator. De platte v1-vorm
-# (`outway.public_key_thumbprint`) wordt niet meer geaccepteerd. Wij houden het thumbprint aan
-# (stabiel bij cert-rotatie binnen hetzelfde sleutelpaar; zie de OUTWAY_CERT_HOST-comment).
-# `fsc_version` zetten we NIET zelf: de POST neemt `createContractContent`, waar dat veld ontbreekt
-# — de manager vult 'm en neemt 'm mee in de content-hash.
-echo "bootstrap: serviceConnection-contract indienen bij de consumer-manager..."
-RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: application/json' -d "{
-  \"contract_content\": {
-    \"iv\": \"$IV\",
-    \"group_id\": \"$GROUP_ID\",
-    \"hash_algorithm\": \"HASH_ALGORITHM_SHA3_512\",
-    \"created_at\": $NBF,
-    \"validity\": { \"not_before\": $((NBF - 60)), \"not_after\": $NAF },
-    \"grants\": [ {
-      \"type\": \"GRANT_TYPE_SERVICE_CONNECTION\",
-      \"service\": { \"type\": \"SERVICE_TYPE_SERVICE\", \"peer_id\": \"$PROVIDER_OIN\", \"name\": \"$SERVICE_NAME\" },
-      \"outway\": {
-        \"peer_id\": \"$CONSUMER_OIN\",
-        \"identification\": {
-          \"type\": \"OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT\",
-          \"public_key_thumbprint\": \"$THUMB\"
-        }
-      }
-    } ]
-  }
-}") || { echo "FAIL: POST /v1/contracts geweigerd: ${RESP:-<leeg>} $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
+# Een afgewezen contract maken we niet af: dat is het antwoord van de provider. Een eerder
+# ingediend, nog lopend contract wél — een nieuw indienen zou er een tweede naast zetten.
+if printf '%s' "$REGELS" | awk '$4 == "afgewezen" { f = 1 } END { exit !f }'; then
+  echo "WARN: de provider heeft minstens één contract voor deze combinatie afgewezen:" >&2
+  printf '%s\n' "$REGELS" | awk '$4 == "afgewezen"' | sed 's/^/  /' >&2
+fi
+HASH=$(printf '%s' "$REGELS" | awk '$4 == "-" { print $1; exit }')
 
-# --fail-with-body vangt HTTP-4xx/5xx; een 2xx zónder content_hash duidt op een geweigerd formaat
-# (bv. service dat toch een protocol eist, of een afwijkend outway-blok). Surface de respons.
-# De content_hash is GÉÉN hex maar het crypt-stijl SHA3-512-formaat `$1$<n>$<base64url>` (zoals
-# smoke-publish's respons); pak dus de volledige JSON-stringwaarde (geen `"` erin) i.p.v. hex.
-HASH=$(printf '%s' "$RESP" | sed -n 's/.*"content_hash"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
-[ -n "$HASH" ] || { echo "FAIL: contract-respons zonder content_hash (formaat geweigerd?): $RESP" >&2; exit 1; }
-echo "  consumer-handtekening gezet (2xx); mesh-sync gestart; content_hash=$HASH"
+if [ -n "$HASH" ]; then
+  echo "bootstrap: eerder ingediend contract $HASH is nog niet geldig; dat contract afmaken."
+else
+  # --- 2. Contract opstellen + indienen bij de eigen (consumer-)manager -----------------------
+  # UUID v4: /proc is Linux-only, op macOS valt 'ie terug op uuidgen (lowercase).
+  # Bij 400 op iv-formaat -> UUID v7 genereren.
+  IV=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen | tr '[:upper:]' '[:lower:]')
+  # Docker Desktop (macOS) draait in een VM waarvan de klok op de host kan achterlopen; de manager
+  # weigert dan created_at "in the future" (HTTP 500). Backdate met een skew-marge — op Linux is de
+  # skew ~0, dus onschadelijk. Blijft persistent falen? Herstart de Docker-VM (klok resynct).
+  NBF=$(( $(date -u +%s) - 60 ))
+  NAF=$((NBF + 315360000))                 # +10 jaar
+  # De connection-grant's `service` VEREIST de discriminator `type: SERVICE_TYPE_SERVICE` (anders
+  # 500 "invalid service type"; de publicatie-grant defaultte 'm, de connection-grant niet). Géén
+  # `protocol` (dat hoort bij de service-PUBLICATIE, niet bij de connection).
+  # Het `outway`-blok is sinds OpenFSC v2.0.0 een union: de outway wordt geïdentificeerd op
+  # public-key-thumbprint óf op domeinnaam, met `type` als discriminator. De platte v1-vorm
+  # (`outway.public_key_thumbprint`) wordt niet meer geaccepteerd. Wij houden het thumbprint aan
+  # (stabiel bij cert-rotatie binnen hetzelfde sleutelpaar).
+  # `fsc_version` zetten we NIET zelf: de POST neemt `createContractContent`, waar dat veld ontbreekt
+  # — de manager vult 'm en neemt 'm mee in de content-hash.
+  echo "bootstrap: serviceConnection-contract indienen bij de consumer-manager..."
+  RESP=$(cons -X POST "$CONSUMER_MANAGER/v1/contracts" -H 'Content-Type: application/json' -d "{
+    \"contract_content\": {
+      \"iv\": \"$IV\",
+      \"group_id\": \"$GROUP_ID\",
+      \"hash_algorithm\": \"HASH_ALGORITHM_SHA3_512\",
+      \"created_at\": $NBF,
+      \"validity\": { \"not_before\": $((NBF - 60)), \"not_after\": $NAF },
+      \"grants\": [ {
+        \"type\": \"GRANT_TYPE_SERVICE_CONNECTION\",
+        \"service\": { \"type\": \"SERVICE_TYPE_SERVICE\", \"peer_id\": \"$PROVIDER_OIN\", \"name\": \"$SERVICE_NAME\" },
+        \"outway\": {
+          \"peer_id\": \"$CONSUMER_OIN\",
+          \"identification\": {
+            \"type\": \"OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT\",
+            \"public_key_thumbprint\": \"$THUMB\"
+          }
+        }
+      } ]
+    }
+  }") || { echo "FAIL: POST /v1/contracts geweigerd: ${RESP:-<leeg>} $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
+
+  # --fail-with-body vangt HTTP-4xx/5xx; een 2xx zónder content_hash duidt op een geweigerd formaat
+  # (bv. service dat toch een protocol eist, of een afwijkend outway-blok). Surface de respons.
+  HASH=$(printf '%s' "$RESP" | jq -r '.content_hash // empty' 2>/dev/null) || HASH=""
+  [ -n "$HASH" ] || { echo "FAIL: contract-respons zonder content_hash (formaat geweigerd?): $RESP" >&2; exit 1; }
+  echo "  consumer-handtekening gezet (2xx); mesh-sync gestart; content_hash=$HASH"
+fi
 
 # --- 3. Provider laat het contract accepteren -------------------------------------------------
 echo "bootstrap: wachten tot het contract naar de provider-manager gesynct is..."
-elapsed=0; synced=0
-while [ "$elapsed" -lt "$SYNC_TIMEOUT" ]; do
-  if printf '%s' "$(provider_contracts)" | grep -qF "$HASH"; then synced=1; break; fi
+elapsed=0
+while :; do
+  PSTAT=$(provider_status "$HASH") || exit 1
+  [ "$PSTAT" = ontbreekt ] || break
+  [ "$elapsed" -lt "$SYNC_TIMEOUT" ] || { echo "FAIL: contract $HASH niet gesynct naar de provider binnen ${SYNC_TIMEOUT}s." >&2
+    "${COMPOSE[@]}" logs --tail=50 manager-example-consumer manager-example-provider >&2 || true; exit 1; }
   sleep "$SYNC_INTERVAL"; elapsed=$((elapsed + SYNC_INTERVAL))
   echo "  ...nog niet gesynct (${elapsed}s)"
 done
-[ "$synced" -eq 1 ] || { echo "FAIL: contract $HASH niet gesynct naar de provider binnen ${SYNC_TIMEOUT}s." >&2
-  "${COMPOSE[@]}" logs --tail=50 manager-example-consumer manager-example-provider >&2 || true; exit 1; }
 
-echo "bootstrap: provider accepteert (PUT .../accept)..."
-prov -X PUT "$PROVIDER_MANAGER/v1/contracts/$HASH/accept" -H 'Content-Type: application/json' \
-  || { echo "FAIL: PUT accept ($HASH) geweigerd: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
-echo "  provider-handtekening gezet (2xx)."
+if [ "$PSTAT" = getekend ]; then
+  # Een eerdere run kwam tot hier; alleen de push naar de consumer ontbreekt nog (stap 4).
+  echo "  provider heeft contract $HASH al getekend."
+else
+  echo "bootstrap: provider accepteert (PUT .../accept)..."
+  prov -X PUT "$PROVIDER_MANAGER/v1/contracts/$HASH/accept" -H 'Content-Type: application/json' >/dev/null \
+    || { echo "FAIL: PUT accept ($HASH) geweigerd: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
+  echo "  provider-handtekening gezet (2xx)."
+fi
 
 # --- 4. Wacht tot de CONSUMER-manager het contract als 'valid' ziet ---------------------------
 # contracts.valid_contracts (bron: OpenFSC migratie 011) eist BEIDE accept-sigs fysiek in de
@@ -230,16 +228,14 @@ echo "  provider-handtekening gezet (2xx)."
 # backoff, GÉÉN cron-retry); landt die niet, dan blijft het contract 'proposed' op de consumer en
 # ziet de outway 'm nooit (grant_links: []). Dus pollen we op state=valid en forceren we anders de
 # provider-side her-distributie (het canonieke herstel voor een gestrande failed_distribution).
-consumer_valid() {  # 0=valid, 1=nog niet, 2=onbekend (geen jq)
-  local st; st=$(contract_state "$(cons "$CONSUMER_MANAGER/v1/contracts" || true)" "$HASH")
-  case "$st" in valid|contract_state_valid) return 0 ;; unknown) return 2 ;; *) return 1 ;; esac
+consumer_valid() {  # 0=valid, 1=nog niet; een onleesbare lijst is fataal, geen "nog niet"
+  local regels; regels=$(eigen_contracten) || exit 1
+  geldige_contracten "$regels" | grep -qxF "$HASH"
 }
-wait_valid() {  # pollt de consumer tot valid; 0=valid, 1=timeout, 2=onbekend (geen jq)
-  local elapsed=0 rc
+wait_valid() {  # pollt de consumer tot valid; 0=valid, 1=timeout
+  local elapsed=0
   while [ "$elapsed" -lt "$SYNC_TIMEOUT" ]; do
-    rc=0; consumer_valid || rc=$?   # niet `consumer_valid; rc=$?` -> set -e killt bij non-zero
-    [ "$rc" -eq 0 ] && return 0
-    [ "$rc" -eq 2 ] && return 2
+    consumer_valid && return 0
     sleep "$SYNC_INTERVAL"; elapsed=$((elapsed + SYNC_INTERVAL))
     echo "  ...contract nog niet 'valid' op de consumer (${elapsed}s)"
   done
@@ -253,14 +249,9 @@ redistribute_accept() {  # her-push de provider-accept-sig naar de consumer (ide
 }
 
 echo "bootstrap: wachten tot de consumer-manager het contract '$HASH' als 'valid' ziet..."
-wv=0; wait_valid || wv=$?   # niet `wait_valid; wv=$?` -> set -e killt bij non-zero return
-if [ "$wv" -eq 2 ]; then
-  # Geen jq op de host -> kan de state niet lezen. Forceer één her-distributie zodat de accept-sig
-  # zeker naar de consumer gaat, en ga door (installeer jq voor een harde valid-verificatie).
-  echo "WARN: kan contract-state niet lezen (geen jq, of onbekende JSON-vorm) → forceer her-distributie. Installeer jq / check de contract-shape voor een harde verificatie." >&2
-  redistribute_accept
-elif [ "$wv" -ne 0 ]; then
-  # Wel jq, maar niet valid binnen de timeout -> gestrande push. Her-distribueer en poll opnieuw.
+if wait_valid; then
+  echo "OK: contract $HASH is 'valid' op de consumer-manager (wederzijds ondertekend)."
+else
   redistribute_accept
   if ! wait_valid; then
     echo "FAIL: contract $HASH werd niet 'valid' op de consumer-manager (provider-accept-sig niet gesynct)." >&2
@@ -268,12 +259,7 @@ elif [ "$wv" -ne 0 ]; then
     exit 1
   fi
   echo "OK: contract $HASH is 'valid' op de consumer-manager (na her-distributie)."
-else
-  echo "OK: contract $HASH is 'valid' op de consumer-manager (wederzijds ondertekend)."
 fi
-
-# State-file pas NA succesvolle accept schrijven (bron van waarheid voor idempotentie).
-mkdir -p "$STATE_DIR" && printf '%s\n' "$HASH" > "$STATE_FILE"
 
 # --- 5. Best-effort token (bonus; echte afdwinging + logging volgen als vervolgwerk) ----------
 # LET OP: FSC's /token verwacht scope=<GRANT-hash> (de `gth`-claim), niet de contract-content_hash.
