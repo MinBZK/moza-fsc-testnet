@@ -113,6 +113,8 @@ case "$methode $pad" in
     # Opgeslagen, maar de respons faalt (timeout, audit-log): de client ziet een fout terwijl het
     # contract er al is. De push naar de provider is in OpenFSC asynchroon en komt dan niet aan.
     [ "${STUB_POST_500:-0}" != 1 ] || { printf '{"title":"internal error"}'; exit 22; }
+    # STUB_PROV_AFWIJZEN: de provider wijst elk nieuw contract af.
+    [ "${STUB_PROV_AFWIJZEN:-0}" != 1 ] || nieuw=$(printf '%s' "$nieuw" | jq -c '.state = "CONTRACT_STATE_REJECTED"')
     zet "$STUB/prov.json" --argjson c "$nieuw" '. + [$c]'
     printf '{"content_hash":"%s"}' "${STUB_POST_HASH:-$h}" ;;
   "PUT /v1/contracts/"*/accept)
@@ -335,6 +337,24 @@ expect "… met OPNIEUW_INDIENEN=1: intrekken, één nieuw contract, exit 0" "0 
 omgeving "$L" "[$(contract '$1$1$LOPEND' CONTRACT_STATE_REVOKED "$ALLEEN_CONS")]"
 draai
 expect "provider trok in, consumer weet het nog niet: geen accept, exit 1" "1 0" "$RC $(aantal '/accept')"
+
+omgeving '[]' '[]'
+draai OPNIEUW_INDIENEN=1 STUB_PROV_AFWIJZEN=1
+expect "provider wijst elk nieuw contract af: één herstart, dan begrensd exit 1" "1 2 1" \
+  "$RC $(aantal 'POST /v1/contracts') $(grep -c 'opnieuw starten' "$STUB/out.log")"
+
+V="[$(contract '$1$1$WEG' CONTRACT_STATE_VALID "$BEIDE")]"
+omgeving "$V" "[$(contract '$1$1$WEG' CONTRACT_STATE_REVOKED "$BEIDE")]"
+draai
+expect "consumer valid, provider trok in (push strandde): exit 1 met hint" "1 0 ja" \
+  "$RC $(aantal 'POST /v1/contracts') $(reden 'OPNIEUW_INDIENEN=1')"
+draai OPNIEUW_INDIENEN=1
+expect "… met OPNIEUW_INDIENEN=1: intrekken en één nieuw contract" "0 1" "$RC $(aantal 'POST /v1/contracts')"
+
+omgeving "$V" '[]'
+draai
+expect "consumer valid, provider kent het niet: SUBMIT_CONTRACT-retry, exit 0" "0 1" \
+  "$RC $(aantal 'cons PUT .*DISTRIBUTION_ACTION_SUBMIT_CONTRACT/retry')"
 
 omgeving "[$(contract '$1$1$AFGEWEZEN' CONTRACT_STATE_REJECTED "$ALLEEN_CONS")]" '[]'
 draai

@@ -66,8 +66,9 @@ lege schijf, dus een onthouden hash zou daar elke run weg zijn. De matcher staat
 Intrekken, accepteren en indienen slaat OpenFSC lokaal op; de push naar de andere peer loopt
 asynchroon met eigen backoff. Een HTTP-fout is dus een lokale fout, en dan is er niets veranderd.
 
-De consumer-kant is de maatstaf omdat de outway daar de grant resolvet: op de provider kan een
-contract al geldig zijn terwijl de provider-handtekening nooit bij de consumer aankwam.
+Het bestaan lezen we op de consumer, omdat de outway daar de grant resolvet; op de provider kan
+een contract al geldig zijn terwijl de provider-handtekening nooit bij de consumer aankwam. Klaar is
+het pas als ook de provider het 'valid' ziet, omdat die de token-aanvraag beoordeelt.
 
 `jq` is vereist: zonder het uitlezen van de contract-JSON is idempotentie niet vast te stellen.
 Zonder draaiende managers (ook in CI): `./contracts/contracten.test.sh` toetst de matcher,

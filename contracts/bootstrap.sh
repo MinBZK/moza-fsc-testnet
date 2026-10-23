@@ -7,7 +7,7 @@
 # Stroom (OpenFSC Manager Internal-API, bewezen patroon uit deploy/local/publish-service.sh):
 #   0. bereken de outway-GROUP-public-key-thumbprint (SPKI SHA-256 hex);
 #   1. zoek op de CONSUMER-manager het contract van deze combinatie:
-#        - geldig                  -> no-op; overtollige duplicaten intrekken;
+#        - geldig                  -> geen nieuw contract; duplicaten intrekken, provider-'valid' eisen;
 #        - ingediend, niet geldig  -> dát contract afmaken (stap 3), geen nieuwe indienen;
 #        - afgewezen/ingetrokken   -> stoppen, tenzij OPNIEUW_INDIENEN=1;
 #        - niets                   -> stap 2;
@@ -130,22 +130,39 @@ intrekken() {
   [ "$fouten" -eq 0 ]
 }
 
+# provider_beeindigd: het contract is op de provider afgewezen, ingetrokken of verlopen. Stopt,
+# of trekt het met OPNIEUW_INDIENEN=1 in en start één keer opnieuw (dan dient de run een nieuw in).
+provider_beeindigd() {
+  echo "FAIL: contract $HASH is op de provider-manager afgewezen, ingetrokken of verlopen." >&2
+  if [ "${OPNIEUW_INDIENEN:-0}" = 1 ] && [ -z "${BOOTSTRAP_HERSTART:-}" ]; then
+    intrekken "$HASH" || exit 1
+    echo "bootstrap: OPNIEUW_INDIENEN=1 — opnieuw starten met een nieuw contract..."
+    rm -f "$ERRLOG"   # exec slaat de EXIT-trap over
+    BOOTSTRAP_HERSTART=1 exec bash "$0"
+  fi
+  echo "  Los de oorzaak op en draai opnieuw met OPNIEUW_INDIENEN=1 om een nieuw contract in te dienen." >&2
+  exit 1
+}
+
 # provider_geldig_maken: het contract moet ook op de provider 'valid' zijn, want daar beoordeelt de
 # manager de token-aanvraag. Strandde de push van de consumer-handtekening (async, eigen backoff),
-# dan één consumer-side her-distributie en opnieuw begrensd wachten.
+# dan één consumer-side her-distributie (van het hele contract als het daar ontbreekt) en opnieuw
+# begrensd wachten.
 provider_geldig_maken() {
-  local elapsed=0 herdist=0 st
+  local elapsed=0 herdist=0 st actie
   while :; do
     st=$(provider_status "$HASH") || exit 1
     case "$st" in
       geldig) return 0 ;;
-      beeindigd) echo "FAIL: contract $HASH is op de provider-manager afgewezen, ingetrokken of verlopen." >&2; exit 1 ;;
+      beeindigd) provider_beeindigd ;;
     esac
     if [ "$elapsed" -ge "$SYNC_TIMEOUT" ]; then
       [ "$herdist" -eq 0 ] || return 1
       herdist=1; elapsed=0
-      echo "bootstrap: contract $HASH is nog niet 'valid' op de provider; forceer her-distributie van de consumer-accept-sig..."
-      cons -X PUT "$CONSUMER_MANAGER/v1/contracts/$HASH/distributions/$PROVIDER_OIN/DISTRIBUTION_ACTION_SUBMIT_ACCEPT_SIGNATURE/retry" \
+      actie=DISTRIBUTION_ACTION_SUBMIT_ACCEPT_SIGNATURE
+      [ "$st" != ontbreekt ] || actie=DISTRIBUTION_ACTION_SUBMIT_CONTRACT
+      echo "bootstrap: contract $HASH is nog niet 'valid' op de provider ($st); forceer her-distributie ($actie)..."
+      cons -X PUT "$CONSUMER_MANAGER/v1/contracts/$HASH/distributions/$PROVIDER_OIN/$actie/retry" \
         -H 'Content-Type: application/json' >/dev/null \
         || echo "  WARN: retry-call fout: $(laatste_fout)" >&2
       continue
@@ -283,17 +300,9 @@ fi
 
 case "$PSTAT" in
   beeindigd)
-    # Op de provider afgewezen, ingetrokken of verlopen, ook als dat de consumer nog niet bereikte.
-    # OpenFSC's accept kent geen state-controle, dus doorgaan zou een dood contract tekenen.
-    echo "FAIL: contract $HASH is op de provider-manager afgewezen, ingetrokken of verlopen." >&2
-    if [ "${OPNIEUW_INDIENEN:-0}" = 1 ] && [ -z "${BOOTSTRAP_HERSTART:-}" ]; then
-      # Zelf intrekken haalt het uit de matcher; één herstart dient dan een nieuw contract in.
-      intrekken "$HASH" || exit 1
-      echo "bootstrap: OPNIEUW_INDIENEN=1 — opnieuw starten met een nieuw contract..."
-      BOOTSTRAP_HERSTART=1 exec bash "$0"
-    fi
-    echo "  Los de oorzaak op en draai opnieuw met OPNIEUW_INDIENEN=1 om een nieuw contract in te dienen." >&2
-    exit 1 ;;
+    # Ook als dat de consumer nog niet bereikte. OpenFSC's accept kent geen state-controle, dus
+    # doorgaan zou een dood contract tekenen.
+    provider_beeindigd ;;
   geldig|getekend)
     # Een eerdere run kwam tot hier; alleen de push naar de consumer ontbreekt nog (stap 4).
     echo "  provider heeft contract $HASH al getekend." ;;
