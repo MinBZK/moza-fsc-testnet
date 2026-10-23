@@ -40,21 +40,27 @@ lege schijf, dus een onthouden hash zou daar elke run weg zijn. De matcher staat
 [`contracten.sh`](contracten.sh) en wordt ook door `smoke-contract.sh` gebruikt:
 
 - **Identiteit = service + provider + consumer-outway + thumbprint**, in een contract met precies
-  één `GRANT_TYPE_SERVICE_CONNECTION`-grant voor een gewone dienst. Ingetrokken en verlopen
+  één `GRANT_TYPE_SERVICE_CONNECTION`-grant voor een gewone dienst. Verlopen en zelf ingetrokken
   contracten tellen niet mee. Alleen op servicenaam matchen volstaat niet: het
   servicePublication-contract voor dezelfde dienst staat op dezelfde managers.
 - **Toestand uit `state`**, niet uit `has_rejected`/`has_revoked`: die zeggen alleen of de manager
   zélf getekend heeft, dus een afwijzing of intrekking door de andere peer zie je daar niet aan.
+  'Geldig' eist bovendien beide accept-handtekeningen.
 - **Geldig** (op de consumer) → no-op. Liggen er meerdere, dan blijft het oudste staan
   (`created_at`; het meest waarschijnlijk al via zijn grant-hash in gebruik) en worden de overige
   geldige én lopende ingetrokken. Twee gelijktijdige runs kunnen elk indienen; zonder gedeeld lock
   is dat niet te voorkomen, wel bij de volgende run te herstellen.
 - **Ingediend maar nog niet geldig** → de bootstrap maakt dát contract af in plaats van een tweede
-  in te dienen: her-distributie naar de provider als het daar nooit aankwam, de accept, of alleen
-  de her-distributie terug als de provider al tekende.
-- **Alleen afgewezen** → de bootstrap stopt: een afwijzing is een besluit van een van beide peers.
-  Na het oplossen van de oorzaak dient `OPNIEUW_NA_AFWIJZING=1` een nieuw contract in.
+  in te dienen: de consumer-accept als de provider het voorstelde, her-distributie naar de provider
+  als het daar nooit aankwam, de accept, of alleen de her-distributie terug als de provider al
+  tekende. Is het op de provider inmiddels afgewezen of ingetrokken, dan stopt de bootstrap.
+- **Afgewezen, of door de andere peer ingetrokken** → de bootstrap stopt: dat is een besluit van
+  een van beide peers, en een nieuw contract zou de bootstrap zelf als provider tekenen. Na het
+  oplossen van de oorzaak dient `OPNIEUW_INDIENEN=1` een nieuw contract in.
 - **Onbekende of ontbrekende `state`** → de bootstrap stopt in plaats van te gokken.
+
+Intrekken slaat OpenFSC eerst lokaal op en pusht daarna naar de provider; faalt die push, dan
+probeert de bootstrap meteen de her-distributie, omdat een volgende run het contract niet meer ziet.
 
 De consumer-kant is de maatstaf omdat de outway daar de grant resolvet: op de provider kan een
 contract al geldig zijn terwijl de provider-handtekening nooit bij de consumer aankwam.
@@ -81,5 +87,9 @@ docker compose -f deploy/local/docker-compose.yaml down -v   # wist ook de contr
 Daarna de normale volgorde uit **Draaien** hierboven.
 
 **Generiek**: alle peers/paden zijn via env te overrulen (`CONSUMER_OIN`, `PROVIDER_OIN`,
-`SERVICE_NAME`, `*_MANAGER`, `*_CERT/KEY/CA`, `OUTWAY_CERT_HOST`). Defaults = de example-peers. De
-FBS-toepassing (magazijn ↔ uitvraag) is een [FBS]-zusterissue in repo B.
+`SERVICE_NAME`, `*_MANAGER`, `*_CERT/KEY/CA`, `OUTWAY_CERT_HOST`; voor diagnose en de token-probe
+`LOG_SERVICES`, `OUTWAY_CERT/KEY`, `GROUP_CA`, `PROVIDER_TOKEN_URL`). Defaults = de example-peers.
+`smoke-contract.sh` leest dezelfde namen. De FBS-toepassing (magazijn ↔ uitvraag) kan
+[`contracten.sh`](contracten.sh) sourcen voor de matcher; de regels hebben de vorm
+`<hash> <state> <provider-getekend> <consumer-getekend> <grant-hash>`, en `grant_hash_van` levert de
+waarde voor `Fsc-Grant-Hash`.

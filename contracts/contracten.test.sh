@@ -25,11 +25,14 @@ expect() {
   fi
 }
 
-# faalt <omschrijving> <commando...>: het commando hoort met een fout te eindigen.
+# faalt <omschrijving> <stderr-patroon> <commando...>: het commando hoort met een fout te eindigen,
+# en om de genoemde reden — niet om een willekeurige andere (tikfout, jq-syntax).
 faalt() {
-  local rc=0
-  "${@:2}" >/dev/null 2>&1 || rc=$?
-  expect "$1" fout "$([ "$rc" -ne 0 ] && echo fout || echo "rc=0")"
+  local rc=0 err
+  err=$("${@:3}" 2>&1 >/dev/null) || rc=$?
+  if [ "$rc" -eq 0 ]; then expect "$1" fout "rc=0"
+  elif [ -z "$2" ] || printf '%s' "$err" | grep -q -- "$2"; then expect "$1" fout fout
+  else expect "$1" "fout met '$2'" "rc=$rc: ${err:0:200}"; fi
 }
 
 SVC=example-service
@@ -66,8 +69,8 @@ PROPOSED=CONTRACT_STATE_PROPOSED
 echo "Regressietest contracts/contracten.sh"
 
 # --- Matcher: wat telt als het contract van deze combinatie -----------------------------------
-expect "geldig eigen contract wordt gevonden, met grant-hash" \
-  "$H1 contract_state_valid ja \$1\$3\$gAAAA" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE")")")"
+expect "geldig eigen contract wordt gevonden, met beide handtekeningen en grant-hash" \
+  "$H1 contract_state_valid ja ja \$1\$3\$gAAAA" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE")")")"
 
 PUBLICATIE=$(jq -cn --arg h "$H2" --arg svc "$SVC" --arg prov "$PROV" '
   { hash: $h, state: "CONTRACT_STATE_VALID", has_revoked: false, has_rejected: false,
@@ -79,14 +82,16 @@ expect "servicePublication-contract voor dezelfde dienst telt niet mee" \
 
 # OpenFSC zet has_revoked/has_rejected alleen voor de eigen handtekening; door de andere peer
 # ingetrokken of afgewezen zie je alleen aan `state`.
-expect "door de andere peer ingetrokken contract telt niet mee (alleen state)" \
-  "" "$(match "$(lijst "$(contract "$H1" CONTRACT_STATE_REVOKED "$BEIDE")")")"
+expect "door de andere peer ingetrokken contract blijft zichtbaar als revoked" \
+  "$H1 contract_state_revoked ja ja \$1\$3\$gAAAA" "$(match "$(lijst "$(contract "$H1" CONTRACT_STATE_REVOKED "$BEIDE")")")"
 expect "zelf ingetrokken contract telt niet mee (has_revoked)" \
-  "" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.has_revoked = true')")")"
+  "" "$(match "$(lijst "$(contract "$H1" CONTRACT_STATE_REVOKED "$BEIDE" '.has_revoked = true')")")"
 expect "verlopen contract telt niet mee" \
   "" "$(match "$(lijst "$(contract "$H1" CONTRACT_STATE_EXPIRED "$BEIDE")")")"
+expect "voorgesteld contract voorbij not_after telt als verlopen" \
+  "" "$(match "$(lijst "$(contract "$H1" $PROPOSED "[\"$CONS\"]" '.content.validity = {not_before: 1, not_after: 2}')")")"
 expect "door de provider afgewezen contract komt terug als rejected" \
-  "$H1 contract_state_rejected nee \$1\$3\$gAAAA" \
+  "$H1 contract_state_rejected nee ja \$1\$3\$gAAAA" \
   "$(match "$(lijst "$(contract "$H1" CONTRACT_STATE_REJECTED "[\"$CONS\"]")")")"
 
 expect "contract met een andere outway-thumbprint telt niet mee" \
@@ -105,32 +110,46 @@ expect "contract met een tweede grant telt niet mee" \
   "" "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" '.content.grants += [.content.grants[0]]')")")"
 
 expect "misvormde rij van een ander neemt de rest niet mee" \
-  "$H1 contract_state_valid ja \$1\$3\$gAAAA" \
+  "$H1 contract_state_valid ja ja \$1\$3\$gAAAA" \
   "$(match "$(lijst '{"hash":"$1$1$ZZZZ","content":"kapot"}' '"geen object"' "$(contract "$H1" $VALID "$BEIDE")")")"
 
-faalt "eigen contract met een hash die een URL-pad verlegt faalt luid" \
+faalt "eigen contract met een hash die een URL-pad verlegt faalt luid" "onverwacht hash" \
   match "$(lijst "$(contract '$1$1$../revoke' $VALID "$BEIDE")")"
-faalt "eigen contract met een newline achter het hash faalt luid" \
+faalt "eigen contract met een newline achter het hash faalt luid" "onverwacht hash" \
   match "$(lijst "$(contract "$H1"$'\n' $VALID "$BEIDE")")"
-faalt "respons zonder contractenlijst faalt in plaats van 'geen contracten'" match '{"items":[]}'
-faalt "ook zonder pipefail bij de aanroeper" bash -c ". '${HERE}/contracten.sh'; contract_voor_combinatie '{\"items\":[]}' a b c d"
+faalt "respons zonder contractenlijst faalt in plaats van 'geen contracten'" "geen contractenlijst" match '{"items":[]}'
+faalt "lege respons faalt in plaats van 'geen contracten'" "lege contractenlijst" match $' \n'
+faalt "ook zonder pipefail bij de aanroeper" "geen contractenlijst" \
+  bash -c ". '${HERE}/contracten.sh'; contract_voor_combinatie '{\"items\":[]}' a b c d"
 
 expect "oudste eerst (created_at), hash als tiebreak" \
   "$H3|$H1|$H2" \
   "$(match "$(lijst "$(contract "$H2" $VALID "$BEIDE" '.content.created_at = 2000')" \
                    "$(contract "$H1" $VALID "$BEIDE")" \
-                   "$(contract "$H3" $VALID "$BEIDE" '.content.created_at = 500')")" | cut -d' ' -f1 | paste -sd'|')"
+                   "$(contract "$H3" $VALID "$BEIDE" '.content.created_at = 500')")" | cut -d' ' -f1 | paste -sd'|' -)"
 
 # --- Indeling van de regels --------------------------------------------------------------------
+H4='$1$1$DDDD'
+H5='$1$1$EEEE'
 REGELS=$(match "$(lijst \
   "$(contract "$H1" $PROPOSED "[\"$CONS\"]")" \
   "$(contract "$H2" CONTRACT_STATE_REJECTED "[\"$CONS\"]")" \
-  "$(contract "$H3" $VALID "$BEIDE")")")
-expect "geldige_contracten: alleen valid met provider-accept" "$H3" "$(geldige_contracten "$REGELS")"
+  "$(contract "$H3" $VALID "$BEIDE")" \
+  "$(contract "$H4" CONTRACT_STATE_REVOKED "$BEIDE")" \
+  "$(contract "$H5" $VALID "[\"$CONS\"]")")")
+expect "geldige_contracten: alleen valid met beide handtekeningen" "$H3" "$(geldige_contracten "$REGELS")"
 expect "lopende_contracten: alleen proposed" "$H1" "$(lopende_contracten "$REGELS")"
-expect "afgewezen_contracten: alleen rejected" "$H2" "$(afgewezen_contracten "$REGELS")"
-expect "proposed met provider-accept (gestrande push) is niet geldig" "" \
+expect "beeindigde_contracten: rejected en door de ander revoked" "$H2|$H4" "$(beeindigde_contracten "$REGELS" | paste -sd'|' -)"
+expect "onbekende_contracten: valid zonder provider-handtekening" "$H5" "$(onbekende_contracten "$REGELS" | cut -d' ' -f1)"
+expect "onbekende_contracten: ontbrekende state" "ontbreekt" \
+  "$(onbekende_contracten "$(match "$(lijst "$(contract "$H1" $VALID "$BEIDE" 'del(.state)')")")" | cut -d' ' -f2)"
+expect "valid zonder consumer-handtekening is niet geldig" "" \
+  "$(geldige_contracten "$H1 contract_state_valid ja nee \$1\$3\$g")"
+expect "proposed met beide handtekeningen (gestrande push) is niet geldig" "" \
   "$(geldige_contracten "$(match "$(lijst "$(contract "$H1" $PROPOSED "$BEIDE")")")")"
+expect "consumer_getekend: ja bij consumer-handtekening" ja "$(consumer_getekend "$REGELS" "$H1" && echo ja || echo nee)"
+expect "consumer_getekend: nee zonder" nee \
+  "$(consumer_getekend "$(match "$(lijst "$(contract "$H1" $PROPOSED "[\"$PROV\"]")")")" "$H1" && echo ja || echo nee)"
 expect "grant_hash_van levert de grant-hash van dat contract" '$1$3$gCCCC' "$(grant_hash_van "$REGELS" "$H3")"
 
 # --- hash_ok -------------------------------------------------------------------------------------
@@ -155,13 +174,13 @@ expect "alle pagina's worden samengevoegd (cursor URL-encoded)" 2 \
   "$(contracten_paginas ophaler 'https://m/v1/contracts?limit=1000' | jq '.contracts | length')"
 
 kapot() { printf '%s' '<html>502</html>'; }
-faalt "foutpagina is geen lege lijst" contracten_paginas kapot 'https://m/v1/contracts?limit=1'
+faalt "foutpagina is geen lege lijst" "geen contractenpagina" contracten_paginas kapot 'https://m/v1/contracts?limit=1'
 geen_cursor() { printf '%s' '{"contracts":[]}'; }
-faalt "respons zonder paginatieveld is geen laatste pagina" contracten_paginas geen_cursor 'https://m/v1/contracts?limit=1'
+faalt "respons zonder paginatieveld is geen laatste pagina" "geen contractenpagina" contracten_paginas geen_cursor 'https://m/v1/contracts?limit=1'
 eindeloos() { printf '%s' '{"contracts":[],"pagination":{"next_cursor":"weer"}}'; }
-faalt "eindeloze cursor breekt af" contracten_paginas eindeloos 'https://m/v1/contracts?limit=1'
+faalt "eindeloze cursor breekt af" "nog een cursor" contracten_paginas eindeloos 'https://m/v1/contracts?limit=1'
 pagina2_faalt() { case "$1" in *cursor=*) return 7 ;; *) printf '%s' "$PAGINA1" ;; esac; }
-faalt "fout op een latere pagina is fataal" contracten_paginas pagina2_faalt 'https://m/v1/contracts?limit=1'
+faalt "fout op een latere pagina is fataal" "faalde" contracten_paginas pagina2_faalt 'https://m/v1/contracts?limit=1'
 
 # Groot genoeg om als één argument boven de Linux-grens van 128 KiB uit te komen.
 GROOT=$(jq -cn --argjson c "$(contract "$H1" $VALID "$BEIDE")" \
@@ -191,8 +210,8 @@ PEM
 expect "thumbprint = SPKI-SHA256-hex van de publieke sleutel (vaste vector)" \
   edfa32b765fccd82aae11dcf3319b12e504508a866f65aceffb1a954946b520f "$(outway_thumbprint "$TMP/vector.pem")"
 printf 'geen pem\n' >"$TMP/kapot.pem"
-faalt "thumbprint van een niet-PEM-bestand faalt" outway_thumbprint "$TMP/kapot.pem"
-faalt "thumbprint van een ontbrekend bestand faalt" outway_thumbprint "$TMP/bestaat-niet.pem"
+faalt "thumbprint van een niet-PEM-bestand faalt" "" outway_thumbprint "$TMP/kapot.pem"
+faalt "thumbprint van een ontbrekend bestand faalt" "" outway_thumbprint "$TMP/bestaat-niet.pem"
 
 echo
 if [ "$fails" -eq 0 ]; then

@@ -22,10 +22,11 @@ hash_ok() {
 # toolbox heeft geen openssl-CLI.
 outway_thumbprint() {
   local pub thumb
-  # Tussenstap i.p.v. één pijplijn: zonder pipefail zou een onleesbaar cert de SHA-256 van lege
-  # invoer opleveren, een geldig ogende thumbprint die nergens bij hoort.
+  # PIPESTATUS i.p.v. pipefail: zonder die controle levert een mislukte stap de SHA-256 van lege
+  # invoer op, een geldig ogende thumbprint die nergens bij hoort.
   pub=$(openssl x509 -in "$1" -pubkey -noout 2>/dev/null) && [ -n "$pub" ] || return 1
-  thumb=$(printf '%s\n' "$pub" | openssl pkey -pubin -outform DER | openssl dgst -sha256 -r) || return 1
+  thumb=$(printf '%s\n' "$pub" | openssl pkey -pubin -outform DER | openssl dgst -sha256 -r
+          s=("${PIPESTATUS[@]}"); [ "${s[1]}" -eq 0 ] && [ "${s[2]}" -eq 0 ]) || return 1
   thumb=${thumb%% *}
 
   # Negatief patroon: `[0-9a-f]*` als case-glob toetst alleen het eerste teken.
@@ -74,21 +75,26 @@ contracten_paginas() {
 }
 
 # contract_voor_combinatie <json> <service> <provider_oin> <consumer_oin> <thumbprint>:
-# per contract van precies deze serviceConnection dat niet ingetrokken of verlopen is één regel
-#   <hash> <state> <provider-getekend ja|nee> <grant-hash>
-# met <state> lowercase (`contract_state_valid`, `…_proposed`, `…_rejected`) of `ontbreekt`.
+# per contract van precies deze serviceConnection één regel
+#   <hash> <state> <provider-getekend ja|nee> <consumer-getekend ja|nee> <grant-hash>
+# met <state> lowercase (`contract_state_valid`, `…_proposed`, `…_rejected`, `…_revoked`) of
+# `ontbreekt`. Weggelaten: verlopen contracten en contracten die deze manager zélf introk.
 # Oudste eerst (created_at, dan hash): bij duplicaten blijft zo het contract staan dat het langst
 # bestaat en dus het meest waarschijnlijk al via zijn grant-hash in gebruik is.
 #
 # De identiteit is service + provider + consumer-outway + thumbprint samen, in een contract met
 # precies één grant: een contract met extra grants is niet het onze, ook al zit onze grant erin.
 #
-# Afwijzen en intrekken lezen we uit `.state`, niet uit `has_rejected`/`has_revoked`: die zeggen
-# alleen of de manager zélf getekend heeft, dus een afwijzing door de provider zie je daar niet.
+# Afwijzen en intrekken lezen we uit `.state`; `has_rejected`/`has_revoked` zeggen alleen of de
+# manager zélf getekend heeft. Een intrekking door de ándere peer blijft dus zichtbaar als
+# `…_revoked`: dat is een besluit, geen leeg veld om opnieuw in te vullen.
 contract_voor_combinatie() {
   local uit
+  # jq draait niet op lege invoer (exit 0, geen uitvoer): dat zou als "geen contracten" lezen.
+  case "${1:-}" in *[![:space:]]*) ;; *) echo "lege contractenlijst-respons" >&2; return 1 ;; esac
   uit=$(printf '%s' "$1" | jq -r --arg svc "$2" --arg prov "$3" --arg cons "$4" --arg thumb "$5" \
           --arg re "$FSC_HASH_RE" '
+    def getekend($oin): if ((.signatures.accept // {}) | has($oin)) then "ja" else "nee" end;
     if (.contracts | type) != "array" then error("respons is geen contractenlijst") else .contracts end
     | map(select(type == "object"
         # try: één misvormde rij van een andere peer mag de rest van de lijst niet meenemen.
@@ -100,36 +106,52 @@ contract_voor_combinatie() {
                 and .outway.peer_id == $cons
                 and .outway.identification.public_key_thumbprint == $thumb)) catch false)))
     | map(. + {st: ((.state // "ontbreekt") | tostring | ascii_downcase)})
-    | map(select(.st != "contract_state_revoked" and .st != "contract_state_expired"
-                 and (.has_revoked // false) == false))
+    # OpenFSC laat een voorgesteld contract na not_after `proposed`; afmaken loopt dan vast.
+    | map(if .st == "contract_state_proposed" and ((.content.validity.not_after? // infinite) <= now)
+          then .st = "contract_state_expired" else . end)
+    | map(select(.st != "contract_state_expired" and (.has_revoked // false) == false))
     | sort_by([(.content.created_at // 0), .hash])
     | .[]
     # Een eigen contract met een onverwacht hash stil overslaan zou elke run een nieuw opleveren.
     | if ((.hash | type) != "string") or ((.hash | test($re)) | not)
         or ((.content.grants[0].hash // "") | test($re) | not)
       then error("contract voor deze combinatie met onverwacht hash: \(.hash | tostring)")
-      else "\(.hash) \(.st) \(if ((.signatures.accept // {}) | has($prov)) then "ja" else "nee" end) \(.content.grants[0].hash)"
+      else "\(.hash) \(.st) \(getekend($prov)) \(getekend($cons)) \(.content.grants[0].hash)"
       end') || return 1
   [ -z "$uit" ] || printf '%s\n' "$uit"
 }
 
-# geldige_contracten <regels>: de hashes die 'valid' zijn (impliceert beide accept-handtekeningen
-# in de database van de manager waarvan de lijst kwam) en de provider-accept dragen. Oudste eerst.
+# geldige_contracten <regels>: de hashes die 'valid' zijn met beide accept-handtekeningen.
+# Oudste eerst.
 geldige_contracten() {
-  printf '%s' "${1:-}" | awk '$2 == "contract_state_valid" && $3 == "ja" { print $1 }'
+  printf '%s' "${1:-}" | awk '$2 == "contract_state_valid" && $3 == "ja" && $4 == "ja" { print $1 }'
 }
 
-# lopende_contracten <regels>: ingediend, nog niet geldig, niet afgewezen. Oudste eerst.
+# lopende_contracten <regels>: voorgesteld, nog niet geldig. Oudste eerst.
 lopende_contracten() {
   printf '%s' "${1:-}" | awk '$2 == "contract_state_proposed" { print $1 }'
 }
 
-# afgewezen_contracten <regels>: door een van beide peers afgewezen.
-afgewezen_contracten() {
-  printf '%s' "${1:-}" | awk '$2 == "contract_state_rejected" { print $1 }'
+# beeindigde_contracten <regels>: door een van beide peers afgewezen, of door de andere ingetrokken.
+beeindigde_contracten() {
+  printf '%s' "${1:-}" | awk '$2 == "contract_state_rejected" || $2 == "contract_state_revoked" { print $1 }'
+}
+
+# onbekende_contracten <regels>: regels die in geen van de categorieën hierboven passen (state
+# ontbreekt of is nieuw, of 'valid' zonder beide handtekeningen). De aanroeper hoort hierop te
+# stoppen in plaats van te gokken.
+onbekende_contracten() {
+  printf '%s' "${1:-}" | awk '
+    !(($2 == "contract_state_valid" && $3 == "ja" && $4 == "ja") || $2 == "contract_state_proposed" \
+      || $2 == "contract_state_rejected" || $2 == "contract_state_revoked")'
+}
+
+# consumer_getekend <regels> <contract-hash>: draagt dat contract de consumer-handtekening?
+consumer_getekend() {
+  printf '%s' "${1:-}" | awk -v h="$2" '$1 == h && $4 == "ja" { f = 1 } END { exit !f }'
 }
 
 # grant_hash_van <regels> <contract-hash>: de grant-hash (voor `Fsc-Grant-Hash`) van dat contract.
 grant_hash_van() {
-  printf '%s' "${1:-}" | awk -v h="$2" '$1 == h { print $4; exit }'
+  printf '%s' "${1:-}" | awk -v h="$2" '$1 == h { print $5; exit }'
 }

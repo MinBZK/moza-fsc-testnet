@@ -5,7 +5,7 @@
 # en dat het idempotent is zonder lokaal state-bestand.
 #
 # Draait de bootstrap drie keer en controleert na elke run met een eigen GET op de consumer-manager
-# (los van de exit-code van de bootstrap) dat er voor deze combinatie precies één niet-ingetrokken
+# (los van de exit-code van de bootstrap) dat er voor deze combinatie precies één geldig of lopend
 # contract staat, dat het 'valid' is met PROVIDER-accept, en dat het over de runs heen hetzelfde
 # contract blijft. Een run die er een contract bij maakt, faalt hier dus. De matcher zelf toetst
 # contracts/contracten.test.sh.
@@ -31,10 +31,12 @@ case "$RUNS" in ""|*[!0-9]*|0) echo "FAIL: RUNS moet een positief geheel getal z
 
 # Verifieer vanaf de CONSUMER-manager: daar resolvet de outway de grant, dus daar moet het contract
 # wederzijds getekend en 'valid' zijn.
-CONS_MANAGER="https://manager.example-consumer.fsc-test.local:9443"
-CERT=/pki/internal/example-consumer/manager/cert.pem
-KEY=/pki/internal/example-consumer/manager/key.pem
-CA=/pki/internal/example-consumer/ca/root.pem
+# Zelfde env-namen als contracts/bootstrap.sh, zodat de smoke dezelfde peers controleert.
+CONS_MANAGER="${CONSUMER_MANAGER:-https://manager.example-consumer.fsc-test.local:9443}"
+CERT="${CONSUMER_CERT:-/pki/internal/example-consumer/manager/cert.pem}"
+KEY="${CONSUMER_KEY:-/pki/internal/example-consumer/manager/key.pem}"
+CA="${CONSUMER_CA:-/pki/internal/example-consumer/ca/root.pem}"
+LOG_SERVICES="${LOG_SERVICES:-manager-example-consumer manager-example-provider}"
 
 ERRLOG=$(mktemp)
 trap 'rm -f "$ERRLOG"' EXIT
@@ -43,13 +45,14 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq niet gevonden op de host (zie 
 THUMB=$(outway_thumbprint "$OUTWAY_CERT_HOST") \
   || { echo "FAIL: kon outway-thumbprint niet berekenen uit $OUTWAY_CERT_HOST." >&2; exit 1; }
 
-cons() { "${COMPOSE[@]}" exec -T toolbox curl -sS --fail-with-body \
+cons() { "${COMPOSE[@]}" exec -T toolbox curl -sS --fail-with-body --connect-timeout 10 --max-time 30 \
            --cert "$CERT" --key "$KEY" --cacert "$CA" "$@" </dev/null 2>"$ERRLOG"; }
 
 debug_en_faal() {
   echo "Debug: contracten voor deze combinatie (consumer) + manager-logs:" >&2
   printf '%s\n' "${REGELS:-<geen>}" | sed 's/^/  /' >&2
-  "${COMPOSE[@]}" logs --tail=50 manager-example-consumer manager-example-provider >&2 || true
+  # shellcheck disable=SC2086  # LOG_SERVICES is een spaties-gescheiden lijst servicenamen.
+  "${COMPOSE[@]}" logs --tail=50 $LOG_SERVICES >&2 </dev/null || true
   exit 1
 }
 
@@ -63,8 +66,10 @@ for run in $(seq 1 "$RUNS"); do
   REGELS=$(contract_voor_combinatie "$JSON" "$SERVICE_NAME" "$PROVIDER_OIN" "$CONSUMER_OIN" "$THUMB") || {
     echo "FAIL: contractenlijst (consumer) niet te lezen." >&2; exit 1; }
 
-  AANTAL=$(printf '%s\n' "$REGELS" | grep -c . || true)
-  [ "$AANTAL" -eq 1 ] || { echo "FAIL: na run ${run} ${AANTAL} contracten voor deze combinatie, verwacht precies 1." >&2; debug_en_faal; }
+  # Afgewezen of door de ander ingetrokken contracten blijven in de lijst staan (dat is
+  # geschiedenis, geen duplicaat); tellen doen de geldige en lopende.
+  AANTAL=$({ geldige_contracten "$REGELS"; lopende_contracten "$REGELS"; } | grep -c . || true)
+  [ "$AANTAL" -eq 1 ] || { echo "FAIL: na run ${run} ${AANTAL} geldige/lopende contracten voor deze combinatie, verwacht precies 1." >&2; debug_en_faal; }
 
   HASH=$(geldige_contracten "$REGELS")
   [ -n "$HASH" ] || { echo "FAIL: na run ${run} is het contract niet 'valid' met provider-accept op de consumer-manager." >&2; debug_en_faal; }
