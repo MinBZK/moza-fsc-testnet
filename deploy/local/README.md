@@ -151,8 +151,9 @@ Bewijs de contract-kant (draai eerst `publish-service.sh` zodat er een dienst te
 ./deploy/local/smoke-contract.sh   # verwacht: "SMOKE-CONTRACT GROEN." + exit 0
 ```
 
-`smoke-contract.sh` draait de bootstrap drie keer en verifieert na elke run onafhankelijk vanaf de
-consumer-manager dat er precies één, door beide peers geaccepteerd contract staat — steeds hetzelfde. De **echte data-call** (outway → inway → upstream) +
+`smoke-contract.sh` draait de bootstrap drie keer en verifieert na elke run met een eigen GET op de
+consumer-manager dat er precies één, door beide peers geaccepteerd contract staat — steeds hetzelfde.
+De **echte data-call** (outway → inway → upstream) +
 **token-afdwinging** (`Fsc-Authorization`) + **transactie-logging** (`Fsc-Transaction-Id`) zijn #728.
 
 > **Thumbprint-mismatch** → als een latere egress (#728) `access denied` geeft, vergelijk de

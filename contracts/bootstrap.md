@@ -16,12 +16,14 @@ Idempotent mechanisme dat na deploy een geldig, **wederzijds ondertekend**
 3. **Accepteren** — de provider tekent (`PUT /v1/contracts/{content_hash}/accept` op de
    provider-manager). Dit is **expliciet**: `AUTO_SIGN_GRANTS` dekt alleen (delegated)service­publication,
    niet serviceConnection.
-4. **Verifiëren** — het contract draagt nu accept-signatures van **beide** peers.
+4. **Verifiëren** — wacht tot de **consumer**-manager het contract als `valid` ziet (beide
+   accept-signatures in díe database). Strandt de push van de provider-handtekening, dan forceert
+   de bootstrap een her-distributie.
 
 > **Best-effort token** — `bootstrap.sh` probeert daarna een `POST /token`
 > (client_credentials, `scope=<hash>`) als bonus-signaal, maar faalt daar niet op: de outway haalt
 > tokens **native** op tijdens egress en de **harde token-afdwinging + transactie-logging** worden in
-> **#728** bewezen. #727 levert de precondtie: een geldig contract.
+> **#728** bewezen. #727 levert de preconditie: een geldig contract.
 
 ## Draaien
 
@@ -38,20 +40,29 @@ lege schijf, dus een onthouden hash zou daar elke run weg zijn. De matcher staat
 [`contracten.sh`](contracten.sh) en wordt ook door `smoke-contract.sh` gebruikt:
 
 - **Identiteit = service + provider + consumer-outway + thumbprint**, in een contract met precies
-  één `GRANT_TYPE_SERVICE_CONNECTION`-grant, niet ingetrokken. Alleen op servicenaam matchen
-  volstaat niet: het servicePublication-contract voor dezelfde dienst staat op dezelfde managers.
-- **Geldig en door de provider getekend** (op de consumer) → no-op. Liggen er meerdere, dan blijft
-  de gesorteerd-eerste staan en worden de overige ingetrokken (twee gelijktijdige runs kunnen elk
-  indienen; zonder gedeeld lock is dat niet te voorkomen, wel bij de volgende run te herstellen).
-- **Ingediend maar nog niet geldig** → de bootstrap maakt dát contract af (accept, of alleen de
-  her-distributie als de provider al tekende) in plaats van een tweede in te dienen.
-- **Afgewezen** → gemeld, niet afgemaakt; de bootstrap dient een nieuw contract in.
+  één `GRANT_TYPE_SERVICE_CONNECTION`-grant voor een gewone dienst. Ingetrokken en verlopen
+  contracten tellen niet mee. Alleen op servicenaam matchen volstaat niet: het
+  servicePublication-contract voor dezelfde dienst staat op dezelfde managers.
+- **Toestand uit `state`**, niet uit `has_rejected`/`has_revoked`: die zeggen alleen of de manager
+  zélf getekend heeft, dus een afwijzing of intrekking door de andere peer zie je daar niet aan.
+- **Geldig** (op de consumer) → no-op. Liggen er meerdere, dan blijft het oudste staan
+  (`created_at`; het meest waarschijnlijk al via zijn grant-hash in gebruik) en worden de overige
+  geldige én lopende ingetrokken. Twee gelijktijdige runs kunnen elk indienen; zonder gedeeld lock
+  is dat niet te voorkomen, wel bij de volgende run te herstellen.
+- **Ingediend maar nog niet geldig** → de bootstrap maakt dát contract af in plaats van een tweede
+  in te dienen: her-distributie naar de provider als het daar nooit aankwam, de accept, of alleen
+  de her-distributie terug als de provider al tekende.
+- **Alleen afgewezen** → de bootstrap stopt: een afwijzing is een besluit van een van beide peers.
+  Na het oplossen van de oorzaak dient `OPNIEUW_NA_AFWIJZING=1` een nieuw contract in.
+- **Onbekende of ontbrekende `state`** → de bootstrap stopt in plaats van te gokken.
 
 De consumer-kant is de maatstaf omdat de outway daar de grant resolvet: op de provider kan een
 contract al geldig zijn terwijl de provider-handtekening nooit bij de consumer aankwam.
 
 `jq` is vereist: zonder het uitlezen van de contract-JSON is idempotentie niet vast te stellen.
-`./contracts/contracten.test.sh` toetst de matcher zonder draaiende managers (draait ook in CI).
+Zonder draaiende managers (ook in CI): `./contracts/contracten.test.sh` toetst de matcher,
+`./contracts/bootstrap.test.sh` de beslislogica hierboven tegen nagespeelde managers — waaronder
+"drie runs op een lege omgeving leveren één contract op".
 
 ## Let op bij een OpenFSC-versiesprong (v1.x → v2.x)
 
