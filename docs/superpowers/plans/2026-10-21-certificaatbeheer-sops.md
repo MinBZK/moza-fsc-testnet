@@ -53,8 +53,6 @@ beide repo's (`directory`, `example-*` hier; `logius`, `magazijn-a` in de berich
 een map. Opbouw:
 
 ```text
-.sops.yaml               ontvangers per pad (age-publieke sleutels, één per persoon)
-ONTVANGERS.md            wie welke sleutel heeft: naam ↔ age-publieke sleutel
 groep/intermediate-key.pem
 groep/root/root-key.pem  eigen creation_rule: alleen de twee aangewezen personen
 <peer>/group/<endpoint>-key.pem
@@ -64,8 +62,10 @@ groep/root/root-key.pem  eigen creation_rule: alleen de twee aangewezen personen
 
 Elk bestand is één met `sops --input-type binary` versleutelde PEM. Eén bestand per sleutel spiegelt de
 `pki/`-indeling 1:1, maakt ophalen en opslaan een lus zonder yq, en laat group en internal los van elkaar
-roteren. Toegang per persoon staat in `.sops.yaml`; de commitgeschiedenis van dat bestand en
-`ONTVANGERS.md` laat zien wie wanneer toegang kreeg.
+roteren. Toegang per persoon staat in `pki/.sops.yaml` in déze repo, met de naam bij elke sleutel; de
+geschiedenis van dat bestand laat zien wie wanneer toegang kreeg. Het staat niet in de geheime repo:
+die valt onder het gratis GitHub-abonnement, zonder branch protection, en een nieuwe ontvanger hoort
+via een gereviewde PR te lopen.
 
 De root-sleutel komt in dezelfde repo, maar via een aparte `creation_rule` alleen versleuteld voor twee
 aangewezen personen. Dan is hij herleidbaar bewaard zonder dat de dagelijkse ontvangers hem kunnen
@@ -126,26 +126,28 @@ openen. (Beslispunt, zie onder.)
 ### Fase 0 — buiten de repo (team)
 
 - [ ] Beslispunten hieronder vastleggen in #992.
-- [ ] Private repo `MinBZK/moza-fsc-testnet-geheimen` aanmaken (org-rechten).
+- [x] Private repo `MinBZK/moza-fsc-testnet-geheimen` aanmaken (org-rechten).
 - [ ] Iedere ontvanger maakt een age-sleutelpaar (`age-keygen`) en levert de publieke sleutel aan.
-- [ ] `.sops.yaml` en `ONTVANGERS.md` vullen.
+- [ ] `pki/.sops.yaml` vullen, via een PR in deze repo.
 
 ### Fase 1 — deze repo (PR 1)
 
-- [ ] `.gitignore`: de mapregels voor `pki/ca|out|internal` vervangen door negaties per openbaar
+- [x] `.gitignore`: de mapregels voor `pki/ca|out|internal` vervangen door negaties per openbaar
       bestand. `*.pem` blijft globaal uitgesloten en vangt zo de sleutels. Controleren met
       `git check-ignore -v` op elk sleutel- en certpad.
-- [ ] `pki/lib/anker.sh` (gedeelde functie), aanroepen vanuit `issue.sh` en `verify.sh`.
-- [ ] Guard in `init-ca.sh`.
-- [ ] `pki/geheimen.sh`.
-- [ ] `.github/scripts/check-cert-verloop.sh` + `.test.sh`, `cert-verloop.yml`, aanhaken in `lint.yml`.
-- [ ] Docs: `docs/sleutelbeheer.md`, `pki/README.md`.
-- [ ] shellcheck, actionlint, yamllint en markdownlint schoon.
+- [x] `pki/lib/anker.sh` (gedeelde functie), aanroepen vanuit `issue.sh` en `verify.sh`.
+- [x] Guard in `init-ca.sh`.
+- [x] `pki/geheimen.sh`.
+- [x] `.github/scripts/check-cert-verloop.sh` + `.test.sh`, `cert-verloop.yml`, aanhaken in `lint.yml`.
+- [x] Docs: `docs/sleutelbeheer.md`, `pki/README.md`.
+- [x] shellcheck, actionlint, yamllint en markdownlint schoon.
 
 ### Fase 2 — eerste vulling (vanaf de werkplek met het materiaal)
 
-- [ ] `geheimen.sh opslaan groep directory example-consumer example-provider example-provider-2`,
-      daarna de geheime repo pushen.
+- [ ] Nieuwe CRL uitgeven met `gen-crl.sh`: de huidige verliep op 8 juli 2026 en de lint-guard laat
+      een verlopen CRL niet in git. Daarna ook als bijlage in ZAD plaatsen.
+- [ ] `geheimen.sh opslaan groep directory example-consumer example-provider example-provider-2`, en
+      `opslaan root`, daarna de geheime repo pushen.
 - [ ] Openbare helft committen in PR 1, of in een vervolg-PR als PR 1 eerder gemerged wordt.
 - [ ] Een tweede ontwikkelaar haalt op een schone checkout op, draait `verify.sh` en geeft voor één
       endpoint opnieuw uit zonder de koppeling te breken. Dat is criterium 1, en de acceptatietest.
@@ -160,6 +162,20 @@ openen. (Beslispunt, zie onder.)
 - [ ] `logius` en `magazijn-a` in de geheime repo zetten en de openbare helft committen.
 - [ ] `deploy/zad/README.md` en `pki/README.md` per peer laten verwijzen naar het runbook hier.
 - [ ] `federatie/deel-groep-ca.sh` doorlopen: kopieert hij nog een CA die nu al uit `groep/` komt?
+
+### Afwijkingen bij de uitvoering van fase 1
+
+- `.sops.yaml` staat in deze repo (`pki/.sops.yaml`) en `ONTVANGERS.md` vervalt; zie "De geheime repo".
+- `geheimen.sh` heeft een vierde actie, `ontvangers`: die draait `sops updatekeys` met de juiste config
+  en paden. `ophalen` overschrijft geen afwijkende lokale sleutel, `wis` gooit geen niet-opgeslagen
+  sleutel weg (beide met `-f` wel), en `opslaan` versleutelt een ongewijzigde sleutel niet opnieuw.
+- `verify.sh` legt ook elke leaf-sleutel naast zijn cert. Dat maakt de belofte van `opslaan` waar, en
+  vangt een vervangen sleutel in de geheime repo.
+- `issue.sh` vervangt nooit een gecommitte internal-root, ook niet met `-f`.
+- `gen-crl.sh` gaf de CRL twaalf uur in plaats van vijf jaar (cfssl rekent in seconden); hersteld.
+- De lokale harness (`deploy/local/`) haalt de sleutels op in plaats van een eigen CA te maken.
+- `pki/pki.test.sh` toetst alle guards en draait in `lint.yml`, met cfssl, sops en age gepind op
+  sha256.
 
 ## Beslispunten (voorstel, nog vast te leggen in #992)
 

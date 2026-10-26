@@ -6,12 +6,13 @@
 #   certs (indien afwezig) -> .env -> docker compose up -d --build -> smokes op volgorde
 #
 # Bedoeld voor de docker-host waar deze repo volume-gemount is (geen push/pull nodig).
-# Vereist: docker + docker compose v2, en cfssl/cfssljson/openssl voor de cert-generatie
-# (zie pki/README.md). Draai vanuit een willekeurige map; paden worden zelf bepaald.
+# Vereist: docker + docker compose v2, en sops + age met toegang tot de geheime repo voor de
+# sleutels (zie docs/sleutelbeheer.md); cfssl alleen voor nieuwe certs. Draai vanuit een
+# willekeurige map; paden worden zelf bepaald.
 #
 # Opties:
 #   --no-build     compose up zónder --build (sneller als de wrapper-image al bestaat)
-#   --regen-certs  forceer cert-hergeneratie (pki/issue.sh -f) ook als ze al bestaan
+#   --regen-certs  geef alle leaf-certs opnieuw uit (pki/issue.sh -f); de certs in git wijzigen dan
 #   --keep         laat de stack draaien na afloop (default: `down -v` bij succes én falen)
 #   -h|--help      toon deze hulp
 set -euo pipefail
@@ -43,8 +44,21 @@ cd "$REPO_ROOT"
 #        allemaal weg om een ontbrekend hostpakket. Faal vóór er iets gebouwd is. -----------------
 command -v jq >/dev/null 2>&1 || fail "jq niet gevonden — smoke-groepsversie.sh vereist 't (zie README, Benodigdheden)."
 
-# --- 1. Certs (test-CA + per-peer). Regenereer bij --regen-certs, afwezige mappen, óf een CSR
-#        zonder cert (bv. een nieuw endpoint zoals txlog — anders skipt 'aanwezig' die stil). ------
+# --- 1. Certs en sleutels. De certs staan in git, de sleutels in de geheime repo. Een CSR zonder
+#        cert (bv. een nieuw endpoint zoals txlog) krijgt er een via issue.sh; anders skipt
+#        'aanwezig' die stil. ----------------------------------------------------------------------
+need_keys() {
+  local c
+  for c in pki/out/*/*/cert.pem pki/internal/*/*/cert.pem; do
+    [ -e "$c" ] || continue
+    [ -s "${c%cert.pem}key.pem" ] || return 0
+  done
+  return 1
+}
+if need_keys; then
+  echo ">> sleutels ophalen uit de geheime repo..."
+  ./pki/geheimen.sh ophalen || fail "pki/geheimen.sh ophalen faalde (zie docs/sleutelbeheer.md)."
+fi
 need_certs() {
   [ "$REGEN_CERTS" -eq 1 ] && return 0
   { [ ! -d pki/out ] || [ ! -d pki/internal ]; } && return 0
@@ -57,21 +71,19 @@ need_certs() {
 }
 RECREATE=""
 if need_certs; then
-  echo ">> certs (her)genereren (test-CA + per-peer; ontbrekende/nieuwe CSR's meegenomen)..."
-  [ -f pki/ca/root.pem ] || ./pki/init-ca.sh || fail "pki/init-ca.sh faalde."
-  ./pki/issue.sh -f        || fail "pki/issue.sh faalde."
-  ./pki/gen-crl.sh         || fail "pki/gen-crl.sh faalde."
+  echo ">> certs uitgeven (ontbrekende/nieuwe CSR's; alle leafs bij --regen-certs)..."
+  if [ "$REGEN_CERTS" -eq 1 ]; then ./pki/issue.sh -f; else ./pki/issue.sh; fi || fail "pki/issue.sh faalde."
   ./pki/fix-permissions.sh || fail "pki/fix-permissions.sh faalde."
-  # Certs (incl. de per-peer internal-CA's) zijn vernieuwd -> draaiende containers hebben nog de
-  # OUDE certs/CA in geheugen; force-recreate zodat alles de nieuwe (consistente) set herlaadt.
-  # Anders: nieuw inway-cert (nieuwe CA) vs controller die de oude CA trust -> mTLS faalt.
+  echo ">> nieuwe certs: sla de sleutels op (pki/geheimen.sh opslaan) en commit de certs."
+  # Draaiende containers hebben de OUDE certs nog in geheugen; force-recreate zodat alles de
+  # nieuwe set herlaadt.
   RECREATE="--force-recreate"
 else
   echo ">> certs aanwezig + compleet (gebruik --regen-certs om te herbouwen)."
 fi
 # Altijd verifiëren — óók op het "al aanwezig"-pad: stale/onvolledige certs (bv. onderbroken run)
 # mogen niet ongemerkt de stack in en zich later als vage mTLS-fouten voordoen.
-./pki/verify.sh || fail "pki/verify.sh rood — certs onvolledig (draai met --regen-certs)."
+./pki/verify.sh || fail "pki/verify.sh rood (zie docs/sleutelbeheer.md)."
 
 # --- 2. .env: zet HOST_UID/GID = de huidige gebruiker (idempotent: bestaande regels vervangen) --
 ENV_FILE=deploy/local/.env

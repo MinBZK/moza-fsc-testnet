@@ -6,7 +6,7 @@ example-consumer-peer (afnemer) + SNI-router op :443. Bewijst dat peers zich aan
 Bouwt voort op `docs/spikes/manager-443-sni/`.
 
 > **Geen wachten op #722.** De test-PKI-tooling (#722) zit al in deze branch
-> (`pki/`). Je genereert de certs lokaal met `./pki/issue.sh` (stap 2 hieronder).
+> (`pki/`). De certs staan in git; de sleutels haal je op met `./pki/geheimen.sh ophalen` (stap 2).
 > De enige externe afhankelijkheid voor de harness is een **Docker-host** — dus je
 > eigen laptop volstaat. (De ZAD `attachments`-cert-mount is een aparte
 > ZAD-beheer-dependency en raakt alléén de echte ZAD-deploy, niet deze harness.)
@@ -14,8 +14,8 @@ Bouwt voort op `docs/spikes/manager-443-sni/`.
 ## Benodigdheden op je laptop
 
 - **Docker** + `docker compose` (v2).
-- **cfssl + cfssljson + openssl** voor de cert-generatie — zie `pki/README.md`
-  ("Benodigdheden") voor de `go install`-commando's.
+- **sops + age** en toegang tot de geheime repo voor de sleutels — zie `docs/sleutelbeheer.md`
+  ("Eenmalig: toegang krijgen"). cfssl alleen als je zelf certs uitgeeft (`pki/README.md`).
 - **jq** — vereist voor `smoke-groepsversie.sh` (leest `fsc_version` uit de contract-JSON), en dus
   voor `run-smokes.sh` als geheel; die controleert het vooraf. Voor `bootstrap.sh`/`smoke-contract.sh`
   is jq optioneel: die verifiëren ermee de provider-accept-**staat** van een contract en vallen
@@ -29,12 +29,9 @@ Alle commando's vanuit de **repo-root**, op branch `feature/directory-group-723`
 # 1. Juiste branch (cert-set + harness zitten hier).
 git switch feature/directory-group-723
 
-# 2. Genereer de test-CA + per-peer certs (#722-tooling, lokaal — nooit in CI).
-./pki/init-ca.sh          # group root + intermediate -> pki/ca/
-./pki/issue.sh -f         # per peer: group- + internal-certs -> pki/out, pki/internal
-./pki/gen-crl.sh          # lege CRL -> pki/ca/intermediate.crl
-./pki/fix-permissions.sh  # privékeys -> 0600 (owner-only); de pod leest ze via stap 3
-./pki/verify.sh           # acceptatie-asserts; verwacht: "== ALLE ASSERTS GROEN =="
+# 2. Sleutels ophalen; de certs staan al in git. Privékeys komen als 0600 (owner-only) neer;
+#    de pod leest ze via stap 3. Draait verify.sh; verwacht: "== ALLE ASSERTS GROEN ==".
+./pki/geheimen.sh ophalen
 
 # 3. Harness-env. De cert-lezende pods draaien als JOUW UID/GID, zodat ze de
 #    0600-privékeys via de owner-bit lezen (keys blijven dicht). POSTGRES_PASSWORD
@@ -195,8 +192,9 @@ script voor opties (`--no-build`, `--keep`).
 
 ## Troubleshooting
 
-- **`verify.sh` rood / certs ontbreken** → stap 2 niet (volledig) gedraaid; draai
-  `./pki/issue.sh -f` opnieuw.
+- **`verify.sh` rood / sleutels ontbreken** → stap 2 niet (volledig) gedraaid; draai
+  `./pki/geheimen.sh ophalen` opnieuw. Een `FAIL anker` betekent dat lokaal materiaal niet aansluit
+  op git: zie `docs/sleutelbeheer.md`.
 - **Container kan cert niet vinden** → controleer dat `pki/out/<peer>/<endpoint>/`
   en `pki/internal/<peer>/…` bestaan; paden moeten matchen met de compose-env.
 - **`permission denied` op `key.pem` bij boot (manager fatal)** → `HOST_UID`/`HOST_GID`

@@ -130,7 +130,7 @@ bepaal_sets() {
 
 ophalen() {
   local s k g n=0 probleem=0
-  local -a lokaal tijdelijk
+  local -a lokaal=() tijdelijk=()
   vereis_geheimen_dir
   bepaal_sets
   TMP="$(mktemp -d)"
@@ -153,6 +153,8 @@ ophalen() {
     done < <(sleutels "${s}")
   done
   [ "${probleem}" -eq 0 ] || fout "niets opgehaald."
+  # Lengte eerst: op bash 3.2 (macOS) faalt "${a[@]}" van een lege array onder set -u.
+  [ "${#lokaal[@]}" -gt 0 ] || { echo "geen sleutels om op te halen"; return 0; }
   for n in "${!lokaal[@]}"; do
     k="${lokaal[${n}]}"
     mkdir -p "${BASE_DIR}/$(dirname "${k}")"
@@ -212,7 +214,7 @@ wis() {
     esac
   done
   [ "${probleem}" -eq 0 ] || fout "niets gewist."
-  rm -rf "${weg[@]}"
+  [ "${#weg[@]}" -eq 0 ] || rm -rf "${weg[@]}"
   rmdir "${BASE_DIR}/zad-upload" 2>/dev/null || true
   echo "Lokale sleutels en afgeleide bestanden gewist."
 }
