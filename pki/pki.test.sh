@@ -35,14 +35,16 @@ kale_repo() {
 FIXTURE="$TMP_ROOT/fixture"
 echo "Fixture bouwen..."
 kale_repo "$FIXTURE"
-(
-  cd "$FIXTURE"
-  ./pki/init-ca.sh >/dev/null 2>&1
-  ./pki/gen-crl.sh >/dev/null 2>&1
-  git add -A && git_commit . "anker"
-  ./pki/issue.sh >/dev/null 2>&1
-  git add -A && git_commit . "certs"
-)
+# Expliciet geketend: binnen `if !` geldt set -e niet.
+if ! (
+  cd "$FIXTURE" \
+    && ./pki/init-ca.sh && ./pki/gen-crl.sh && git add -A && git_commit . "anker" \
+    && ./pki/issue.sh && git add -A && git_commit . "certs"
+) > "$TMP_ROOT/fixture.log" 2>&1; then
+  echo "FAAL  fixture bouwen mislukt:" >&2
+  tail -20 "$TMP_ROOT/fixture.log" >&2
+  exit 1
+fi
 
 kopie() {
   local dst; dst="$TMP_ROOT/case-$(date +%s%N)-$RANDOM"
