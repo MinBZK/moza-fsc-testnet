@@ -88,14 +88,15 @@ else
   echo "FAIL crl"; fail=1
 fi
 
-# 5. Geen sleutels in git: niet gecommit, niet gestaged, niet toevoegbaar. Certificaten mogen wel.
-geheim='(key\.pem|combined\.pem|\.key)$|^pki/zad-upload/'
-if git -C "${BASE_DIR}/.." ls-files pki | grep -E "${geheim}" \
-   || git -C "${BASE_DIR}/.." status --porcelain --untracked-files=all pki | cut -c4- | grep -E "${geheim}"; then
-  echo "FAIL: PKI-sleutels zichtbaar voor git"; fail=1
-else
-  echo "OK  geen sleutels voor git"
-fi
+# 5. Geen sleutels in git: geen bestand onder pki/ dat gecommit, gestaged of toevoegbaar is, mag
+#    een privésleutel bevatten. Op inhoud, niet op naam: dan valt ook een hernoemde kopie op.
+lek=0
+while IFS= read -r -d '' f; do
+  if grep -q -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "${BASE_DIR}/../${f}" 2>/dev/null; then
+    echo "FAIL: privésleutel zichtbaar voor git: ${f}"; lek=1
+  fi
+done < <(git -C "${BASE_DIR}/.." ls-files -z --cached --others --exclude-standard -- pki)
+if [ "${lek}" -eq 0 ]; then echo "OK  geen sleutels voor git"; else fail=1; fi
 
 [ "${fail}" -eq 0 ] && echo "== ALLE ASSERTS GROEN ==" || echo "== FAILURES =="
 exit "${fail}"

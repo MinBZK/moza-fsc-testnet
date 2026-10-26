@@ -86,12 +86,32 @@ lokale_sleutels() {
 
 ontsleutel() { sops decrypt --input-type binary --output-type binary "$1" 2>/dev/null; }
 
-# $1 = lokaal bestand, $2 = pad in de geheime repo. Relatief vanuit de geheime repo, zodat de
-# path_regex in .sops.yaml (bv. groep/root/) op dat pad matcht.
+# $1 = lokaal bestand, $2 = pad in de geheime repo. sops legt path_regex op het absolute pad, dus
+# een regel moet als (^|/)groep/root/ geschreven zijn; controleer_root_regel bewaakt dat.
 versleutel() {
   (cd "${GEHEIMEN_DIR}" && sops --config "${SOPS_CONFIG}" encrypt \
      --input-type binary --output-type binary --filename-override "$2" "$1")
 }
+
+# $1 = pad in de geheime repo; print de age-ontvangers die pki/.sops.yaml daarvoor kiest.
+ontvangers_voor() {
+  (cd "${GEHEIMEN_DIR}" && printf x | sops --config "${SOPS_CONFIG}" encrypt \
+     --input-type binary --output-type binary --filename-override "$1") \
+    | grep -o '"recipient": *"[^"]*"' | sort -u
+}
+
+# De eerste passende regel wint. Een root-regel die niet matcht, of een .*-regel erboven, zou de
+# root-sleutel stil voor elke dagelijkse ontvanger versleutelen.
+controleer_root_regel() {
+  local r g
+  if ! r="$(ontvangers_voor groep/root/root-key.pem)" || ! g="$(ontvangers_voor groep/intermediate-key.pem)"; then
+    fout "kan de ontvangers uit pki/.sops.yaml niet bepalen."
+  fi
+  [ -n "${r}" ] && [ "${r}" != "${g}" ] \
+    || fout "de root-regel in pki/.sops.yaml matcht niet: de root-sleutel kreeg dan dezelfde ontvangers als de groepssleutel. Zet 'path_regex: (^|/)groep/root/' als eerste regel (docs/sleutelbeheer.md)."
+}
+
+heeft_root() { local s; for s in "${SETS[@]}"; do [ "${s}" = root ] && return 0; done; return 1; }
 
 # Waar als de geheime repo precies deze lokale sleutel bevat.
 opgeslagen() {  # $1 = lokaal pad onder pki/
@@ -110,13 +130,12 @@ vereis_config() {
   [ -f "${SOPS_CONFIG}" ] || fout "pki/.sops.yaml ontbreekt: zonder ontvangers kan er niets versleuteld worden."
 }
 
-# Vult SETS aan met de standaard en controleert de namen. $1 = 'met-root' voor wis.
+# Vult SETS aan met de standaard en controleert de namen. $1 = bekende peers, $2 = 'met-root' voor wis.
 bepaal_sets() {
-  local peers s
-  peers="$(alle_peers)"
+  local peers="$1" s
   if [ "${#SETS[@]}" -eq 0 ]; then
     SETS=(groep)
-    [ "${1:-}" = met-root ] && SETS+=(root)
+    [ "${2:-}" = met-root ] && SETS+=(root)
     # shellcheck disable=SC2206  # peernamen zijn mapnamen zonder spaties
     SETS+=(${peers})
   fi
@@ -132,7 +151,7 @@ ophalen() {
   local s k g n=0 probleem=0
   local -a lokaal=() tijdelijk=()
   vereis_geheimen_dir
-  bepaal_sets
+  bepaal_sets "$(alle_peers)"
   TMP="$(mktemp -d)"
   # Eerst alles ontsleutelen en controleren, dan pas schrijven: geen half opgehaalde set.
   for s in "${SETS[@]}"; do
@@ -163,14 +182,19 @@ ophalen() {
     chmod 600 "${BASE_DIR}/${k}"
     echo "opgehaald pki/${k}"
   done
-  "${BASE_DIR}/verify.sh"
+  if ! "${BASE_DIR}/verify.sh"; then
+    echo "Past een sleutel niet bij zijn cert: is de geheime repo bijgewerkt (git pull in ${GEHEIMEN_DIR})," >&2
+    echo "en wacht er nog een PR met nieuwe certs op merge?" >&2
+    return 1
+  fi
 }
 
 opslaan() {
   local s k g n=0 rc=0
   vereis_geheimen_dir
   vereis_config
-  bepaal_sets
+  bepaal_sets "$(alle_peers)"
+  if heeft_root; then controleer_root_regel; fi
   if ! uit="$("${BASE_DIR}/verify.sh" 2>&1)"; then
     grep -E '^FAIL' <<<"${uit}" >&2 || true
     fout "verify.sh is rood; niets opgeslagen. Een sleutel die niet bij zijn cert past, hoort niet in de geheime repo."
@@ -198,7 +222,7 @@ opslaan() {
 wis() {
   local s k probleem=0
   local -a weg=()
-  bepaal_sets met-root
+  bepaal_sets "$(alle_peers)" met-root
   if [ "${FORCE}" -eq 0 ]; then vereis_geheimen_dir; fi
   for s in "${SETS[@]}"; do
     while IFS= read -r k; do
@@ -219,11 +243,22 @@ wis() {
   echo "Lokale sleutels en afgeleide bestanden gewist."
 }
 
+# Alle peers in de geheime repo, ook die van andere repo's: intrekken moet ook hun bestanden raken.
+geheime_peers() {
+  local d
+  for d in "${GEHEIMEN_DIR}"/*/; do
+    [ -d "${d}" ] || continue
+    d="$(basename "${d}")"
+    [ "${d}" = groep ] || echo "${d}"
+  done
+}
+
 ontvangers() {
   local s g rc=0
   vereis_geheimen_dir
   vereis_config
-  bepaal_sets
+  bepaal_sets "$(geheime_peers)"
+  if heeft_root; then controleer_root_regel; fi
   for s in "${SETS[@]}"; do
     case "${s}" in
       groep) set -- "${GEHEIMEN_DIR}"/groep/*-key.pem ;;

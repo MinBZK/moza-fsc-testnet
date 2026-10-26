@@ -4,7 +4,7 @@
 # zelfgemaakte CA of een niet-passende sleutel breekt de federatie anders stil. Gedeeld door
 # issue.sh en verify.sh; verwacht BASE_DIR (= pki/). Elke bevinding is een "FAIL anker:"-regel.
 
-ANKER_HERSTEL="Herstel: git checkout -- <pad> en pki/geheimen.sh ophalen; zie docs/sleutelbeheer.md (Certificaten vernieuwen)."
+ANKER_HERSTEL="Herstel: git checkout -- <pad> en pki/geheimen.sh ophalen (eigen lokale CA? eerst pki/geheimen.sh wis -f); zie docs/sleutelbeheer.md."
 
 # $1 = pad onder pki/. Waar als het bestand in de laatste commit staat.
 anker_in_git() { git -C "${BASE_DIR}" cat-file -e "HEAD:./$1" 2>/dev/null; }

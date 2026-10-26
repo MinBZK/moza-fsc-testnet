@@ -54,7 +54,8 @@ find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; 
   ICA_DIR="${BASE_DIR}/internal/${PEER}/ca"
 
   # GROUP (extern, group-intermediate). Hecht intermediate aan voor de keten.
-  if [ -s "${GROUP_OUT}/cert.pem" ] && [ -s "${GROUP_OUT}/key.pem" ] && [ "${FORCE}" -eq 0 ]; then
+  # Een cert zonder sleutel is een sleutel die niet is opgehaald, geen reden om opnieuw uit te geven.
+  if [ -s "${GROUP_OUT}/cert.pem" ] && [ "${FORCE}" -eq 0 ]; then
     echo "skip group ${REL} (geen -f)"
   else
     [ -s "${CA_KEY}" ] || { echo "FAIL: pki/ca/intermediate-key.pem ontbreekt; pki/geheimen.sh ophalen groep" >&2; exit 1; }
@@ -70,7 +71,7 @@ find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; 
   fi
 
   # INTERNAL (per-peer internal-CA). Bare leaf; TLS_ROOT_CERT wijst los naar de internal-root.
-  if [ -s "${INT_OUT}/cert.pem" ] && [ -s "${INT_OUT}/key.pem" ] && [ "${FORCE}" -eq 0 ]; then
+  if [ -s "${INT_OUT}/cert.pem" ] && [ "${FORCE}" -eq 0 ]; then
     echo "skip internal ${REL} (geen -f)"
   else
     [ -s "${ICA_DIR}/root-key.pem" ] \

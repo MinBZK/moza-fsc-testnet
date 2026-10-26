@@ -129,6 +129,13 @@ assert "combined.pem is genegeerd" git -C "$d" check-ignore -q pki/out/directory
 assert "zad-upload is genegeerd" git -C "$d" check-ignore -q pki/zad-upload/directory/MANIFEST.md
 touch "$d/pki/out/.DS_Store"
 assert ".DS_Store is genegeerd" git -C "$d" check-ignore -q pki/out/.DS_Store
+touch "$d/pki/out/directory/manager/key.pem.old" "$d/pki/ca/intermediate-key.pem.2026" \
+  "$d/pki/out/directory/manager/cert.csr" "$d/pki/internal/directory/ca/root-key.txt"
+assert "rondslingerende kopie van een sleutel is genegeerd" \
+  git -C "$d" check-ignore -q pki/out/directory/manager/key.pem.old
+assert "kopie naast de groepssleutel is genegeerd" git -C "$d" check-ignore -q pki/ca/intermediate-key.pem.2026
+assert "csr is genegeerd" git -C "$d" check-ignore -q pki/out/directory/manager/cert.csr
+assert "kopie in de internal-CA-map is genegeerd" git -C "$d" check-ignore -q pki/internal/directory/ca/root-key.txt
 
 # --- init-ca.sh: geen tweede CA naast het anker ------------------------------------------------
 d=$(kopie)
@@ -147,6 +154,7 @@ d=$(kopie)
 vreemde_ca "$d/pki/ca/root.pem" "$d/pki/ca/root-key.pem"
 rm -rf "$d/pki/out/directory/manager"
 expect "verify: lokaal vervangen anker is rood met runbook-verwijzing" 1 "$d" "docs/sleutelbeheer.md" -- ./pki/verify.sh
+expect "verify: herstelhint noemt wis -f voor een eigen lokale CA" 1 "$d" "wis -f" -- ./pki/verify.sh
 expect "issue: weigert bij een vervangen anker" niet0 "$d" "FAIL anker" -- ./pki/issue.sh
 assert "issue gaf niets uit bij een vervangen anker" test ! -e "$d/pki/out/directory/manager/cert.pem"
 
@@ -193,6 +201,26 @@ rm -rf "$d/pki/internal/directory/manager"
 expect "issue: noemt ophalen als de internal-CA-sleutel ontbreekt" niet0 "$d" "geheimen.sh ophalen" -- ./pki/issue.sh
 assert "issue maakte geen nieuwe internal-root" ongewijzigd "$d" pki/internal/directory/ca/root.pem
 
+# Vernieuwen met alleen de sleutels van de betrokken peer opgehaald: de andere peers blijven staan.
+zonder_sleutels_van() {  # $1 = map, $2 = peer
+  rm -f "$1"/pki/out/"$2"/*/key.pem "$1"/pki/internal/"$2"/*/key.pem "$1/pki/internal/$2/ca/root-key.pem"
+}
+d=$(kopie)
+zonder_sleutels_van "$d" example-provider
+rm -rf "$d/pki/out/directory"
+expect "issue: group-keten van één peer vernieuwen" 0 "$d" -- ./pki/issue.sh
+assert "issue laat een peer zonder opgehaalde sleutels onaangeroerd" \
+  ongewijzigd "$d" pki/out/example-provider/manager/cert.pem
+assert "vernieuwde peer heeft weer een group-cert" test -s "$d/pki/out/directory/manager/cert.pem"
+expect "verify na vernieuwen van één peer" 0 "$d" -- ./pki/verify.sh
+
+d=$(kopie)
+zonder_sleutels_van "$d" example-provider
+rm "$d/pki/ca/intermediate-key.pem"
+rm -rf "$d/pki/internal/directory/manager"
+expect "issue: één internal-cert vernieuwen zonder groepssleutel" 0 "$d" -- ./pki/issue.sh
+assert "internal-cert opnieuw uitgegeven" test -s "$d/pki/internal/directory/manager/cert.pem"
+
 d=$(kopie)
 mkdir -p "$d/pki/peers/nieuw/manager"
 sed 's/directory/nieuw/g' "$d/pki/peers/directory/manager/csr.json" > "$d/pki/peers/nieuw/manager/csr.json"
@@ -216,6 +244,16 @@ expect "verify: gestagede sleutel is rood" 1 "$d" -- ./pki/verify.sh
 d=$(kopie)
 git -C "$d" add -f pki/out/directory/manager/key.pem && git_commit "$d" "per ongeluk"
 expect "verify: gecommitte sleutel is rood" 1 "$d" -- ./pki/verify.sh
+
+d=$(kopie)
+cp "$d/pki/out/directory/manager/key.pem" "$d/pki/peers/directory/manager/lek.txt"
+expect "verify: privésleutel buiten de bekende paden is rood" 1 "$d" -- ./pki/verify.sh
+
+d=$(kopie)
+mkdir -p "$d/pki/out/directory/é"
+cp "$d/pki/out/directory/manager/key.pem" "$d/pki/out/directory/manager/cert.pem" "$d/pki/out/directory/é/"
+git -C "$d" add -f "pki/out/directory/é/key.pem"
+expect "verify: gestagede sleutel met niet-ASCII-pad is rood" 1 "$d" -- ./pki/verify.sh
 
 # --- geheimen.sh -------------------------------------------------------------------------------
 # Drie rollen: 'dagelijks' ontsleutelt alleen de dagelijkse sleutels, 'root' is root-houder én
@@ -345,6 +383,7 @@ openssl genrsa -out "$TMP_ROOT/vreemd-key.pem" 2048 2>/dev/null
   && mv "$TMP_ROOT/vreemd.enc" "$d/secrets/directory/group/manager-key.pem"
 (cd "$d" && geheimen root wis -f >/dev/null)
 expect "ophalen van een vervangen sleutel is rood" niet0 "$d" "past niet" -- geheimen dagelijks ophalen
+expect "ophalen wijst bij een niet-passende sleutel op git pull" niet0 "$d" "git pull" -- geheimen dagelijks ophalen
 
 d=$(kopie "$GEVULD")
 root_voor=$(sha256sum < "$d/secrets/groep/root/root-key.pem")
@@ -355,6 +394,42 @@ assert "verwijderde ontvanger kan niet meer ontsleutelen" \
   niet_ontsleutelbaar dagelijks "$d/secrets/groep/intermediate-key.pem"
 assert "ontvangers zonder 'root' laat de root-sleutel ongemoeid" \
   test "$root_voor" = "$(sha256sum < "$d/secrets/groep/root/root-key.pem")"
+
+# sops matcht path_regex op het absolute pad: een regel met ^groep/root/ of een .*-regel bovenaan
+# zou de root-sleutel stil aan elke dagelijkse ontvanger geven.
+root_regel_fout() {  # $1 = repo, $2 = 'anker' of 'volgorde'
+  if [ "$2" = anker ]; then
+    printf 'creation_rules:\n  - path_regex: ^groep/root/\n    age: %s\n  - path_regex: .*\n    age: %s,%s\n' \
+      "$(pub root)" "$(pub dagelijks)" "$(pub root)" > "$1/pki/.sops.yaml"
+  else
+    printf 'creation_rules:\n  - path_regex: .*\n    age: %s,%s\n  - path_regex: (^|/)groep/root/\n    age: %s\n' \
+      "$(pub dagelijks)" "$(pub root)" "$(pub root)" > "$1/pki/.sops.yaml"
+  fi
+}
+d=$(kopie "$GEVULD")
+rm "$d/secrets/groep/root/root-key.pem"
+root_regel_fout "$d" anker
+expect "opslaan root weigert een root-regel die niet matcht" niet0 "$d" "root" -- geheimen root opslaan root
+assert "geen root-sleutel opgeslagen met een niet-matchende regel" test ! -e "$d/secrets/groep/root/root-key.pem"
+root_regel_fout "$d" volgorde
+expect "opslaan root weigert een .*-regel vóór de root-regel" niet0 "$d" "root" -- geheimen root opslaan root
+
+d=$(kopie "$GEVULD")
+root_regel_fout "$d" anker
+expect "ontvangers root weigert een root-regel die niet matcht" niet0 "$d" "root" -- geheimen root ontvangers root
+assert "root-sleutel blijft afgeschermd" niet_ontsleutelbaar dagelijks "$d/secrets/groep/root/root-key.pem"
+
+# De geheime repo is gedeeld met andere repo's: intrekken moet ook hun bestanden raken.
+d=$(kopie "$GEVULD")
+mkdir -p "$d/secrets/andere-peer/group"
+(cd "$d/secrets" && sops --config ../pki/.sops.yaml encrypt --input-type binary --output-type binary \
+  --filename-override andere-peer/group/manager-key.pem "$FIXTURE/pki/out/directory/manager/key.pem" \
+  > "$TMP_ROOT/andere.enc") && mv "$TMP_ROOT/andere.enc" "$d/secrets/andere-peer/group/manager-key.pem"
+sops_config "$d" "$(pub nieuw),$(pub root)" "$(pub root)"
+expect "ontvangers werkt ook peers bij die hier niet lokaal staan" 0 "$d" -- geheimen root ontvangers
+assert "nieuwe ontvanger kan het bestand van die peer ontsleutelen" \
+  ontsleutelbaar nieuw "$d/secrets/andere-peer/group/manager-key.pem"
+expect "ontvangers accepteert een peer die alleen in de geheime repo staat" 0 "$d" -- geheimen root ontvangers andere-peer
 
 d=$(kopie "$GEVULD")
 expect "onbekende peer" niet0 "$d" "onbekend" -- geheimen dagelijks ophalen bestaat-niet
