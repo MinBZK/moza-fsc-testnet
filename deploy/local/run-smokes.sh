@@ -12,7 +12,6 @@
 #
 # Opties:
 #   --no-build     compose up zónder --build (sneller als de wrapper-image al bestaat)
-#   --regen-certs  geef alle leaf-certs opnieuw uit (pki/issue.sh -f); de certs in git wijzigen dan
 #   --keep         laat de stack draaien na afloop (default: `down -v` bij succes én falen)
 #   -h|--help      toon deze hulp
 set -euo pipefail
@@ -21,11 +20,13 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 COMPOSE=(docker compose -f "${HERE}/docker-compose.yaml")
 
-BUILD="--build"; REGEN_CERTS=0; KEEP=0
+BUILD="--build"; KEEP=0
 for arg in "$@"; do
   case "$arg" in
     --no-build)    BUILD="" ;;
-    --regen-certs) REGEN_CERTS=1 ;;
+    # De certs staan in git en draaien ook op ZAD: alles opnieuw uitgeven voor een lokale smoke
+    # zou de live set vervangen. Zie docs/sleutelbeheer.md.
+    --regen-certs) echo "--regen-certs is vervallen: certs staan in git, sleutels in de geheime repo." >&2; exit 2 ;;
     --keep)        KEEP=1 ;;
     -h|--help)     sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "onbekende optie: $arg (zie --help)" >&2; exit 2 ;;
@@ -47,20 +48,23 @@ command -v jq >/dev/null 2>&1 || fail "jq niet gevonden — smoke-groepsversie.s
 # --- 1. Certs en sleutels. De certs staan in git, de sleutels in de geheime repo. Een CSR zonder
 #        cert (bv. een nieuw endpoint zoals txlog) krijgt er een via issue.sh; anders skipt
 #        'aanwezig' die stil. ----------------------------------------------------------------------
+# Alleen de peers die docker-compose.yaml mount; de groepssleutel heeft de stack niet nodig.
+STACK_PEERS=(directory example-provider example-consumer)
 need_keys() {
-  local c
-  for c in pki/out/*/*/cert.pem pki/internal/*/*/cert.pem; do
-    [ -e "$c" ] || continue
-    [ -s "${c%cert.pem}key.pem" ] || return 0
+  local p c
+  for p in "${STACK_PEERS[@]}"; do
+    for c in "pki/out/$p"/*/cert.pem "pki/internal/$p"/*/cert.pem; do
+      [ -e "$c" ] || continue
+      [ -s "${c%cert.pem}key.pem" ] || return 0
+    done
   done
   return 1
 }
 if need_keys; then
-  echo ">> sleutels ophalen uit de geheime repo..."
-  ./pki/geheimen.sh ophalen || fail "pki/geheimen.sh ophalen faalde (zie docs/sleutelbeheer.md)."
+  echo ">> sleutels ophalen uit de geheime repo (${STACK_PEERS[*]})..."
+  ./pki/geheimen.sh ophalen "${STACK_PEERS[@]}" || fail "pki/geheimen.sh ophalen faalde (zie docs/sleutelbeheer.md)."
 fi
 need_certs() {
-  [ "$REGEN_CERTS" -eq 1 ] && return 0
   { [ ! -d pki/out ] || [ ! -d pki/internal ]; } && return 0
   local csr rel
   while IFS= read -r csr; do
@@ -71,15 +75,15 @@ need_certs() {
 }
 RECREATE=""
 if need_certs; then
-  echo ">> certs uitgeven (ontbrekende/nieuwe CSR's; alle leafs bij --regen-certs)..."
-  if [ "$REGEN_CERTS" -eq 1 ]; then ./pki/issue.sh -f; else ./pki/issue.sh; fi || fail "pki/issue.sh faalde."
+  echo ">> certs uitgeven voor nieuwe CSR's..."
+  ./pki/issue.sh || fail "pki/issue.sh faalde."
   ./pki/fix-permissions.sh || fail "pki/fix-permissions.sh faalde."
   echo ">> nieuwe certs: sla de sleutels op (pki/geheimen.sh opslaan) en commit de certs."
   # Draaiende containers hebben de OUDE certs nog in geheugen; force-recreate zodat alles de
   # nieuwe set herlaadt.
   RECREATE="--force-recreate"
 else
-  echo ">> certs aanwezig + compleet (gebruik --regen-certs om te herbouwen)."
+  echo ">> certs aanwezig + compleet."
 fi
 # Altijd verifiëren — óók op het "al aanwezig"-pad: stale/onvolledige certs (bv. onderbroken run)
 # mogen niet ongemerkt de stack in en zich later als vage mTLS-fouten voordoen.

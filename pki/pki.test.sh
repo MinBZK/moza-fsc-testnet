@@ -249,6 +249,24 @@ d=$(kopie)
 cp "$d/pki/out/directory/manager/key.pem" "$d/pki/peers/directory/manager/lek.txt"
 expect "verify: privésleutel buiten de bekende paden is rood" 1 "$d" -- ./pki/verify.sh
 
+# Git bewaart de index en HEAD, niet de werkboom: de controle moet lezen wat git opslaat.
+d=$(kopie)
+cp "$d/pki/out/directory/manager/key.pem" "$d/pki/peers/directory/manager/lek.txt"
+git -C "$d" add -f pki/peers/directory/manager/lek.txt
+echo x > "$d/pki/peers/directory/manager/lek.txt"
+expect "verify: gestagede sleutel, daarna op schijf overschreven, is rood" 1 "$d" -- ./pki/verify.sh
+
+d=$(kopie)
+cp "$d/pki/out/directory/manager/key.pem" "$d/pki/peers/directory/manager/lek.txt"
+git -C "$d" add -f pki/peers/directory/manager/lek.txt && git_commit "$d" "per ongeluk"
+rm "$d/pki/peers/directory/manager/lek.txt"
+expect "verify: gecommitte sleutel die lokaal weg is, is rood" 1 "$d" -- ./pki/verify.sh
+
+d=$(kopie)
+printf 'binair' > "$d/pki/peers/directory/manager/sleutel.p12"
+git -C "$d" add -f pki/peers/directory/manager/sleutel.p12
+expect "verify: sleutelcontainer zonder PEM-kop is rood op naam" 1 "$d" -- ./pki/verify.sh
+
 d=$(kopie)
 mkdir -p "$d/pki/out/directory/é"
 cp "$d/pki/out/directory/manager/key.pem" "$d/pki/out/directory/manager/cert.pem" "$d/pki/out/directory/é/"

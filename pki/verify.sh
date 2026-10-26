@@ -88,14 +88,26 @@ else
   echo "FAIL crl"; fail=1
 fi
 
-# 5. Geen sleutels in git: geen bestand onder pki/ dat gecommit, gestaged of toevoegbaar is, mag
-#    een privésleutel bevatten. Op inhoud, niet op naam: dan valt ook een hernoemde kopie op.
+# 5. Geen sleutels in git: niets onder pki/ in HEAD, de index of toevoegbaar mag een privésleutel
+#    zijn. Op inhoud zoals git die opslaat (een hernoemde kopie valt zo ook op), en op naam voor
+#    sleutelcontainers zonder PEM-kop.
+REPO="${BASE_DIR}/.."
+PEM_SLEUTEL='-----BEGIN [A-Z ]*PRIVATE KEY-----'
 lek=0
 while IFS= read -r -d '' f; do
-  if grep -q -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "${BASE_DIR}/../${f}" 2>/dev/null; then
-    echo "FAIL: privésleutel zichtbaar voor git: ${f}"; lek=1
+  echo "FAIL: privésleutel in git: ${f}"; lek=1
+done < <(git -C "${REPO}" grep -z -l -e "${PEM_SLEUTEL}" --cached -- pki; \
+         git -C "${REPO}" grep -z -l -e "${PEM_SLEUTEL}" HEAD -- pki 2>/dev/null)
+while IFS= read -r -d '' f; do
+  if grep -q -e "${PEM_SLEUTEL}" "${REPO}/${f}" 2>/dev/null; then
+    echo "FAIL: privésleutel toevoegbaar voor git: ${f}"; lek=1
   fi
-done < <(git -C "${BASE_DIR}/.." ls-files -z --cached --others --exclude-standard -- pki)
+done < <(git -C "${REPO}" ls-files -z --others --exclude-standard -- pki)
+while IFS= read -r -d '' f; do
+  if [[ "${f}" =~ (key\.pem|combined\.pem|\.key|\.p12|\.pfx|\.pk8)$|^pki/zad-upload/ ]]; then
+    echo "FAIL: sleutelbestand zichtbaar voor git: ${f}"; lek=1
+  fi
+done < <(git -C "${REPO}" ls-files -z --cached --others --exclude-standard -- pki)
 if [ "${lek}" -eq 0 ]; then echo "OK  geen sleutels voor git"; else fail=1; fi
 
 [ "${fail}" -eq 0 ] && echo "== ALLE ASSERTS GROEN ==" || echo "== FAILURES =="
