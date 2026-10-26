@@ -4,7 +4,12 @@
 set -uo pipefail
 
 BASE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+# shellcheck source-path=SCRIPTDIR source=lib/anker.sh
+. "${BASE_DIR}/lib/anker.sh"
 fail=0
+
+# 0. Anker: lokaal materiaal sluit aan op het vertrouwensanker in git
+if anker_alles; then echo "OK  anker"; else fail=1; fi
 
 # 1. Ketengeldigheid per group-leaf
 for cert in "${BASE_DIR}"/out/*/*/cert.pem; do
@@ -66,6 +71,16 @@ for g in "${BASE_DIR}"/out/*/*/cert.pem; do
   [ -f "${BASE_DIR}/internal/${rel}" ] || { echo "FAIL pariteit: geen internal-cert voor ${rel%/cert.pem}"; fail=1; }
 done
 
+# 3d. Elke lokale leaf-sleutel hoort bij zijn certificaat (CA-sleutels: zie stap 0)
+for key in "${BASE_DIR}"/out/*/*/key.pem "${BASE_DIR}"/internal/*/*/key.pem; do
+  [ -e "${key}" ] || continue
+  if anker_sleutel_past "${key}" "$(dirname "${key}")/cert.pem"; then
+    echo "OK  sleutel: ${key#"${BASE_DIR}/"}"
+  else
+    echo "FAIL sleutel past niet bij cert.pem: ${key#"${BASE_DIR}/"}"; fail=1
+  fi
+done
+
 # 4. CRL parseert
 if openssl crl -in "${BASE_DIR}/ca/intermediate.crl" -noout -text >/dev/null 2>&1; then
   echo "OK  crl"
@@ -73,11 +88,13 @@ else
   echo "FAIL crl"; fail=1
 fi
 
-# 5. Geen secrets gestaged/untracked-toevoegbaar
-if git -C "${BASE_DIR}/.." status --porcelain pki | grep -E '\.(pem|key|crt|crl)$'; then
-  echo "FAIL: PKI-secrets zichtbaar voor git"; fail=1
+# 5. Geen sleutels in git: niet gecommit, niet gestaged, niet toevoegbaar. Certificaten mogen wel.
+geheim='(key\.pem|combined\.pem|\.key)$|^pki/zad-upload/'
+if git -C "${BASE_DIR}/.." ls-files pki | grep -E "${geheim}" \
+   || git -C "${BASE_DIR}/.." status --porcelain --untracked-files=all pki | cut -c4- | grep -E "${geheim}"; then
+  echo "FAIL: PKI-sleutels zichtbaar voor git"; fail=1
 else
-  echo "OK  geen secrets voor git"
+  echo "OK  geen sleutels voor git"
 fi
 
 [ "${fail}" -eq 0 ] && echo "== ALLE ASSERTS GROEN ==" || echo "== FAILURES =="

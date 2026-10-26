@@ -34,13 +34,20 @@
 *.der
 *.pk8
 secrets/
-pki/ca/
-pki/out/
-pki/internal/
+# De openbare helft van de test-PKI staat in git: git houdt bij wat er live staat, en de
+# verloopcontrole leest het. Sleutels vallen onder *.pem hierboven. Geen mapregels voor ca/, out/
+# en internal/: git kan een bestand in een uitgesloten map niet terughalen. Zie docs/sleutelbeheer.md.
+!pki/ca/root.pem
+!pki/ca/intermediate.pem
+!pki/ca/intermediate.crl
+!pki/out/*/*/cert.pem
+!pki/internal/*/ca/root.pem
+!pki/internal/*/*/cert.pem
 pki/zad-upload/
 peers/**/values.yaml
 
-# IDE
+# IDE en OS
+.DS_Store
 .idea/
 *.iml
 .vscode/
