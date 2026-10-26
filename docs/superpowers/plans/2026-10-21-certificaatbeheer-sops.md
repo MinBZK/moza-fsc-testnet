@@ -146,9 +146,11 @@ openen. (Beslispunt, zie onder.)
 
 - [ ] Nieuwe CRL uitgeven met `gen-crl.sh`: de huidige verliep op 8 juli 2026 en de lint-guard laat
       een verlopen CRL niet in git. Daarna ook als bijlage in ZAD plaatsen.
+- [ ] Openbare helft en `pki/.sops.yaml` committen in PR 1. Eerst, want `opslaan` eist een groene
+      `verify.sh`, en die eist het anker in HEAD. PR 1 merget pas mét de openbare helft: zonder anker
+      in git is `verify.sh` rood en valt de lokale harness om.
 - [ ] `geheimen.sh opslaan groep directory example-consumer example-provider example-provider-2`, en
       `opslaan root`, daarna de geheime repo pushen.
-- [ ] Openbare helft committen in PR 1, of in een vervolg-PR als PR 1 eerder gemerged wordt.
 - [ ] Een tweede ontwikkelaar haalt op een schone checkout op, draait `verify.sh` en geeft voor één
       endpoint opnieuw uit zonder de koppeling te breken. Dat is criterium 1, en de acceptatietest.
 - [ ] `root-key.pem` van de werkplekken verwijderen, ook uit de kopieën in de berichtenbox.
@@ -173,7 +175,14 @@ openen. (Beslispunt, zie onder.)
   vangt een vervangen sleutel in de geheime repo.
 - `issue.sh` vervangt nooit een gecommitte internal-root, ook niet met `-f`.
 - `gen-crl.sh` gaf de CRL twaalf uur in plaats van vijf jaar (cfssl rekent in seconden); hersteld.
-- De lokale harness (`deploy/local/`) haalt de sleutels op in plaats van een eigen CA te maken.
+- De lokale harness (`deploy/local/`) haalt alleen de sleutels van zijn eigen peers op, in plaats van
+  een eigen CA te maken; `--regen-certs` is vervallen.
+- `issue.sh` slaat een endpoint met cert over, ook als de sleutel niet is opgehaald: zo raakt het
+  vernieuwen van één peer de andere niet.
+- `.gitignore` is een allowlist voor `pki/ca|out|internal`, en `verify.sh` zoekt op inhoud (index,
+  HEAD en ongetrackte bestanden) en op naam naar sleutels.
+- `geheimen.sh` weigert de root-sleutel als de root-regel in `pki/.sops.yaml` niet matcht (sops legt
+  `path_regex` op het absolute pad), en `ontvangers` werkt alle bestanden in de geheime repo bij.
 - `pki/pki.test.sh` toetst alle guards en draait in `lint.yml`, met cfssl, sops en age gepind op
   sha256.
 
@@ -186,6 +195,7 @@ openen. (Beslispunt, zie onder.)
 | Ontvangers | door het team te bepalen; één age-sleutel per persoon, geen gedeelde sleutel |
 | Termijn verloopwaarschuwing | 30 dagen |
 | Issue bij verloop | in `moza-fsc-testnet` (de standaard-token kan geen issue in een andere repo maken) |
+| Bij vertrek van een ontvanger | volledig vernieuwen (intermediate, internal-CA's, alle certs) of het risico bewust accepteren |
 
 ## Buiten scope
 

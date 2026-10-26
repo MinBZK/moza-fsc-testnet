@@ -43,8 +43,8 @@ Voor ZAD (zie `docs/spikes/zad-attachments.md`):
   upload toch één bestand vraagt; standaard niet nodig.
 - `zad-bundle.sh <peer>` verzamelt de hele upload-set (group-root + group-CRL, per-endpoint
   cert/key, internal-CA + internal cert/key) in `pki/zad-upload/<peer>/` met een `MANIFEST.md`
-  dat per bestand het beoogde pod-pad (attachment) + de `TLS_*`-env-var noemt. Draai eerst
-  `gen-crl.sh` zodat de CRL mee gaat (nodig om `DISABLE_CRL_CHECKS` te kunnen weghalen).
+  dat per bestand het beoogde pod-pad (attachment) + de `TLS_*`-env-var noemt. De CRL staat in git
+  en gaat vanzelf mee (nodig om `DISABLE_CRL_CHECKS` te kunnen weghalen).
 
 Beide outputs zijn gitignored (bevatten privésleutels).
 

@@ -227,6 +227,19 @@ sed 's/directory/nieuw/g' "$d/pki/peers/directory/manager/csr.json" > "$d/pki/pe
 expect "issue: nieuwe peer krijgt een eigen internal-CA" 0 "$d" -- ./pki/issue.sh
 expect "verify: nieuwe peer (nog niet in git) is groen" 0 "$d" -- ./pki/verify.sh
 
+# De stappen uit docs/sleutelbeheer.md ("Een set vervangen", group-intermediate), letterlijk.
+d=$(kopie)
+vervang_intermediate() {
+  cfssl genkey -initca pki/intermediate.json | cfssljson -bare pki/ca/intermediate \
+    && cfssl sign -config pki/config.json -ca pki/ca/root.pem -ca-key pki/ca/root-key.pem \
+         -profile intermediate pki/ca/intermediate.csr | cfssljson -bare pki/ca/intermediate \
+    && rm pki/ca/intermediate.csr && pki/gen-crl.sh && rm -rf pki/out/*/ && pki/issue.sh && pki/verify.sh
+}
+expect "runbook: intermediate vervangen" 0 "$d" -- vervang_intermediate
+assert "runbook: anker blijft gelijk" ongewijzigd "$d" pki/ca/root.pem
+assert "runbook: intermediate is nieuw" test -n "$(cmp "$FIXTURE/pki/ca/intermediate.pem" "$d/pki/ca/intermediate.pem" 2>&1)"
+assert "runbook: internal-certs onaangeroerd" ongewijzigd "$d" pki/internal/directory/manager/cert.pem
+
 # --- Sleutel hoort bij certificaat ------------------------------------------------------------
 d=$(kopie)
 cp "$d/pki/out/directory/directory/key.pem" "$d/pki/out/directory/manager/key.pem"
@@ -281,14 +294,14 @@ mkdir -p "$AGE"
 for rol in dagelijks root nieuw; do age-keygen -o "$AGE/$rol.txt" 2>/dev/null; done
 pub() { age-keygen -y "$AGE/$1.txt"; }
 
-sops_config() {  # $1 = repo, $2 = dagelijkse ontvangers, $3 = root-ontvangers
-  cat > "$1/pki/.sops.yaml" <<EOF
-creation_rules:
-  - path_regex: (^|/)groep/root/
-    age: $3
-  - path_regex: .*
-    age: $2
-EOF
+# Dezelfde vorm als het voorbeeld in docs/sleutelbeheer.md: root-regel eerst, key_groups met een lijst.
+sops_config() {  # $1 = repo, $2 = dagelijkse ontvangers, $3 = root-ontvangers (komma-gescheiden)
+  {
+    printf 'creation_rules:\n  - path_regex: (^|/)groep/root/\n    key_groups:\n      - age:\n'
+    tr ',' '\n' <<<"$3" | sed 's/^/          - /'
+    printf '  - path_regex: .*\n    key_groups:\n      - age:\n'
+    tr ',' '\n' <<<"$2" | sed 's/^/          - /'
+  } > "$1/pki/.sops.yaml"
 }
 
 geheimen() {  # $1 = rol, rest = argumenten; draait in de huidige case-map

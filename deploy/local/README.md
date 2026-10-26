@@ -31,7 +31,8 @@ git switch feature/directory-group-723
 
 # 2. Sleutels ophalen; de certs staan al in git. Privékeys komen als 0600 (owner-only) neer;
 #    de pod leest ze via stap 3. Draait verify.sh; verwacht: "== ALLE ASSERTS GROEN ==".
-./pki/geheimen.sh ophalen
+#    Had je eerder een eigen lokale CA gemaakt: eerst ./pki/geheimen.sh wis -f.
+./pki/geheimen.sh ophalen directory example-provider example-consumer
 
 # 3. Harness-env. De cert-lezende pods draaien als JOUW UID/GID, zodat ze de
 #    0600-privékeys via de owner-bit lezen (keys blijven dicht). POSTGRES_PASSWORD
