@@ -95,6 +95,13 @@ echo "Regressietest pki/"
 d=$(kopie)
 expect "fixture is groen" 0 "$d" -- ./pki/verify.sh
 
+crl_langer_dan_jaar() {
+  local eind
+  eind=$(openssl crl -in "$FIXTURE/pki/ca/intermediate.crl" -noout -nextupdate) || return 1
+  [ "$(date -u -d "${eind#nextUpdate=}" +%s)" -gt "$(date -u -d '+1 year' +%s)" ]
+}
+assert "gen-crl: CRL is langer dan een jaar geldig" crl_langer_dan_jaar
+
 # --- .gitignore: sleutels eruit, openbare helft erin -------------------------------------------
 d=$(kopie)
 alle_sleutels_genegeerd() {
