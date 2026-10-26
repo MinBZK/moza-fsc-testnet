@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Regressietest voor de guards rond de test-PKI: de ankercontrole in verify.sh en issue.sh, de
-# guard in init-ca.sh en de .gitignore die sleutels buiten git houdt. Elke case muteert een kopie
-# van één fixture-PKI (gebouwd met de echte scripts, in een tijdelijke git-repo) en toetst de
-# exitcode. Vereist cfssl, cfssljson en openssl.
+# guard in init-ca.sh, de .gitignore die sleutels buiten git houdt, en geheimen.sh. Elke case
+# muteert een kopie van één fixture-PKI (gebouwd met de echte scripts, in een tijdelijke git-repo)
+# en toetst de exitcode. Vereist cfssl, cfssljson, openssl, sops en age.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,9 +46,9 @@ if ! (
   exit 1
 fi
 
-kopie() {
+kopie() {  # [$1 = bron, standaard de fixture]
   local dst; dst="$TMP_ROOT/case-$(date +%s%N)-$RANDOM"
-  cp -a "$FIXTURE" "$dst"
+  cp -a "${1:-$FIXTURE}" "$dst"
   printf '%s' "$dst"
 }
 
@@ -216,6 +216,151 @@ expect "verify: gestagede sleutel is rood" 1 "$d" -- ./pki/verify.sh
 d=$(kopie)
 git -C "$d" add -f pki/out/directory/manager/key.pem && git_commit "$d" "per ongeluk"
 expect "verify: gecommitte sleutel is rood" 1 "$d" -- ./pki/verify.sh
+
+# --- geheimen.sh -------------------------------------------------------------------------------
+# Drie rollen: 'dagelijks' ontsleutelt alleen de dagelijkse sleutels, 'root' is root-houder én
+# dagelijkse ontvanger, 'nieuw' komt er later bij. De geheime repo staat in secrets/ (gitignored).
+AGE="$TMP_ROOT/age"
+mkdir -p "$AGE"
+for rol in dagelijks root nieuw; do age-keygen -o "$AGE/$rol.txt" 2>/dev/null; done
+pub() { age-keygen -y "$AGE/$1.txt"; }
+
+sops_config() {  # $1 = repo, $2 = dagelijkse ontvangers, $3 = root-ontvangers
+  cat > "$1/pki/.sops.yaml" <<EOF
+creation_rules:
+  - path_regex: (^|/)groep/root/
+    age: $3
+  - path_regex: .*
+    age: $2
+EOF
+}
+
+geheimen() {  # $1 = rol, rest = argumenten; draait in de huidige case-map
+  local rol="$1"; shift
+  FSC_GEHEIMEN_DIR="$PWD/secrets" SOPS_AGE_KEY_FILE="$AGE/$rol.txt" ./pki/geheimen.sh "$@"
+}
+ontsleutelbaar() {  # $1 = rol, $2 = bestand
+  SOPS_AGE_KEY_FILE="$AGE/$1.txt" sops decrypt --input-type binary --output-type binary "$2" >/dev/null 2>&1
+}
+niet_ontsleutelbaar() { ! ontsleutelbaar "$@"; }
+inhoud() { (cd "$1" && find . -type f -exec sha256sum {} + | sort); }
+
+d=$(kopie)
+mkdir -p "$d/secrets"
+expect "opslaan zonder pki/.sops.yaml" niet0 "$d" ".sops.yaml" -- geheimen root opslaan
+sops_config "$d" "$(pub dagelijks),$(pub root)" "$(pub root)"
+expect "opslaan bewaart de dagelijkse sleutels" 0 "$d" -- geheimen root opslaan
+spiegelt_pki() {
+  local f
+  for f in groep/intermediate-key.pem \
+           directory/group/directory-key.pem directory/group/manager-key.pem \
+           directory/internal/ca-key.pem directory/internal/directory-key.pem directory/internal/manager-key.pem \
+           example-provider/group/manager-key.pem \
+           example-provider/internal/ca-key.pem example-provider/internal/manager-key.pem; do
+    [ -f "$d/secrets/$f" ] || { echo "ontbreekt: $f" >&2; return 1; }
+  done
+  [ "$(find "$d/secrets" -type f | wc -l)" -eq 9 ]
+}
+assert "geheime repo: één bestand per sleutel, per peer" spiegelt_pki
+assert "root-sleutel alleen opgeslagen als je 'root' noemt" test ! -e "$d/secrets/groep/root/root-key.pem"
+geen_klare_tekst() { ! grep -rq 'PRIVATE KEY' "$d/secrets"; }
+assert "geen leesbare sleutel in de geheime repo" geen_klare_tekst
+voor=$(inhoud "$d/secrets")
+expect "opslaan zonder wijzigingen" 0 "$d" "ongewijzigd" -- geheimen root opslaan
+assert "opslaan zonder wijzigingen versleutelt niets opnieuw" test "$voor" = "$(inhoud "$d/secrets")"
+expect "opslaan root" 0 "$d" -- geheimen root opslaan root
+assert "root-houder kan de root-sleutel ontsleutelen" ontsleutelbaar root "$d/secrets/groep/root/root-key.pem"
+assert "dagelijkse ontvanger kan de root-sleutel niet ontsleutelen" \
+  niet_ontsleutelbaar dagelijks "$d/secrets/groep/root/root-key.pem"
+assert "dagelijkse ontvanger kan de groepssleutel ontsleutelen" \
+  ontsleutelbaar dagelijks "$d/secrets/groep/intermediate-key.pem"
+(cd "$d" && ./pki/combine-pem.sh >/dev/null && ./pki/zad-bundle.sh directory >/dev/null)
+GEVULD="$d"
+
+d=$(kopie "$GEVULD")
+expect "wis weigert een sleutel die je niet kunt nakijken" niet0 "$d" "ca/root-key.pem" -- geheimen dagelijks wis
+assert "na een geweigerde wis staan de sleutels er nog" test -e "$d/pki/ca/intermediate-key.pem"
+expect "wis door een root-houder" 0 "$d" -- geheimen root wis
+geen_lokale_sleutels() {
+  [ -z "$(find "$d/pki" -name '*key.pem' -o -name combined.pem)" ] && [ ! -e "$d/pki/zad-upload" ]
+}
+assert "wis laat geen sleutel of afgeleid bestand achter" geen_lokale_sleutels
+assert "wis laat de certificaten staan" test -e "$d/pki/out/directory/manager/cert.pem"
+expect "ophalen draait verify.sh" 0 "$d" "ALLE ASSERTS GROEN" -- geheimen dagelijks ophalen
+sleutels_terug() {
+  local f
+  while IFS= read -r f; do
+    [ "$f" = pki/ca/root-key.pem ] && continue
+    cmp -s "$FIXTURE/$f" "$d/$f" || { echo "anders: $f" >&2; return 1; }
+  done < <(cd "$FIXTURE" && find pki -name '*key.pem')
+}
+assert "ophalen zet elke sleutel ongewijzigd terug" sleutels_terug
+assert "ophalen haalt de root-sleutel niet zonder 'root'" test ! -e "$d/pki/ca/root-key.pem"
+rechten_ok() {
+  [ "$(stat -c %a "$d/pki/out/directory/manager/key.pem")" = 600 ] \
+    && [ "$(stat -c %a "$d/pki/out/directory/manager")" = 700 ] \
+    && [ "$(stat -c %a "$d/pki/ca")" = 700 ]
+}
+assert "opgehaalde sleutels 600, hun mappen 700" rechten_ok
+expect "ophalen root zonder root-toegang" niet0 "$d" "ontsleutelen" -- geheimen dagelijks ophalen root
+expect "ophalen root als root-houder" 0 "$d" -- geheimen root ophalen root
+assert "root-sleutel ongewijzigd terug" cmp -s "$FIXTURE/pki/ca/root-key.pem" "$d/pki/ca/root-key.pem"
+
+d=$(kopie "$GEVULD")
+(cd "$d" && geheimen root wis >/dev/null)
+expect "ophalen groep" 0 "$d" -- geheimen dagelijks ophalen groep
+assert "ophalen groep haalt alleen de groepssleutel" \
+  test -e "$d/pki/ca/intermediate-key.pem" -a ! -e "$d/pki/out/directory/manager/key.pem"
+
+d=$(kopie "$GEVULD")
+openssl genrsa -out "$d/pki/out/directory/manager/key.pem" 2048 2>/dev/null
+cp "$d/pki/out/directory/manager/key.pem" "$TMP_ROOT/afwijkend.pem"
+expect "ophalen overschrijft geen afwijkende lokale sleutel" niet0 "$d" "-f" -- geheimen dagelijks ophalen
+assert "afwijkende sleutel blijft staan" cmp -s "$TMP_ROOT/afwijkend.pem" "$d/pki/out/directory/manager/key.pem"
+expect "ophalen -f overschrijft" 0 "$d" -- geheimen dagelijks ophalen -f
+assert "na -f staat de sleutel uit de geheime repo er" \
+  cmp -s "$FIXTURE/pki/out/directory/manager/key.pem" "$d/pki/out/directory/manager/key.pem"
+
+# Runbook: vernieuwen → opslaan → wis. Een vergeten opslaan mag de nieuwe sleutel niet kosten.
+d=$(kopie "$GEVULD")
+rm -rf "$d/pki/out/directory/manager"
+(cd "$d" && ./pki/issue.sh >/dev/null 2>&1)
+expect "wis weigert een niet-opgeslagen sleutel" niet0 "$d" "out/directory/manager/key.pem" -- geheimen root wis
+assert "niet-opgeslagen sleutel blijft staan" test -e "$d/pki/out/directory/manager/key.pem"
+expect "opslaan na vernieuwen" 0 "$d" "directory/group/manager-key.pem" -- geheimen dagelijks opslaan directory
+expect "wis na opslaan" 0 "$d" -- geheimen root wis
+
+d=$(kopie "$GEVULD")
+cp "$d/pki/out/directory/directory/key.pem" "$d/pki/out/directory/manager/key.pem"
+voor=$(inhoud "$d/secrets")
+expect "opslaan weigert als verify.sh rood is" niet0 "$d" "verify.sh" -- geheimen dagelijks opslaan
+assert "geheime repo onaangeroerd na een geweigerde opslaan" test "$voor" = "$(inhoud "$d/secrets")"
+
+# Schrijfrechten op de geheime repo zijn ruimer dan ontsleutelrechten: een vervangen sleutel moet
+# bij ophalen opvallen, ook als hij netjes versleuteld is.
+d=$(kopie "$GEVULD")
+openssl genrsa -out "$TMP_ROOT/vreemd-key.pem" 2048 2>/dev/null
+(cd "$d/secrets" && sops --config ../pki/.sops.yaml encrypt --input-type binary --output-type binary \
+  --filename-override directory/group/manager-key.pem "$TMP_ROOT/vreemd-key.pem" > "$TMP_ROOT/vreemd.enc") \
+  && mv "$TMP_ROOT/vreemd.enc" "$d/secrets/directory/group/manager-key.pem"
+(cd "$d" && geheimen root wis -f >/dev/null)
+expect "ophalen van een vervangen sleutel is rood" niet0 "$d" "past niet" -- geheimen dagelijks ophalen
+
+d=$(kopie "$GEVULD")
+root_voor=$(sha256sum < "$d/secrets/groep/root/root-key.pem")
+sops_config "$d" "$(pub nieuw),$(pub root)" "$(pub root)"
+expect "ontvangers bijwerken" 0 "$d" -- geheimen root ontvangers
+assert "nieuwe ontvanger kan ontsleutelen" ontsleutelbaar nieuw "$d/secrets/directory/internal/ca-key.pem"
+assert "verwijderde ontvanger kan niet meer ontsleutelen" \
+  niet_ontsleutelbaar dagelijks "$d/secrets/groep/intermediate-key.pem"
+assert "ontvangers zonder 'root' laat de root-sleutel ongemoeid" \
+  test "$root_voor" = "$(sha256sum < "$d/secrets/groep/root/root-key.pem")"
+
+d=$(kopie "$GEVULD")
+expect "onbekende peer" niet0 "$d" "onbekend" -- geheimen dagelijks ophalen bestaat-niet
+expect "onbekende actie" 2 "$d" -- geheimen dagelijks verwijder
+expect "geheime repo niet gevonden" niet0 "$d" "FSC_GEHEIMEN_DIR" -- \
+  env -u FSC_GEHEIMEN_DIR SOPS_AGE_KEY_FILE="$AGE/root.txt" ./pki/geheimen.sh ophalen
 
 echo "${cases} cases, ${fails} gefaald"
 [ "$fails" -eq 0 ]
