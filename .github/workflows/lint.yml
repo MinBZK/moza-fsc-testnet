@@ -80,4 +80,12 @@ jobs:
       - name: OpenFSC-versie-consistentie
         run: ./.github/scripts/check-openfsc-version.sh
 
+      # Zelfde controle als de wekelijkse cert-verloop.yml, met termijn 0: een PR mag geen al
+      # verlopen certificaat of CRL in git zetten. De regressietest eerst, om dezelfde reden als hierboven.
+      - name: Verloopcontrole testen
+        run: ./.github/scripts/check-cert-verloop.test.sh
+
+      - name: Geen verlopen certificaten
+        run: ./.github/scripts/check-cert-verloop.sh 0
+
 
