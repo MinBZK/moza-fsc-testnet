@@ -125,7 +125,9 @@ zichtbaar is.
   een nieuwe CA met nieuwe leafs; plaats de hele internal-set van die peer opnieuw in ZAD.
 - **Group-intermediate:** alleen een root-houder. Daarna gelden stap 4 tot en met 6 hierboven voor
   `pki/ca/intermediate.pem`, de CRL en alle group-certs, bij elke peer, ook die in
-  `moza-poc-fbs-berichtenbox`.
+  `moza-poc-fbs-berichtenbox`. Dit trekt de oude intermediate niet in: zolang de CRL-controle uit
+  staat, blijft hij tot zijn einddatum naar de root ketenen. Tegen een gelekte groepssleutel helpt
+  alleen een nieuw anker.
 
   ```bash
   pki/geheimen.sh ophalen root groep
@@ -143,15 +145,24 @@ zichtbaar is.
 
 ### Toegang intrekken
 
+Bij een gewoon vertrek:
+
 1. Haal de sleutel uit `pki/.sops.yaml` (PR). Draai na de merge `pki/geheimen.sh ontvangers`; was het
    een root-houder, dan draait een andere root-houder ook `ontvangers root`. Push de geheime repo.
-2. Opnieuw versleutelen helpt niet tegen een kopie die al bestaat. Een dagelijkse ontvanger kon de
-   groepssleutel en elke internal-CA-sleutel openen. Volledig afsluiten betekent daarom: de
-   group-intermediate vervangen, per peer de internal-CA vervangen, en alle certs opnieuw plaatsen in
-   ZAD, ook bij de peers in `moza-poc-fbs-berichtenbox`. Voor een vertrokken root-houder komt daar een
-   nieuw anker bij.
-3. Kiest het team voor dit gesloten testnet om dat niet te doen, leg die keuze dan vast in het issue
-   van het vertrek.
+2. Zorg dat de GitHub-toegang tot de geheime repo vervalt; meestal gebeurt dat met het vertrek uit de
+   org.
+3. Leg in het issue van het vertrek vast dat het team het restrisico hieronder accepteert.
+
+Het restrisico: opnieuw versleutelen helpt niet tegen een kopie die al bestaat, en oude versies in de
+git-historie blijven met de oude age-sleutel leesbaar. Met de groepssleutel kan wie vertrok
+certificaten maken die naar het anker ketenen, tot de einddatum van de intermediate. Een nieuwe
+intermediate verandert daar niets aan: de oude blijft naar de root ketenen, en de CRL-controle staat
+uit. De internal-CA-sleutels zijn alleen bruikbaar van binnen het ZAD-project van een peer. Voor een
+gesloten testnet met testgegevens accepteren we dat.
+
+Vervang het anker wel (een nieuwe federatie, zie [Een set vervangen](#een-set-vervangen)) bij een
+vermoeden van misbruik, een gelekte laptop of age-sleutel, een vertrek in onmin, of zodra het testnet
+echte gegevens verwerkt.
 
 ## Rotatie `ZAD_API_KEY_DIRECTORY`
 

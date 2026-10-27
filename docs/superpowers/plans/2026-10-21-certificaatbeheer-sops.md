@@ -118,8 +118,8 @@ openen. (Beslispunt, zie onder.)
   5. `geheimen.sh opslaan <peer>` en de nieuwe `cert.pem`'s committen, in de geheime repo en hier.
   6. `geheimen.sh wis`.
 - Toegang geven of intrekken: age-sleutel aan `.sops.yaml` toevoegen en `sops updatekeys` over alle
-  bestanden. Bij vertrek: verwijderen, `updatekeys`, én de sleutels vernieuwen die die persoon kon
-  openen. Alleen opnieuw versleutelen helpt niet tegen een kopie die al bestaat.
+  bestanden. Bij vertrek: verwijderen en `updatekeys`. Opnieuw versleutelen helpt niet tegen een kopie
+  die al bestaat; wanneer het anker daarom om moet, staat bij de beslispunten.
 
 ## Stappen
 
@@ -203,7 +203,7 @@ openen. (Beslispunt, zie onder.)
 | Ontvangers | mreuvekamp en ericwout-overheid; één age-sleutel per persoon, geen gedeelde sleutel en geen sleutel voor een Claude-sandbox |
 | Termijn verloopwaarschuwing | 30 dagen |
 | Issue bij verloop | in `moza-fsc-testnet` (de standaard-token kan geen issue in een andere repo maken) |
-| Bij vertrek van een ontvanger | volledig vernieuwen: intermediate, internal-CA's en alle certs |
+| Bij vertrek van een ontvanger | ontvanger eruit, `geheimen.sh ontvangers`, GitHub-toegang weg; het restrisico accepteren en vastleggen. Een nieuw anker bij vermoeden van misbruik, een gelekte sleutel, vertrek in onmin of zodra er echte gegevens doorheen gaan. Alleen de intermediate vervangen sluit niet af: de oude blijft naar de root ketenen en de CRL-controle staat uit. |
 
 ## Buiten scope
 
