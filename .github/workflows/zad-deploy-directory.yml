@@ -337,7 +337,8 @@ jobs:
           && needs.changes.result == 'success' && needs.meta.result == 'success'
           && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Ruimte voor de deploy-task (task-timeout 600s) plus de gezondheidscheck (max 12 min).
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
@@ -376,8 +377,8 @@ jobs:
         # de backend-map ongewijzigd door (de key is dan simpelweg afwezig) en gaat gewoon door —
         # een ontbrekende dirmgr zou dus als groene deploy voorbijkomen, met een PR-comment die
         # alleen dirui noemt. Let op wat deze check wél en niet bewijst: hij toetst de
-        # deployment-spec, niet of de pod draait of de image bestaat — met wait-for-ready uit is dat
-        # laatste in deze workflow helemaal niet gedekt. Overgeslagen op
+        # deployment-spec, niet of de pod draait of de image bestaat; dat doet de stap hierna.
+        # Overgeslagen op
         # een bot-PR (skip-bot-prs): dan draaide de deploy-substap niet en is `urls` leeg — dat is
         # geen onvolledige deploy, dus geen assertion nodig.
         if: steps.deploy.outputs.skipped != 'true'
@@ -403,7 +404,49 @@ jobs:
             echo "::error::Deploy leverde geen URL voor:$missing — deployment '$DEPLOYMENT' is mogelijk onvolledig (zie de zad-actions-log hierboven). urls-output: $URLS"
             exit 1
           fi
-          echo "Alle componenten (dirmgr, dirui) hebben een URL gekregen — dit zegt niets over pod-readiness of over het bestaan van de image (wait-for-ready staat uit)."
+          echo "Alle componenten (dirmgr, dirui) hebben een URL gekregen."
+
+      - name: Wacht tot ZAD de deployment gezond meldt
+        # Met wait-for-ready uit meldt de deploy-stap succes zodra ZAD de rollout aanneemt, ook als
+        # dirmgr daarna in een crashloop belandt. ZAD's eigen status leunt op een TCP-probe op de
+        # poort en heeft dus geen last van de mTLS-handshake. `Degraded` betekent dat de rollout
+        # zijn deadline niet haalde; dat herstelt pas bij een volgende deploy, dus niet verder wachten.
+        if: steps.deploy.outputs.skipped != 'true'
+        timeout-minutes: 12
+        env:
+          ZAD_API_KEY: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
+          ZAD_PROJECT_ID: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
+          ZAD_API_URL: ${{ env.ZAD_API_BASE }}/api
+          DEPLOYMENT: ${{ needs.meta.outputs.deployment }}
+        run: |
+          set -euo pipefail
+          # De deploy-action zette de zad-CLI al op het PATH van deze job.
+          deadline=$((SECONDS + 600))
+          while :; do
+            if json=$(zad --output json deployment describe "$DEPLOYMENT" 2>&1); then
+              status=$(jq -r '.status // "onbekend"' <<<"$json" 2>/dev/null || echo "onleesbaar")
+            else
+              status="onleesbaar"
+            fi
+            case "$status" in
+              Healthy)
+                echo "ZAD meldt deployment '$DEPLOYMENT' gezond."
+                exit 0
+                ;;
+              Degraded)
+                echo "::error::ZAD meldt deployment '$DEPLOYMENT' als Degraded. Pod-logs: zadctl logs $DEPLOYMENT -c dirmgr"
+                jq -r '.errors[]? | "::error::\(.resource): \(.message)"' <<<"$json"
+                exit 1
+                ;;
+            esac
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Deployment '$DEPLOYMENT' is na 10 minuten niet gezond (laatste status: $status)."
+              # Bij een CLI- of API-fout staat de oorzaak in de laatste uitvoer.
+              [ "$status" = "onleesbaar" ] && printf '%s\n' "$json" | tail -n 5
+              exit 1
+            fi
+            sleep 15
+          done
 
   # PR gesloten -> preview opruimen (deployment + de ghcr-preview-tag). Géén GitHub-environment,
   # dus geen GH_ADMIN_TOKEN nodig.
