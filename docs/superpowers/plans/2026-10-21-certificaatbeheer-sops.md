@@ -125,10 +125,10 @@ openen. (Beslispunt, zie onder.)
 
 ### Fase 0 — buiten de repo (team)
 
-- [ ] Beslispunten hieronder vastleggen in #992.
+- [x] Beslispunten hieronder vastleggen in #992.
 - [x] Private repo `MinBZK/moza-fsc-testnet-geheimen` aanmaken (org-rechten).
-- [ ] Iedere ontvanger maakt een age-sleutelpaar (`age-keygen`) en levert de publieke sleutel aan.
-- [ ] `pki/.sops.yaml` vullen, via een PR in deze repo.
+- [x] Iedere ontvanger maakt een age-sleutelpaar (`age-keygen`) en levert de publieke sleutel aan.
+- [x] `pki/.sops.yaml` vullen, via een PR in deze repo.
 
 ### Fase 1 — deze repo (PR 1)
 
@@ -152,17 +152,18 @@ openen. (Beslispunt, zie onder.)
       in git is `verify.sh` rood en valt de lokale harness om.
 - [x] `geheimen.sh opslaan groep directory example-consumer example-provider`, en `opslaan root`,
       daarna de geheime repo pushen. `example-provider-2` is niet in gebruik en vervalt.
-- [ ] De eerste root-houder haalt op de eigen laptop op, ook `ophalen root`. Pas dan is bewezen dat
+- [x] De eerste root-houder haalt op de eigen laptop op, ook `ophalen root`. Pas dan is bewezen dat
       de root-sleutel uit de geheime repo terugkomt.
-- [ ] ericwout-overheid als ontvanger en tweede root-houder in `pki/.sops.yaml`; daarna draait de eerste
+- [x] ericwout-overheid als ontvanger en tweede root-houder in `pki/.sops.yaml`; daarna draait de eerste
       root-houder `geheimen.sh ontvangers` en `ontvangers root` en pusht de geheime repo.
 - [ ] Een tweede ontwikkelaar haalt op een schone checkout op, draait `verify.sh` en geeft voor één
       endpoint opnieuw uit zonder de koppeling te breken. Dat is criterium 1, en de acceptatietest.
-- [ ] `root-key.pem` van de werkplekken verwijderen, ook uit de kopieën in de berichtenbox.
-      `.DS_Store` in `pki/out/` opruimen.
-- [ ] De Claude-sandbox van de eerste vulling leegmaken: het ontsleutelde materiaal, de tar en zijn
-      age-sleutel. Pas als `ophalen root` op de laptop gelukt is en de ontvangers zijn bijgewerkt: tot
-      dan is de sandbox de enige plek waar het terughalen getest is.
+- [ ] `root-key.pem` en `intermediate-key.pem` van de laptop verwijderen, ook uit de kopieën in de
+      berichtenbox. `.DS_Store` in `pki/out/` opruimen.
+- [x] De Claude-sandbox van de eerste vulling: het materiaal van deze repo, elke kopie van de root- en
+      intermediate-sleutel (ook in de tars) en zijn age-sleutel zijn weg.
+- [ ] Ook de peer-sleutels van de berichtenbox (`logius`, `magazijn-a`, `uitvraag-org`) uit de sandbox
+      halen, zodra ze in de geheime repo staan of op de laptop zijn veiliggesteld.
 
 ### Fase 3 — moza-poc-fbs-berichtenbox (PR 2, daar)
 
