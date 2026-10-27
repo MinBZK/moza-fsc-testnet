@@ -82,12 +82,12 @@ creation_rules:
 ### Eenmalig: toegang krijgen
 
 1. Installeer `sops` en `age` (`brew install sops age`, of de releases op GitHub).
-2. Maak een sleutelpaar en zet het pad vast. Zonder `SOPS_AGE_KEY_FILE` zoekt sops op macOS in
-   `~/Library/Application Support/sops/age/`.
+2. Maak een sleutelpaar. Op Linux vindt sops `~/.config/sops/age/keys.txt` vanzelf; op macOS zoekt het
+   in `~/Library/Application Support/sops/age/`, dus zet daar `SOPS_AGE_KEY_FILE`.
 
    ```bash
    mkdir -p ~/.config/sops/age && age-keygen -o ~/.config/sops/age/keys.txt
-   export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt   # ook in je shell-profiel
+   export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt   # macOS; ook in je shell-profiel
    ```
 
    Bewaar een kopie van `keys.txt` in je wachtwoordkluis. Kwijt betekent geen toegang, tot iemand je

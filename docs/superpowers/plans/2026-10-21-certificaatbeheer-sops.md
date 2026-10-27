@@ -152,8 +152,10 @@ openen. (Beslispunt, zie onder.)
       de root-sleutel uit de geheime repo terugkomt.
 - [x] ericwout-overheid als ontvanger en tweede root-houder in `pki/.sops.yaml`; daarna draait de eerste
       root-houder `geheimen.sh ontvangers` en `ontvangers root` en pusht de geheime repo.
-- [ ] Een tweede ontwikkelaar haalt op een schone checkout op, draait `verify.sh` en geeft voor één
+- [x] Een tweede ontwikkelaar haalt op een schone checkout op, draait `verify.sh` en geeft voor één
       endpoint opnieuw uit zonder de koppeling te breken. Dat is criterium 1, en de acceptatietest.
+      Geslaagd op 27 oktober 2026 (comment op MinBZK/moza-fsc-testnet#78); `opslaan`, PR en
+      ZAD-bijlage volgen bij de eerste echte vernieuwing.
 - [ ] `root-key.pem` en `intermediate-key.pem` van de laptop verwijderen, ook uit de kopieën in de
       berichtenbox. `.DS_Store` in `pki/out/` opruimen.
 - [x] De Claude-sandbox van de eerste vulling: het materiaal van deze repo, elke kopie van de root- en
