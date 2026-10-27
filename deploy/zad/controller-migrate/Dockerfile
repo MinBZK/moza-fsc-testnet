@@ -17,7 +17,7 @@
 # maar de digest hieronder blijft handwerk.
 FROM busybox:1.38.0-musl@sha256:ea2b9914a16a4ac1981994af97b318f7c7d4db76b580c56177f08bf76f4a0be8 AS busybox
 
-FROM docker.io/federatedserviceconnectivity/controller:v2.7.0@sha256:99ef252299a48dd6a1402b0f092290574382f3fe3a37ec56ac00902d141e9916
+FROM docker.io/federatedserviceconnectivity/controller:v2.8.0@sha256:192c563331f3b38dccbd7fd03a0b01779921d61ecafac531584750bc453e5c4d
 COPY --from=busybox /bin/busybox /bin/sh
 COPY --chmod=0555 entrypoint.sh /usr/local/bin/migrate-and-serve.sh
 ENTRYPOINT ["/usr/local/bin/migrate-and-serve.sh"]
