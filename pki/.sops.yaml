@@ -1,0 +1,16 @@
+# Wie welke privésleutel van de test-PKI kan ontsleutelen. Eén age-sleutel per persoon of
+# sandbox. De root-regel staat bovenaan: sops kiest de eerste regel die past en legt path_regex op het
+# absolute pad. Toevoegen, intrekken en de vorm: docs/sleutelbeheer.md.
+keys:
+  - &mark age169l30nmfr8z42m2sx696r24nc99wf7qq6qfnytzdnfc2r5sh4gxstgtyuk  # Mark Reuvekamp (root-houder)
+  - &mark_sandbox age1hqaw6tyhzlyqccgxlwqrkda7vkfg7nh8fegjkhlrw3zc2lm84arq5xnav9  # Mark Reuvekamp (Claude-sandbox)
+creation_rules:
+  - path_regex: (^|/)groep/root/
+    key_groups:
+      - age:
+          - *mark
+  - path_regex: .*
+    key_groups:
+      - age:
+          - *mark
+          - *mark_sandbox
