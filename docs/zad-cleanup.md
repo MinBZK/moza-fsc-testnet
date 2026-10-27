@@ -13,7 +13,7 @@ draaien bij hun app** (co-located in het app-project). Deploy/cleanup volgen die
 | Onderdeel | Deploy | Cleanup | Beheerd vanuit |
 |-----------|--------|---------|----------------|
 | directory | `zad-deploy-directory.yml` → `zad-actions/deploy` | `zad-cleanup.yml` → `zad-actions/cleanup` | **dit repo** |
-| peer (magazijn/uitvraag/…) | app-repo's `deploy.yml` → `zad-actions/deploy` | app-repo → `zad-actions/cleanup` | bij de app |
+| peer (magazijn/logius/…) | app-repo's `deploy.yml` → `zad-actions/deploy` | app-repo → `zad-actions/cleanup` | bij de app |
 
 Een app-repo hoeft niets uit dit repo te vendoren: dezelfde SHA-gepinde action met het eigen
 project-id + de eigen key volstaat. Dat is de "kopiëren + pinnen"-variant uit `zad-projecten.md`,
