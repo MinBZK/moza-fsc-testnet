@@ -101,14 +101,16 @@ ontvangers_voor() {
 }
 
 # De eerste passende regel wint. Een root-regel die niet matcht, of een .*-regel erboven, zou de
-# root-sleutel stil voor elke dagelijkse ontvanger versleutelen.
+# root-sleutel stil voor elke dagelijkse ontvanger versleutelen. De ontvangers vergelijken ziet dat
+# niet zodra elke ontvanger ook root-houder is; daarom moet de eerste regel letterlijk deze vorm hebben.
 controleer_root_regel() {
-  local r g
-  if ! r="$(ontvangers_voor groep/root/root-key.pem)" || ! g="$(ontvangers_voor groep/intermediate-key.pem)"; then
-    fout "kan de ontvangers uit pki/.sops.yaml niet bepalen."
-  fi
-  [ -n "${r}" ] && [ "${r}" != "${g}" ] \
-    || fout "de root-regel in pki/.sops.yaml matcht niet: de root-sleutel kreeg dan dezelfde ontvangers als de groepssleutel. Zet 'path_regex: (^|/)groep/root/' als eerste regel (docs/sleutelbeheer.md)."
+  local eerste r
+  eerste="$(grep -m1 -E '^[[:space:]]*-?[[:space:]]*path_regex:' "${SOPS_CONFIG}" \
+    | sed -E "s/^[^:]*:[[:space:]]*//; s/[[:space:]]+#.*$//; s/^['\"]//; s/['\"]$//")" || true
+  [ "${eerste}" = '(^|/)groep/root/' ] \
+    || fout "de eerste regel in pki/.sops.yaml moet 'path_regex: (^|/)groep/root/' zijn, anders krijgt de root-sleutel stil de dagelijkse ontvangers (docs/sleutelbeheer.md)."
+  r="$(ontvangers_voor groep/root/root-key.pem)" || fout "kan de ontvangers uit pki/.sops.yaml niet bepalen."
+  [ -n "${r}" ] || fout "de root-regel in pki/.sops.yaml heeft geen ontvangers."
 }
 
 heeft_root() { local s; for s in "${SETS[@]}"; do [ "${s}" = root ] && return 0; done; return 1; }

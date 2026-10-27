@@ -450,6 +450,15 @@ root_regel_fout "$d" anker
 expect "ontvangers root weigert een root-regel die niet matcht" niet0 "$d" "root" -- geheimen root ontvangers root
 assert "root-sleutel blijft afgeschermd" niet_ontsleutelbaar dagelijks "$d/secrets/groep/root/root-key.pem"
 
+# Is elke ontvanger ook root-houder, dan hebben beide regels dezelfde ontvangers. Dat is geldig.
+d=$(kopie "$GEVULD")
+sops_config "$d" "$(pub root)" "$(pub root)"
+expect "ontvangers root met dezelfde ontvangers in beide regels" 0 "$d" -- geheimen root ontvangers root
+rm "$d/secrets/groep/root/root-key.pem"
+expect "opslaan root met dezelfde ontvangers in beide regels" 0 "$d" -- geheimen root opslaan root
+assert "root-sleutel opgeslagen met dezelfde ontvangers in beide regels" \
+  ontsleutelbaar root "$d/secrets/groep/root/root-key.pem"
+
 # De geheime repo is gedeeld met andere repo's: intrekken moet ook hun bestanden raken.
 d=$(kopie "$GEVULD")
 mkdir -p "$d/secrets/andere-peer/group"

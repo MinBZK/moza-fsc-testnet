@@ -57,7 +57,8 @@ gereviewde PR. Wie de geheime repo kan wijzigen, kan ook geen sleutel ongemerkt 
 
 `pki/.sops.yaml` heeft deze vorm. De root-regel staat bovenaan: sops kiest de eerste regel die past, en
 legt `path_regex` op het absolute pad, dus `(^|/)groep/root/` en niet `^groep/root/`. `geheimen.sh`
-weigert de root-sleutel op te slaan als die regel niet matcht.
+weigert de root-sleutel op te slaan of opnieuw te versleutelen als de eerste regel niet precies zo
+luidt.
 
 ```yaml
 keys:
