@@ -10,17 +10,19 @@
 #   deploy/local/wegwerp-pki.sh <lege doelmap buiten de checkout>
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 doel="${1:?gebruik: $0 <lege doelmap buiten de checkout>}"
 
-nieuw=0
-[ -e "${doel}" ] || { mkdir -p "${doel}"; nieuw=1; }
-doel="$(cd "${doel}" && pwd)"
-case "${doel}/" in
-  "${REPO_ROOT}/"*)
-    [ "${nieuw}" -eq 1 ] && rmdir "${doel}"
-    echo "FAIL: ${doel} ligt binnen de checkout; kies een map erbuiten (bv. mktemp -d)." >&2; exit 1 ;;
-esac
+binnen_checkout() {
+  case "$1/" in "${REPO_ROOT}/"*) echo "FAIL: $1 ligt binnen de checkout; kies een map erbuiten (bv. mktemp -d)." >&2; exit 1 ;; esac
+}
+# Eerst de bovenliggende map: binnen de checkout mag niets worden aangemaakt, ook geen tussenmap.
+ouder="$(dirname "${doel}")"
+[ -d "${ouder}" ] || { echo "FAIL: ${ouder} bestaat niet." >&2; exit 1; }
+binnen_checkout "$(cd "${ouder}" && pwd -P)"
+mkdir -p "${doel}"
+doel="$(cd "${doel}" && pwd -P)"
+binnen_checkout "${doel}"
 [ -z "$(ls -A "${doel}")" ] || { echo "FAIL: ${doel} is niet leeg." >&2; exit 1; }
 
 # Gevolgde scripts, configs en CSR-templates uit de werkboom, zonder het materiaal van de federatie.
@@ -28,7 +30,11 @@ esac
   | tar --null -T - -cf -) | tar -xf - -C "${doel}"
 
 cd "${doel}"
-g() { git -c user.name=wegwerp-pki -c user.email=wegwerp-pki@localhost "$@"; }
+# Signing en hooks uit de globale git-config horen niet bij deze wegwerp-repo.
+g() {
+  git -c user.name=wegwerp-pki -c user.email=wegwerp-pki@localhost -c commit.gpgsign=false \
+    -c core.hooksPath=/dev/null "$@"
+}
 g init -q
 g add -A && g commit -qm "tooling"
 ./pki/init-ca.sh

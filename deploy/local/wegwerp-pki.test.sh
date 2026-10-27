@@ -23,8 +23,16 @@ faalt() { ! "$@"; }
 pki_staat() { (cd "$REPO_ROOT" && find pki -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum); }
 voor=$(pki_staat)
 
+# Een ontwikkelaar kan globaal commit-signing of hooks aan hebben; de wegwerp-repo mag daar niet op
+# stuklopen of om een wachtwoord vragen.
+mkdir -p "$TMP_ROOT/hooks"
+printf '#!/bin/sh\nexit 1\n' > "$TMP_ROOT/hooks/pre-commit"; chmod +x "$TMP_ROOT/hooks/pre-commit"
+printf '[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = false\n[core]\n\thooksPath = %s\n' \
+  "$TMP_ROOT/hooks" > "$TMP_ROOT/gitconfig"
+
 W="$TMP_ROOT/wegwerp"
-check "bouwt een PKI in een lege map buiten de checkout" "$SCRIPT" "$W"
+check "bouwt een PKI in een lege map buiten de checkout, ook met signing en hooks in de git-config" \
+  env GIT_CONFIG_GLOBAL="$TMP_ROOT/gitconfig" "$SCRIPT" "$W"
 check "verify.sh van de wegwerp-PKI is groen" "$W/pki/verify.sh"
 for k in out/directory/directory/key.pem internal/directory/directory/key.pem \
          out/example-provider/manager/key.pem internal/example-provider/inway/key.pem \
@@ -40,6 +48,8 @@ check "weigert een niet-lege doelmap" faalt "$SCRIPT" "$W"
 binnen="$REPO_ROOT/deploy/local/.wegwerp-test-$$"
 check "weigert een doelmap binnen de checkout" faalt "$SCRIPT" "$binnen"
 check "laat binnen de checkout niets achter" test ! -e "$binnen"
+check "weigert een geneste doelmap binnen de checkout" faalt "$SCRIPT" "$binnen/dieper"
+check "laat bij een geneste doelmap niets achter" test ! -e "$binnen"
 
 echo "${cases} cases, ${fails} gefaald"
 [ "$fails" -eq 0 ]

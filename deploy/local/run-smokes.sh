@@ -39,8 +39,10 @@ done
 teardown() {
   if [ "$KEEP" -eq 1 ]; then
     echo ">> --keep: stack blijft draaien."
-    [ -n "$WEGWERP_DIR" ] && echo ">> de stack leest de wegwerp-PKI in ${WEGWERP_DIR}; ruim die na 'down' zelf op."
-    return
+    if [ -n "$WEGWERP_DIR" ]; then
+      echo ">> de stack leest de wegwerp-PKI in ${WEGWERP_DIR}; ruim die na 'down' zelf op."
+    fi
+    return 0
   fi
   echo ">> opruimen (down -v --remove-orphans)..."; "${COMPOSE[@]}" down -v --remove-orphans || true
   [ -z "$WEGWERP_DIR" ] || rm -rf "$WEGWERP_DIR"
@@ -107,6 +109,9 @@ if [ "$WEGWERP" -eq 1 ]; then
   "${HERE}/wegwerp-pki.sh" "$WEGWERP_DIR" || fail "deploy/local/wegwerp-pki.sh faalde."
   # Gaat vóór PKI_DIR uit .env, ook voor de compose-aanroepen in de smokes.
   export PKI_DIR="${WEGWERP_DIR}/pki"
+  # De contract-bootstrap rekent de grant-thumbprint op de host uit, standaard uit pki/ van de
+  # checkout; die moet bij het outway-cert in de stack passen.
+  export OUTWAY_CERT_HOST="${PKI_DIR}/out/example-consumer/outway/cert.pem"
   # Containers van een eerdere run kennen een andere CA.
   RECREATE="--force-recreate"
 else
