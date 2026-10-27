@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Smoke: bewijst dat het contract-bootstrap-mechanisme een geldig, wederzijds
-# ondertekend serviceConnection-contract oplevert tussen example-consumer en example-provider.
-# Draait eerst de bootstrap (idempotent) en verifieert daarna ONAFHANKELIJK vanaf de
-# consumer-manager (met jq) dat EXACT dat contract (op zijn globaal-unieke content_hash) de
-# PROVIDER-accept draagt — d.w.z. dat de accept mesh-breed naar de consumer-kant is gesynct.
-# Zonder jq valt het terug op een aanwezigheidscheck + caveat (de accept is dan al bewezen door
-# de bootstrap-PUT-2xx).
+# ondertekend serviceConnection-contract oplevert tussen example-consumer en example-provider,
+# en dat het idempotent is zonder lokaal state-bestand.
 #
-# Waarom scoped op content_hash: op beide managers staat óók het auto-geaccepteerde
-# servicePublication-contract voor dezelfde example-service; een losse grep op servicenaam/OIN/
-# "accept" zou daardoor altijd matchen (false green). De content_hash is uniek voor óns contract.
+# Draait de bootstrap drie keer en controleert na elke run met een eigen GET op de consumer-manager
+# (los van de exit-code van de bootstrap) dat er voor deze combinatie precies één geldig of lopend
+# contract staat, dat het 'valid' is met PROVIDER-accept, en dat het over de runs heen hetzelfde
+# contract blijft. Een run die er een contract bij maakt, faalt hier dus. De matcher zelf toetst
+# contracts/contracten.test.sh.
 #
 # Volgorde: `docker compose up` -> publish-service.sh (provider) -> smoke-discover.sh
 #           -> smoke-contract.sh. De dienst moet bestaan om op te contracteren.
@@ -20,67 +18,69 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 COMPOSE=(docker compose -f "${HERE}/docker-compose.yaml")
 
+# shellcheck source-path=SCRIPTDIR source=../../contracts/contracten.sh
+. "${REPO_ROOT}/contracts/contracten.sh"
+
 SERVICE_NAME="${SERVICE_NAME:-example-service}"
 CONSUMER_OIN="${CONSUMER_OIN:-00000000000000000020}"
 PROVIDER_OIN="${PROVIDER_OIN:-00000000000000000030}"
-STATE_FILE="${STATE_FILE:-${REPO_ROOT}/contracts/.bootstrap-state/${CONSUMER_OIN}-${PROVIDER_OIN}-${SERVICE_NAME}.hash}"
+GROUP_ID="${GROUP_ID:-moza-fbs-test}"
+OUTWAY_CERT_HOST="${OUTWAY_CERT_HOST:-${REPO_ROOT}/pki/out/example-consumer/outway/cert.pem}"
+RUNS="${RUNS:-3}"
+# Nul of een tikfout zou nul rondes en toch GROEN opleveren.
+case "$RUNS" in ""|*[!0-9]*|0*) echo "FAIL: RUNS moet een positief geheel getal zijn, niet '$RUNS'." >&2; exit 1 ;; esac
 
-# Verifieer vanaf de CONSUMER-manager (bootstrap verifieert vanaf de provider-manager) zodat
-# beide kanten van de mesh het geaccepteerde contract zien.
-CONS_MANAGER="https://manager.example-consumer.fsc-test.local:9443"
-CERT=/pki/internal/example-consumer/manager/cert.pem
-KEY=/pki/internal/example-consumer/manager/key.pem
-CA=/pki/internal/example-consumer/ca/root.pem
+# Verifieer vanaf de CONSUMER-manager: daar resolvet de outway de grant, dus daar moet het contract
+# wederzijds getekend en 'valid' zijn.
+# Zelfde env-namen als contracts/bootstrap.sh, zodat de smoke dezelfde peers controleert.
+CONS_MANAGER="${CONSUMER_MANAGER:-https://manager.example-consumer.fsc-test.local:9443}"
+CERT="${CONSUMER_CERT:-/pki/internal/example-consumer/manager/cert.pem}"
+KEY="${CONSUMER_KEY:-/pki/internal/example-consumer/manager/key.pem}"
+CA="${CONSUMER_CA:-/pki/internal/example-consumer/ca/root.pem}"
+LOG_SERVICES="${LOG_SERVICES:-manager-example-consumer manager-example-provider}"
 
 ERRLOG=$(mktemp)
 trap 'rm -f "$ERRLOG"' EXIT
 
-echo "smoke-contract: bootstrap draaien (idempotent)..."
-bash "${REPO_ROOT}/contracts/bootstrap.sh"
+command -v jq >/dev/null 2>&1 || { echo "FAIL: jq niet gevonden op de host (zie deploy/local/README.md)." >&2; exit 1; }
+THUMB=$(outway_thumbprint "$OUTWAY_CERT_HOST") \
+  || { echo "FAIL: kon outway-thumbprint niet berekenen uit $OUTWAY_CERT_HOST." >&2; exit 1; }
 
-# De bootstrap schrijft de content_hash van het geaccepteerde contract naar de state-file.
-[ -f "$STATE_FILE" ] || { echo "FAIL: geen state-file ($STATE_FILE) — bootstrap heeft geen contract vastgelegd." >&2; exit 1; }
-HASH=$(cat "$STATE_FILE")
-[ -n "$HASH" ] || { echo "FAIL: lege content_hash in $STATE_FILE." >&2; exit 1; }
-echo "smoke-contract: verifiëren dat de PROVIDER-accept van contract $HASH ook op de consumer-manager staat..."
+cons() { "${COMPOSE[@]}" exec -T toolbox curl -sS --fail-with-body --connect-timeout 10 --max-time 30 \
+           --cert "$CERT" --key "$KEY" --cacert "$CA" "$@" </dev/null 2>"$ERRLOG"; }
 
-OUT=$("${COMPOSE[@]}" exec -T toolbox curl -s --fail-with-body \
-        --cert "$CERT" --key "$KEY" --cacert "$CA" \
-        "$CONS_MANAGER/v1/contracts" 2>"$ERRLOG") || {
-  echo "FAIL: GET /v1/contracts (consumer) faalde: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
+debug_en_faal() {
+  echo "Debug: contracten voor deze combinatie (consumer) + manager-logs:" >&2
+  printf '%s\n' "${REGELS:-<geen>}" | sed 's/^/  /' >&2
+  # shellcheck disable=SC2086  # LOG_SERVICES is een spaties-gescheiden lijst servicenamen.
+  "${COMPOSE[@]}" logs --tail=50 $LOG_SERVICES >&2 </dev/null || true
+  exit 1
+}
 
-# De consumer heeft dit contract zélf opgesteld, dus de content_hash staat bij hem in de lijst
-# vanaf creatie — aanwezigheid bewijst dus GÉÉN provider-accept. We checken (jq, shape-tolerant)
-# dat óns contract de accept-handtekening van de PROVIDER draagt = de accept is mesh-breed gesynct.
-# Zonder jq valt-ie terug op aanwezigheid (de bootstrap-PUT-2xx bewees de accept al) + caveat.
-if command -v jq >/dev/null 2>&1; then
-  # Faalt bewust naar "unknown" (niet "no") bij een afwijkende JSON-vorm, zodat een al-geaccepteerd
-  # contract nooit ten onrechte rood gaat (identiek aan accept_state() in contracts/bootstrap.sh).
-  SIGNED=$(printf '%s' "$OUT" | jq -r --arg h "$HASH" --arg oin "$PROVIDER_OIN" '
-    [.. | objects | select((.content_hash? // .content?.content_hash?) == $h)] as $c
-    | if ($c | length) == 0 then "unknown"
-      elif ([ $c[] | .signatures?.accept? | objects ] | length) == 0 then "unknown"
-      elif ($c | any((.signatures?.accept? // {}) | has($oin))) then "yes"
-      else "no" end' 2>/dev/null || echo unknown)
-else
-  SIGNED=unknown
-fi
+EERSTE=""
+for run in $(seq 1 "$RUNS"); do
+  echo "smoke-contract: bootstrap-run ${run}/${RUNS}..."
+  bash "${REPO_ROOT}/contracts/bootstrap.sh"
 
-case "$SIGNED" in
-  yes)
-    echo "OK: consumer-manager ziet de provider-accept van serviceConnection-contract $HASH."
-    echo "SMOKE-CONTRACT GROEN."; exit 0 ;;
-  unknown)
-    if printf '%s' "$OUT" | grep -qF "$HASH"; then
-      echo "OK: contract $HASH aanwezig op de consumer-manager (accept al bewezen door bootstrap-PUT-2xx; jq afwezig → geen staat-check)."
-      echo "SMOKE-CONTRACT GROEN."; exit 0
-    fi
-    echo "FAIL: contract $HASH niet zichtbaar op de consumer-manager (mesh-sync na accept?)." >&2 ;;
-  no)
-    echo "FAIL: contract $HASH draagt géén provider-accept op de consumer-manager (accept niet gesynct?)." >&2 ;;
-esac
+  JSON=$(contracten_paginas cons "$CONS_MANAGER/v1/contracts?limit=1000&grant_type=GRANT_TYPE_SERVICE_CONNECTION") || {
+    echo "FAIL: GET /v1/contracts (consumer) faalde: $(tail -n1 "$ERRLOG" 2>/dev/null)" >&2; exit 1; }
+  REGELS=$(contract_voor_combinatie "$JSON" "$SERVICE_NAME" "$PROVIDER_OIN" "$CONSUMER_OIN" "$THUMB" "$GROUP_ID") || {
+    echo "FAIL: contractenlijst (consumer) niet te lezen." >&2; exit 1; }
 
-echo "Debug: contracten (consumer) + manager-logs:" >&2
-printf '%s\n' "$OUT" >&2
-"${COMPOSE[@]}" logs --tail=50 manager-example-consumer manager-example-provider >&2 || true
-exit 1
+  # Afgewezen of door de ander ingetrokken contracten blijven in de lijst staan (dat is
+  # geschiedenis, geen duplicaat); tellen doen de geldige en lopende.
+  AANTAL=$({ geldige_contracten "$REGELS"; lopende_contracten "$REGELS"; } | grep -c . || true)
+  [ "$AANTAL" -eq 1 ] || { echo "FAIL: na run ${run} ${AANTAL} geldige/lopende contracten voor deze combinatie, verwacht precies 1." >&2; debug_en_faal; }
+
+  HASH=$(geldige_contracten "$REGELS")
+  [ -n "$HASH" ] || { echo "FAIL: na run ${run} is het contract niet 'valid' met provider-accept op de consumer-manager." >&2; debug_en_faal; }
+
+  if [ -z "$EERSTE" ]; then
+    EERSTE="$HASH"
+  elif [ "$HASH" != "$EERSTE" ]; then
+    echo "FAIL: run ${run} leverde contract $HASH op, run 1 contract $EERSTE (niet idempotent)." >&2; debug_en_faal
+  fi
+  echo "OK: run ${run}: precies één geldig contract $HASH, met provider-accept op de consumer-manager."
+done
+
+echo "SMOKE-CONTRACT GROEN."

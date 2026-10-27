@@ -16,12 +16,14 @@ Idempotent mechanisme dat na deploy een geldig, **wederzijds ondertekend**
 3. **Accepteren** — de provider tekent (`PUT /v1/contracts/{content_hash}/accept` op de
    provider-manager). Dit is **expliciet**: `AUTO_SIGN_GRANTS` dekt alleen (delegated)service­publication,
    niet serviceConnection.
-4. **Verifiëren** — het contract draagt nu accept-signatures van **beide** peers.
+4. **Verifiëren** — wacht tot de **consumer**-manager het contract als `valid` ziet (beide
+   accept-signatures in díe database). Strandt de push van de provider-handtekening, dan forceert
+   de bootstrap een her-distributie.
 
 > **Best-effort token** — `bootstrap.sh` probeert daarna een `POST /token`
 > (client_credentials, `scope=<hash>`) als bonus-signaal, maar faalt daar niet op: de outway haalt
 > tokens **native** op tijdens egress en de **harde token-afdwinging + transactie-logging** worden in
-> **#728** bewezen. #727 levert de precondtie: een geldig contract.
+> **#728** bewezen. #727 levert de preconditie: een geldig contract.
 
 ## Draaien
 
@@ -32,11 +34,46 @@ Idempotent mechanisme dat na deploy een geldig, **wederzijds ondertekend**
 ./deploy/local/smoke-contract.sh         # bewijst: wederzijds ondertekend contract  (SMOKE-CONTRACT GROEN)
 ```
 
-**Idempotent**: `bootstrap.sh` legt de `content_hash` van het geaccepteerde contract vast in
-`contracts/.bootstrap-state/` (gitignored). Een 2e run no-opt als díe exacte hash nog op de
-provider staat. Het succes rust op de twee 2xx-responsen (POST = consumer-sig, `PUT …/accept` =
-provider-sig) en checks greppen alléén op de unieke `content_hash` — nooit op servicenaam/`"accept"`,
-want het auto-geaccepteerde publicatie-contract voor dezelfde dienst zou dat altijd laten matchen.
+**Idempotent zonder state-bestand**: `bootstrap.sh` leidt het bestaan van een contract af uit de
+contractenlijst van de **consumer**-manager, niet uit een lokaal bestand — een deploy start met een
+lege schijf, dus een onthouden hash zou daar elke run weg zijn. De matcher staat in
+[`contracten.sh`](contracten.sh) en wordt ook door `smoke-contract.sh` gebruikt:
+
+- **Identiteit = service + provider + consumer-outway + thumbprint**, in een contract met precies
+  één `GRANT_TYPE_SERVICE_CONNECTION`-grant voor een gewone dienst, zonder grant-properties, in de
+  eigen group (`GROUP_ID`) en met SHA3-512. Verlopen en zelf ingetrokken
+  contracten tellen niet mee. Alleen op servicenaam matchen volstaat niet: het
+  servicePublication-contract voor dezelfde dienst staat op dezelfde managers.
+- **Toestand uit `state`**, niet uit `has_rejected`/`has_revoked`: die zeggen alleen of de manager
+  zélf getekend heeft, dus een afwijzing of intrekking door de andere peer zie je daar niet aan.
+  'Geldig' eist bovendien beide accept-handtekeningen.
+- **Geldig** (op de consumer) → no-op. Liggen er meerdere, dan blijft het oudste staan
+  (`created_at`; het meest waarschijnlijk al via zijn grant-hash in gebruik) en worden de overige
+  geldige én lopende ingetrokken. Twee gelijktijdige runs kunnen elk indienen; zonder gedeeld lock
+  is dat niet te voorkomen, wel bij de volgende run te herstellen.
+- **Ingediend maar nog niet geldig** → de bootstrap maakt dát contract af in plaats van een tweede
+  in te dienen: de consumer-accept als de provider het voorstelde, her-distributie naar de provider
+  als het daar nooit aankwam, de accept, of alleen de her-distributie terug als de provider al
+  tekende. Is het op de provider inmiddels afgewezen of ingetrokken, dan stopt de bootstrap
+  (met `OPNIEUW_INDIENEN=1`: dat contract intrekken en een nieuw indienen).
+- **Klaar** = 'valid' op beide managers: de consumer resolvet er de grant, de provider beoordeelt er
+  de token-aanvraag. Strandde een handtekening onderweg, dan her-distribueert de bootstrap.
+- **Afgewezen, of door de andere peer ingetrokken** → de bootstrap stopt: dat is een besluit van
+  een van beide peers, en een nieuw contract zou de bootstrap zelf als provider tekenen. Na het
+  oplossen van de oorzaak dient `OPNIEUW_INDIENEN=1` een nieuw contract in.
+- **Onbekende of ontbrekende `state`** → de bootstrap stopt in plaats van te gokken.
+
+Intrekken, accepteren en indienen slaat OpenFSC lokaal op; de push naar de andere peer loopt
+asynchroon met eigen backoff. Een HTTP-fout is dus een lokale fout, en dan is er niets veranderd.
+
+Het bestaan lezen we op de consumer, omdat de outway daar de grant resolvet; op de provider kan
+een contract al geldig zijn terwijl de provider-handtekening nooit bij de consumer aankwam. Klaar is
+het pas als ook de provider het 'valid' ziet, omdat die de token-aanvraag beoordeelt.
+
+`jq` is vereist: zonder het uitlezen van de contract-JSON is idempotentie niet vast te stellen.
+Zonder draaiende managers (ook in CI): `./contracts/contracten.test.sh` toetst de matcher,
+`./contracts/bootstrap.test.sh` de beslislogica hierboven tegen nagespeelde managers — waaronder
+"drie runs op een lege omgeving leveren één contract op".
 
 ## Let op bij een OpenFSC-versiesprong (v1.x → v2.x)
 
@@ -46,17 +83,18 @@ converteerbaar**; upstream schrijft voor om bestaande contracten uit de database
 vóór de upgrade. Ook de grant-vorm veranderde: de outway wordt geïdentificeerd via
 `outway.identification` (union op `type`), niet meer via een platte `outway.public_key_thumbprint`.
 
-Gevolg voor deze bootstrap: de state-file uit `contracts/.bootstrap-state/` houdt een oude hash
-vast die op een v2-manager nooit meer opduikt. Laat je 'm staan, dan valt de idempotentie-check
-terug op een contract dat de nieuwe manager niet meer als geldig ziet. Bij een versiesprong dus:
+Bij een versiesprong dus de contract-DB's wissen:
 
 ```bash
 docker compose -f deploy/local/docker-compose.yaml down -v   # wist ook de contract-DB's
-rm -rf contracts/.bootstrap-state
 ```
 
 Daarna de normale volgorde uit **Draaien** hierboven.
 
 **Generiek**: alle peers/paden zijn via env te overrulen (`CONSUMER_OIN`, `PROVIDER_OIN`,
-`SERVICE_NAME`, `*_MANAGER`, `*_CERT/KEY/CA`, `OUTWAY_CERT_HOST`). Defaults = de example-peers. De
-FBS-toepassing (magazijn ↔ uitvraag) is een [FBS]-zusterissue in repo B.
+`SERVICE_NAME`, `*_MANAGER`, `*_CERT/KEY/CA`, `OUTWAY_CERT_HOST`; voor diagnose en de token-probe
+`LOG_SERVICES`, `OUTWAY_CERT/KEY`, `GROUP_CA`, `PROVIDER_TOKEN_URL`). Defaults = de example-peers.
+`smoke-contract.sh` leest dezelfde namen. De FBS-toepassing (magazijn ↔ uitvraag) kan
+[`contracten.sh`](contracten.sh) sourcen voor de matcher; de regels hebben de vorm
+`<hash> <state> <provider-getekend> <consumer-getekend> <grant-hash>`, en `grant_hash_van` levert de
+waarde voor `Fsc-Grant-Hash`.
