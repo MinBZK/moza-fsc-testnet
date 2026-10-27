@@ -5,7 +5,7 @@ example-consumer-peer (afnemer) + SNI-router op :443. Bewijst dat peers zich aan
 (announce) bij de directory en dat de consumer de gepubliceerde dienst vindt (discovery).
 Bouwt voort op `docs/spikes/manager-443-sni/`.
 
-> **Geen wachten op #722.** De test-PKI-tooling (#722) zit al in deze branch
+> **Geen wachten op #722.** De test-PKI-tooling (#722) staat op `main`
 > (`pki/`). De certs staan in git; de sleutels haal je op met `./pki/geheimen.sh ophalen` (stap 2).
 > De enige externe afhankelijkheid voor de harness is een **Docker-host** — dus je
 > eigen laptop volstaat. (De ZAD `attachments`-cert-mount is een aparte
@@ -17,7 +17,7 @@ Bouwt voort op `docs/spikes/manager-443-sni/`.
 - **sops + age** en toegang tot de geheime repo voor de sleutels — zie `docs/sleutelbeheer.md`
   ("Eenmalig: toegang krijgen"). cfssl alleen als je zelf certs uitgeeft (`pki/README.md`).
 - **Geen toegang tot de geheime repo?** Draai `./deploy/local/run-smokes.sh --wegwerp-ca`. Dat bouwt
-  een eigen test-CA met certs in een tijdelijke map buiten de checkout (`wegwerp-pki.sh`) en wijst
+  een eigen test-CA met certs in een tijdelijke map onder `~/.cache` (`wegwerp-pki.sh`) en wijst
   `PKI_DIR` daarheen; dan heb je **cfssl** nodig in plaats van sops + age. `pki/` blijft
   onaangeroerd.
 - **jq** — vereist voor `contracts/bootstrap.sh` (leidt het bestaan van een contract af uit de

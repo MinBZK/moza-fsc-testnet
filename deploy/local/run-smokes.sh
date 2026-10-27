@@ -48,6 +48,8 @@ teardown() {
   [ -z "$WEGWERP_DIR" ] || rm -rf "$WEGWERP_DIR"
 }
 fail() { echo "XX run-smokes FAALT: $1" >&2; teardown; exit 1; }
+# Ook bij Ctrl-C opruimen, zoals bij elke andere fout.
+trap 'fail "afgebroken"' INT TERM
 
 cd "$REPO_ROOT"
 
@@ -104,7 +106,11 @@ echte_pki() {
 }
 RECREATE=""
 if [ "$WEGWERP" -eq 1 ]; then
-  WEGWERP_DIR=$(mktemp -d)
+  # Onder $HOME en niet in /tmp: niet elke docker-host deelt /tmp met de containers (snap-docker,
+  # Colima).
+  wegwerp_basis="${XDG_CACHE_HOME:-$HOME/.cache}/moza-fsc-testnet"
+  mkdir -p "$wegwerp_basis"
+  WEGWERP_DIR=$(mktemp -d "${wegwerp_basis}/wegwerp-pki.XXXXXX")
   echo ">> wegwerp-PKI bouwen in ${WEGWERP_DIR}..."
   "${HERE}/wegwerp-pki.sh" "$WEGWERP_DIR" || fail "deploy/local/wegwerp-pki.sh faalde."
   # Gaat vóór PKI_DIR uit .env, ook voor de compose-aanroepen in de smokes.
