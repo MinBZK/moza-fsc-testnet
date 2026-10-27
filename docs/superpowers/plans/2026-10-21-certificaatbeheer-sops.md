@@ -144,13 +144,14 @@ openen. (Beslispunt, zie onder.)
 
 ### Fase 2 — eerste vulling (vanaf de werkplek met het materiaal)
 
-- [ ] Nieuwe CRL uitgeven met `gen-crl.sh`: de huidige verliep op 8 juli 2026 en de lint-guard laat
-      een verlopen CRL niet in git. Daarna ook als bijlage in ZAD plaatsen.
-- [ ] Openbare helft en `pki/.sops.yaml` committen in PR 1. Eerst, want `opslaan` eist een groene
+- [x] Nieuwe CRL uitgeven met `gen-crl.sh`: de huidige verliep op 8 juli 2026 en de lint-guard laat
+      een verlopen CRL niet in git.
+- [ ] De nieuwe CRL na de merge als bijlage in ZAD plaatsen.
+- [x] Openbare helft en `pki/.sops.yaml` committen in PR 1. Eerst, want `opslaan` eist een groene
       `verify.sh`, en die eist het anker in HEAD. PR 1 merget pas mét de openbare helft: zonder anker
       in git is `verify.sh` rood en valt de lokale harness om.
-- [ ] `geheimen.sh opslaan groep directory example-consumer example-provider example-provider-2`, en
-      `opslaan root`, daarna de geheime repo pushen.
+- [x] `geheimen.sh opslaan groep directory example-consumer example-provider`, en `opslaan root`,
+      daarna de geheime repo pushen. `example-provider-2` is niet in gebruik en vervalt.
 - [ ] Een tweede ontwikkelaar haalt op een schone checkout op, draait `verify.sh` en geeft voor één
       endpoint opnieuw uit zonder de koppeling te breken. Dat is criterium 1, en de acceptatietest.
 - [ ] `root-key.pem` van de werkplekken verwijderen, ook uit de kopieën in de berichtenbox.
