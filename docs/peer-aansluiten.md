@@ -40,13 +40,13 @@ directory-project `mft-tp9` is daarvoor niet nodig.
 
 Vervang overal:
 
-| Placeholder | Voorbeeld | Betekenis |
-|-------------|-----------|-----------|
-| `mijnpeer` | `mijnpeer` | peer-naam: paden, componentnamen (kleine letters) |
-| `abcd-123` | `abcd-123` | je ZAD-project-id |
-| `fsc-mijnpeer` | `fsc-mijnpeer` | de deployment waarin de peer draait |
-| `<OIN>` | `00000000000000000040` | Peer ID, zie stap 2 |
-| `<tag>` | — | OpenFSC-versie = `openfsc_min_version` in [`group/group-config.yaml`](../group/group-config.yaml) |
+| In dit runbook | Vervang door |
+|----------------|--------------|
+| `mijnpeer` | je peer-naam: paden, componentnamen (kleine letters) |
+| `abcd-123` | je ZAD-project-id |
+| `fsc-mijnpeer` | de deployment waarin de peer draait |
+| `<OIN>` | je Peer ID, bijvoorbeeld `00000000000000000040`; zie stap 2 |
+| `<tag>` | de OpenFSC-versie: `openfsc_min_version` in [`group/group-config.yaml`](../group/group-config.yaml) |
 
 Hostnamen volgen daaruit (ZAD `domain_format = component-deployment-project`):
 
@@ -75,13 +75,14 @@ heb je daarvoor niet nodig, en `pki/` van je checkout blijft onaangeroerd.
 **Team levert:**
 
 - **OIN** — wordt je Peer ID (`subject.serialNumber` in elk cert). Gebruik de echte OIN van je
-  organisatie, of een synthetische test-OIN volgens de conventie in
-  [`pki/README.md`](../pki/README.md). Een OIN mag in de group maar één keer voorkomen.
+  organisatie, of vraag de beheerder om een synthetische test-OIN (conventie en de OIN's in gebruik:
+  [`pki/README.md`](../pki/README.md)). Een OIN mag in de group maar één keer voorkomen.
 - **Organisatienaam** — `subject.organization`; zo verschijnt je peer in de directory.
 - **ZAD-project-id + deploymentnaam** — die bepalen je hostnamen en dus de SAN's in je certs.
 
-**Beheerder controleert** de OIN tegen de aangemelde peers in de
-[directory-ui](https://dirui-test-mft-tp9.rig.prd1.gn2.quattro.rijksapps.nl) en **levert**:
+**Beheerder controleert** de OIN tegen de certs in git, hier en in moza-poc-fbs-berichtenbox, en tegen
+de aangemelde peers in de [directory-ui](https://dirui-test-mft-tp9.rig.prd1.gn2.quattro.rijksapps.nl):
+een peer die nog niet is aangemeld, staat daar niet. Daarna **levert** de beheerder:
 
 | Wat | Waarde |
 |-----|--------|
@@ -115,8 +116,8 @@ Elke peer heeft twee ketens (achtergrond: [`pki/README.md`](../pki/README.md)):
 
 ### 3a. CSR-templates (team)
 
-Werk in `pki/` van een checkout van deze repo. Maak per endpoint
-`peers/mijnpeer/<endpoint>/csr.json`. De `hosts` zijn de SAN's: de interne Service-namen (daarop
+Werk in een checkout van deze repo; de commando's hieronder beginnen in de repo-root. Maak per
+endpoint `pki/peers/mijnpeer/<endpoint>/csr.json`. De `hosts` zijn de SAN's: de interne Service-namen (daarop
 verbinden de componenten onderling, met hostnaamverificatie) en voor `manager`/`inway`/`outway` ook
 de externe hostnaam. Voorbeeld `manager`:
 
@@ -133,6 +134,9 @@ de externe hostnaam. Voorbeeld `manager`:
   "names": [{ "O": "<Organisatienaam>", "C": "NL" }]
 }
 ```
+
+Voor de andere endpoints dezelfde vorm, met de componentnaam uit stap 4b (`mijnpeer-fscctl`,
+`mijnpeer-fscinway`, `mijnpeer-fscoutway`, `mijnpeer-fsctxlog`) in plaats van `mijnpeer-fscmgr`.
 
 Deze templates blijven in je eigen checkout. Stonden ze in `main`, dan zou `issue.sh` er bij de
 beheerder zelf certs voor uitgeven.
@@ -176,13 +180,16 @@ internal-keten: `internal/mijnpeer/ca/root.pem` en `internal/mijnpeer/<endpoint>
 ### 3c. CSR's tekenen (beheerder)
 
 Zet de ontvangen CSR's als `<endpoint>.csr` in `pki/`, en de internal-bestanden op hun pad onder
-`pki/internal/mijnpeer/`. Controleer eerst wat je tekent — `cfssl sign` neemt OIN, organisatie en
-SAN's over uit de CSR:
+`pki/internal/mijnpeer/`. Controleer eerst wat je tekent: `cfssl sign` neemt OIN, organisatie en SAN's
+over uit de CSR. Bij twee `serialNumber`s neemt het alleen de laatste; met een tweede OIN, bijvoorbeeld
+die van de directory, zou het team zich als een andere peer voordoen. De tekenlus hieronder tekent
+daarom alleen een CSR met precies één `serialNumber`, gelijk aan de afgesproken OIN.
 
 ```bash
 cd pki
+OIN=<afgesproken OIN>
 for e in manager inway; do   # afnemer: manager outway
-  openssl req -in "$e.csr" -noout -verify -subject    # serialNumber = afgesproken OIN? O klopt?
+  openssl req -in "$e.csr" -noout -verify -subject    # O klopt?
   openssl req -in "$e.csr" -noout -text | grep -A1 'Subject Alternative Name'
 done
 ```
@@ -194,6 +201,9 @@ Tekenen doe je met de intermediate-sleutel uit de geheime repo; haal die alleen 
 ./geheimen.sh ophalen groep
 PEER=mijnpeer
 for e in manager inway; do   # afnemer: manager outway
+  sn=$(openssl req -in "$e.csr" -noout -subject -nameopt sep_multiline | grep -c 'serialNumber=')
+  openssl req -in "$e.csr" -noout -subject -nameopt sep_multiline | grep -q "serialNumber=$OIN\$" \
+    && [ "$sn" = 1 ] || { echo "NIET GETEKEND: $e.csr heeft niet precies één serialNumber=$OIN" >&2; break; }
   cfssl sign -config config.json -profile peer \
     -ca ca/intermediate.pem -ca-key ca/intermediate-key.pem "$e.csr" | cfssljson -bare "$e"
   [ -s "$e.pem" ] || { echo "FOUT: $e niet getekend; $e.csr blijft staan" >&2; break; }
@@ -424,7 +434,7 @@ Voeg per component elk bestand uit `pki/zad-upload/mijnpeer/` als **bestand** to
 
 | Component | Bijlagen |
 |-----------|----------|
-| manager, inway, outway | `ca/root.pem`, `out/mijnpeer/<endpoint>/{cert,key}.pem`, `internal/mijnpeer/ca/root.pem`, `internal/mijnpeer/<endpoint>/{cert,key}.pem` |
+| manager, inway, outway | `ca/root.pem`, `ca/intermediate.crl`, `out/mijnpeer/<endpoint>/{cert,key}.pem`, `internal/mijnpeer/ca/root.pem`, `internal/mijnpeer/<endpoint>/{cert,key}.pem` |
 | controller, txlog | `internal/mijnpeer/ca/root.pem`, `internal/mijnpeer/<endpoint>/{cert,key}.pem` |
 
 Twee valkuilen, allebei zichtbaar als `certificate signed by unknown authority` of een ketenfout bij
@@ -432,6 +442,9 @@ het opstarten:
 
 - `out/.../cert.pem` moet **twee** PEM-blokken bevatten (leaf + intermediate).
 - Het group-cert hoort onder `out/`, het internal-cert onder `internal/`. Niet verwisselen.
+
+Ruim daarna `pki/zad-upload/mijnpeer/` op (`rm -rf pki/zad-upload/mijnpeer`): daar staan je
+privésleutels onversleuteld.
 
 ## 5. Aanmelden controleren
 
@@ -458,7 +471,8 @@ Daarna staat de dienst in de directory-ui.
 > URL diensten aanmelden en contracten tekenen namens jouw peer. Veilige toegang op ZAD (OIDC) is nog
 > niet uitgewerkt. Tot die tijd: doe de calls vanuit een pod in je eigen deployment, zoals
 > `deploy/local/publish-service.sh` ze doet (Administration-API `:9444`, manager `:9443`, met het
-> internal-cert). Publiceer je de UI tóch tijdelijk, haal de publicatie dan direct na gebruik weg.
+> internal-cert). Publiceer je de UI tóch tijdelijk, haal de publicatie dan direct na gebruik weg en
+> controleer in de controller welke diensten en contracten er sindsdien bij zijn gekomen.
 
 ## 7. Toegang verlenen (contract)
 
