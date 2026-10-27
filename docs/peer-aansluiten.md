@@ -24,9 +24,9 @@ afnemer je dienst aan via zijn **outway**.
 
 | Stap | Team (aansluiter) | Beheerder testnet |
 |------|-------------------|-------------------|
-| 1. Lokaal proberen | draait `deploy/local` | — |
+| 1. Lokaal proberen | draait `deploy/local` met een wegwerp-CA | — |
 | 2. Afstemmen | levert OIN, organisatienaam, ZAD-project + deployment | controleert OIN op botsing, levert group-gegevens |
-| 3. Certificaten | maakt sleutels + CSR's, eigen internal-CA | tekent de CSR's met de test-CA |
+| 3. Certificaten | maakt sleutels + CSR's, eigen internal-CA | tekent de CSR's met de test-CA en commit de certs |
 | 4. ZAD inrichten | componenten, env, bijlagen, publicatie | — |
 | 5. Aanmelden | controleert boot-logs | ziet de peer in de directory |
 | 6. Dienst publiceren | in de eigen controller | — (directory tekent automatisch) |
@@ -60,8 +60,11 @@ Draai de lokale harness: directory, een voorbeeld-aanbieder en een voorbeeld-afn
 keten van aanmelden tot aanroep. Eén commando vanuit de repo-root (vereist Docker, `cfssl`, `jq`):
 
 ```bash
-./deploy/local/run-smokes.sh
+./deploy/local/run-smokes.sh --wegwerp-ca
 ```
+
+`--wegwerp-ca` maakt een eigen test-CA met certs in een tijdelijke map. De sleutels van het testnet
+heb je daarvoor niet nodig, en `pki/` van je checkout blijft onaangeroerd.
 
 `deploy/local/publish-service.sh` laat zien welke twee API-calls een dienst publiceren,
 `contracts/bootstrap.sh` hoe een contract tot stand komt. Zie
@@ -86,7 +89,7 @@ keten van aanmelden tot aanroep. Eén commando vanuit de repo-root (vereist Dock
 | `DIRECTORY_PEER_ID` | `00000000000000000010` |
 | `DIRECTORY_MANAGER_ADDRESS` | `https://dirmgr-test-mft-tp9.rig.prd1.gn2.quattro.rijksapps.nl:443` |
 | OpenFSC-versie | `openfsc_min_version` uit `group/group-config.yaml` |
-| group-root, intermediate-cert, CRL | `pki/ca/root.pem`, `pki/ca/intermediate.pem`, `pki/ca/intermediate.crl` (publiek materiaal) |
+| group-root, intermediate-cert, CRL | staan in git: `pki/ca/root.pem`, `pki/ca/intermediate.pem`, `pki/ca/intermediate.crl` |
 
 > **Draai precies die OpenFSC-versie.** Een peer op een andere versie rekent andere contract-hashes
 > en valt zonder foutmelding uit de group (zie `group/group-config.yaml`).
@@ -101,8 +104,10 @@ Elke peer heeft twee ketens (achtergrond: [`pki/README.md`](../pki/README.md)):
   voor elk component: ook `controller` en `txlog`.
 
 > **Privésleutels verlaten je team niet, de CA-sleutel verlaat de beheerder niet.** Je stuurt alleen
-> CSR's; de beheerder stuurt getekende certs terug. Wie de intermediate-sleutel van de test-CA heeft,
-> kan certs uitgeven voor elke OIN en zich zo voordoen als elke peer in de group.
+> CSR's; de beheerder tekent ze en zet de certs in git. Wie de intermediate-sleutel van de test-CA
+> heeft, kan certs uitgeven voor elke OIN en zich zo voordoen als elke peer in de group. Je eigen
+> sleutels kun je bewaren zoals het testnet dat doet: versleuteld met SOPS + age in een private repo
+> ([`sleutelbeheer.md`](sleutelbeheer.md)).
 
 ### 3a. CSR-templates (team)
 
@@ -125,7 +130,8 @@ de externe hostnaam. Voorbeeld `manager`:
 }
 ```
 
-Draai **niet** `issue.sh` of `init-ca.sh`: die gaan uit van de CA-sleutel op je eigen machine.
+Draai **niet** `issue.sh` of `init-ca.sh`: die tekenen met de CA-sleutel van het testnet, en die heb je
+niet.
 
 ### 3b. Sleutels, internal-certs en CSR's (team)
 
@@ -160,30 +166,45 @@ Stuur de beheerder alleen de bestanden `out/mijnpeer/<endpoint>/cert.csr`.
 
 ### 3c. CSR's tekenen (beheerder)
 
-Controleer eerst wat je tekent — `cfssl sign` neemt OIN, organisatie en SAN's over uit de CSR:
+Zet de ontvangen CSR's als `<endpoint>.csr` in `pki/`. Controleer eerst wat je tekent — `cfssl sign`
+neemt OIN, organisatie en SAN's over uit de CSR:
 
 ```bash
 cd pki
-openssl req -in manager.csr -noout -verify -subject      # serialNumber = afgesproken OIN? O klopt?
-openssl req -in manager.csr -noout -text | grep -A1 'Subject Alternative Name'
-
-cfssl sign -config config.json -profile peer \
-  -ca ca/intermediate.pem -ca-key ca/intermediate-key.pem manager.csr | cfssljson -bare manager
-cat manager.pem ca/intermediate.pem > manager-cert.pem  # keten: leaf + intermediate
+for e in manager inway; do
+  openssl req -in "$e.csr" -noout -verify -subject    # serialNumber = afgesproken OIN? O klopt?
+  openssl req -in "$e.csr" -noout -text | grep -A1 'Subject Alternative Name'
+done
 ```
 
-Stuur `<endpoint>-cert.pem` terug, samen met `ca/root.pem`, `ca/intermediate.pem` en
-`ca/intermediate.crl`. Niets hiervan is geheim.
+Tekenen doe je met de intermediate-sleutel uit de geheime repo; haal die alleen daarvoor op
+([`sleutelbeheer.md`](sleutelbeheer.md)):
+
+```bash
+./geheimen.sh ophalen groep
+PEER=mijnpeer
+for e in manager inway; do
+  cfssl sign -config config.json -profile peer \
+    -ca ca/intermediate.pem -ca-key ca/intermediate-key.pem "$e.csr" | cfssljson -bare "$e"
+  mkdir -p "out/$PEER/$e"
+  cat "$e.pem" ca/intermediate.pem > "out/$PEER/$e/cert.pem"   # keten: leaf + intermediate
+  rm "$e.pem" "$e.csr"
+done
+./geheimen.sh wis groep
+./verify.sh
+```
+
+Zet `pki/out/mijnpeer/` via een PR in git. Dan laat git zien wat er bij deze peer live staat, en
+meldt de wekelijkse verloopcontrole ook zijn certs. Niets hiervan is geheim.
 
 ### 3d. Afronden en controleren (team)
 
+Na de merge van die PR staan je group-certs in `main`, naast de sleutels die je zelf maakte:
+
 ```bash
+git pull
 cd pki
 PEER=mijnpeer
-# root.pem, intermediate.pem en intermediate.crl -> ca/
-for e in manager inway; do
-  cp "<ontvangen>/$e-cert.pem" "out/$PEER/$e/cert.pem"
-done
 ./fix-permissions.sh
 ./verify.sh                  # verwacht: == ALLE ASSERTS GROEN ==
 ./zad-bundle.sh "$PEER"      # upload-set + MANIFEST.md in zad-upload/mijnpeer/
@@ -191,6 +212,10 @@ done
 
 `verify.sh` controleert de ketens, de OIN in elk cert, de scheiding tussen group en internal, en dat
 er geen sleutels zichtbaar zijn voor git.
+
+**Vernieuwen.** De verloopcontrole meldt 30 dagen vooraf welke certs verlopen, met een issue in deze
+repo. Voor je group-certs herhaal je het group-deel van 3b, en 3c en 3d: een nieuwe sleutel en CSR,
+de beheerder tekent en commit. Je internal-CA en -certs beheer je zelf.
 
 ## 4. ZAD inrichten
 
@@ -446,7 +471,5 @@ inclusief wat te doen als een accept-handtekening onderweg strandt.
 - **CRL-controle staat uit** (`DISABLE_CRL_CHECKS=true`) zolang de testnet-CRL geen distributiepunt
   heeft.
 - **Controller-authenticatie op ZAD** (OIDC) — zie stap 6.
-- **Rotatie** van CA- en peer-certificaten
-  ([#898](https://github.com/MinBZK/MijnOverheidZakelijk/issues/898)).
 - **Organisaties zonder OIN.** Dit runbook gaat uit van een OIN als Peer ID; een route voor
   organisaties zonder OIN is hier nog niet beschreven.
