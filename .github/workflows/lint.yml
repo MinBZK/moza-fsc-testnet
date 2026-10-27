@@ -41,7 +41,7 @@ jobs:
           strict: true
 
       - name: Actions lint
-        uses: reviewdog/action-actionlint@a8ac3eea598697a830f7d8e701fc9fcbfde88974 # v1.80.0
+        uses: reviewdog/action-actionlint@b76d06f8570118465db3190c9a08f1b29d341aa1 # v1.80.3
         with:
           reporter: local
           filter_mode: nofilter
@@ -58,14 +58,20 @@ jobs:
             echo "shellcheck: $action"
             shellcheck --shell=bash --severity=warning "$script" || rc=1
           done < <(find .github/actions -name action.yml)
-          shellcheck --shell=bash --severity=warning .github/scripts/*.sh || rc=1
+          shellcheck --shell=bash --severity=warning .github/scripts/*.sh contracts/*.sh \
+            deploy/local/smoke-contract.sh || rc=1
           exit "$rc"
 
-      # De OpenFSC-componenten moeten in lockstep draaien, maar de versie staat op negen plekken
-      # (drie wrapper-Dockerfiles, drie workflows, de lokale compose, .env.example én de group-regel
-      # `openfsc_min_version`). Dependabot ziet alleen de Dockerfiles, dus zonder deze stap wordt
-      # een halve bump gewoon groen — en
-      # publiceert de build een image dat de oude versie heet en de nieuwe ís.
+      # Idempotentie van de contract-bootstrap, offline; waarom: zie de kop van beide tests.
+      - name: Contract-matcher testen
+        run: ./contracts/contracten.test.sh
+
+      - name: Contract-bootstrap testen
+        run: ./contracts/bootstrap.test.sh
+
+      # De OpenFSC-componenten moeten in lockstep draaien, maar de versie staat op meer plekken dan
+      # Dependabot ziet (lijst: docs/openfsc-versiebeheer.md). Zonder deze stap wordt een halve bump
+      # gewoon groen.
       # De regressietest draait eerst: een guard die stil groen blijft is erger dan geen guard, want
       # de comments elders beloven dekking en de handmatige controle is daarmee weggeorganiseerd.
       - name: OpenFSC-versie-guard testen
@@ -76,6 +82,11 @@ jobs:
       # uitweg. Zie docs/openfsc-versiebeheer.md.
       - name: OpenFSC-bumpscript testen
         run: ./.github/scripts/bump-openfsc.test.sh
+
+      # De build- en deploy-workflows taggen op wat dit script uit de Dockerfile leest; een stil
+      # verkeerde uitvoer publiceert een image onder de verkeerde versie.
+      - name: OpenFSC-tag-uitlezer testen
+        run: ./.github/scripts/openfsc-tag.test.sh
 
       - name: OpenFSC-versie-consistentie
         run: ./.github/scripts/check-openfsc-version.sh

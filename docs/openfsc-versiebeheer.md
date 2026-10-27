@@ -62,20 +62,24 @@ opgesteld. De group-regel is de afspraak; de smoke is het bewijs achteraf, geen 
 | Plek | Wat |
 |------|-----|
 | `deploy/zad/{manager,controller,txlog}-migrate/Dockerfile` | `FROM …:<tag>@sha256:<digest>` — het base-image van de migrate-wrapper |
-| `.github/workflows/build-manager-migrate.yml` | default van `image_tag` (dispatch + `workflow_call`) en de fallback in de build-stap |
-| `.github/workflows/build-migrate-images.yml` | idem, voor de controller-/txlog-wrappers |
-| `.github/workflows/zad-deploy-directory.yml` | `IMAGE_TAG_DEFAULT` — de stock-tag voor `dirui` en de manager |
 | `deploy/local/docker-compose.yaml` + `.env.example` | `${IMAGE_TAG:-<tag>}` voor de lokale omgeving |
 | `group/group-config.yaml` | `rules.openfsc_min_version` — de versie die peer-teams moeten draaien |
 
 De wrapper-Dockerfiles zijn digest-gepind (Scorecard Pinned-Dependencies). Bij `repo:tag@digest`
-resolvet Docker op de digest en wordt de tag niet gevalideerd — de tag is daar dus documentatie, en
-de output-tag van het gebouwde image komt uit de **workflow-default**. Loopt die uiteen met de
-`FROM`-regel, dan publiceert de build een image dat de oude versie heet en de nieuwe ís.
+resolvet Docker op de digest en wordt de tag niet gevalideerd. De tag in de `FROM`-regel is wél de
+bron voor de workflows: `build-manager-migrate.yml`, `build-migrate-images.yml` en
+`zad-deploy-directory.yml` dragen geen eigen versie, maar lezen 'm met
+`.github/scripts/openfsc-tag.sh` uit de Dockerfile. Een leeg `image_tag`-veld bij een handmatige
+dispatch betekent dus "de versie uit de Dockerfile". Een bump raakt de workflows daardoor niet.
+
+Tag en digest in de `FROM`-regel horen bij elkaar: de tag bepaalt de naam van het gepubliceerde
+image, de digest de inhoud. Zolang ze kloppen en niemand bij een dispatch een afwijkende `image_tag`
+invult, heet een image naar de versie die het is. De guard controleert digests niet.
 
 `.github/scripts/check-openfsc-version.sh` (stap in `lint.yml`, required check) faalt als niet alle
-plekken hierboven dezelfde versie noemen. Docs blijven er bewust buiten: daar staan versies in een
-historische context (spikes, design-notities).
+plekken hierboven dezelfde versie noemen, of als een workflow toch weer een eigen versie draagt.
+Docs blijven er bewust buiten: daar staan versies in een historische context (spikes,
+design-notities).
 
 ## Dependabot
 
@@ -85,8 +89,31 @@ base-images tegelijk verzet, in plaats van drie los mergebare PR's. De busybox-d
 voor het distroless base-image) zit in een eigen groep, zodat een busybox-CVE niet hoeft te wachten
 op een OpenFSC-release.
 
-Wat Dependabot **niet** kan: de workflow-defaults en de compose meebewegen. Die horen bij de
-groep-PR handmatig mee; de guard hierboven bewaakt dat je het niet vergeet.
+Wat Dependabot **niet** kan: de compose, `.env.example` en de group-regel meebewegen. De workflows
+hoeven niet mee: die lezen de versie uit de Dockerfiles die Dependabot al verzet.
+
+De rest doet `.github/workflows/dependabot-openfsc-bump.yml`. Op een `openfsc-images`-PR van
+Dependabot draait die `bump-openfsc.sh` met de tag uit de Dockerfiles en pusht het resultaat als
+extra commit op de PR-branch; daarop draait `lint` opnieuw. Vóór de bump controleert hij dat élk
+OpenFSC-image uit de compose en de wrappers de nieuwe tag op Docker Hub heeft. Dependabot volgt er
+maar drie, en een ontbrekende `directory-ui`-tag valt bij de ZAD-deploy niet op. Wat het bewust
+niet doet:
+
+- **Uiteenlopende wrapper-tags of een ontbrekend image:** dan faalt de run, en blijft de PR rood
+  tot iemand 'm met de hand afmaakt of upstream de images publiceert.
+- **Docs en release notes:** de huidige versie in `README.md` en in de tabel bovenaan dit document,
+  en de controle onder "Bij een versiesprong", blijven reviewwerk. De job-samenvatting herinnert
+  eraan.
+
+De workflow draait alleen op een push van Dependabot zelf. Heeft iemand anders op de branch gepusht
+(ook via "Update branch"), of moet een PR die al open stond vóór deze workflow bestond nog een run
+krijgen, geef dan `@dependabot recreate` als PR-comment. Dependabot bouwt de branch opnieuw op en de
+workflow maakt 'm af. Bestaat er nog geen vreemde commit, dan volstaat `@dependabot rebase`. Na de
+extra commit van de workflow werkt Dependabot de PR zelf niet meer bij; ook dan is `recreate` de weg.
+
+De push gaat met een PAT in plaats van `GITHUB_TOKEN`, omdat een push met dat laatste geen nieuwe
+workflow-runs start. Zonder nieuwe `lint`-run blijft de required check op de nieuwe commit uit en
+zit de PR vast. Waar het token staat en hoe je het roteert: [`sleutelbeheer.md`](sleutelbeheer.md).
 
 ## Bij een versiesprong
 
@@ -137,8 +164,8 @@ je ooit terug op een tussenliggende v2.x, dan gelden ze onverkort.
 
 - **Contract-hash.** De contract-content wordt nu gecanonicaliseerd met JCS (RFC 8785) en bevat een
   `fsc_version`. Hashes van vóór v2 zijn niet converteerbaar; upstream schrijft voor bestaande
-  contracten uit de database te verwijderen vóór de upgrade. Lokaal: `docker compose … down -v` plus
-  `rm -rf contracts/.bootstrap-state`. Zie [`contracts/bootstrap.md`](../contracts/bootstrap.md).
+  contracten uit de database te verwijderen vóór de upgrade. Lokaal: `docker compose … down -v`.
+  Zie [`contracts/bootstrap.md`](../contracts/bootstrap.md).
 - **Outway-identificatie in een grant.** `outway.public_key_thumbprint` is vervangen door een union
   `outway.identification` met `type` als discriminator
   (`OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT` of `…_DOMAIN_NAME`). `contracts/bootstrap.sh`

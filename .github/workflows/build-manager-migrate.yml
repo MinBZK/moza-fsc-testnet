@@ -17,9 +17,9 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Output-tag (het basis-image zelf is digest-gepind in de Dockerfile; bump die er apart bij)"
+        description: "Output-tag; leeg = de OpenFSC-tag uit de FROM-regel van de Dockerfile"
         required: false
-        default: "v2.7.0"
+        default: ""
       image_suffix:
         description: "optioneel: tag-suffix (bv. pr-42); leeg = canonieke tag"
         required: false
@@ -27,10 +27,10 @@ on:
   workflow_call:
     inputs:
       image_tag:
-        description: "Output-tag (het basis-image zelf is digest-gepind in de Dockerfile; bump die er apart bij)"
+        description: "Output-tag; leeg = de OpenFSC-tag uit de FROM-regel van de Dockerfile"
         required: false
         type: string
-        default: "v2.7.0"
+        default: ""
       image_suffix:
         description: "optioneel: tag-suffix (bv. pr-42); leeg = canonieke tag"
         required: false
@@ -62,13 +62,15 @@ jobs:
         env:
           # Lowercase image-pad zonder slash: zad-actions/cleanup weigert `/` in een containernaam.
           IMAGE: ghcr.io/minbzk/moza-fsc-testnet-manager-migrate
-          IMAGE_TAG: ${{ inputs.image_tag || 'v2.7.0' }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
           IMAGE_SUFFIX: ${{ inputs.image_suffix }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
+          # Leeg = de tag van het base-image: die houdt Dependabot bij, een eigen default hier niet.
+          [ -n "$IMAGE_TAG" ] || IMAGE_TAG=$(.github/scripts/openfsc-tag.sh deploy/zad/manager-migrate/Dockerfile)
           if [ -n "$IMAGE_SUFFIX" ]; then
             tag="${IMAGE_TAG}-${IMAGE_SUFFIX}"
           else
