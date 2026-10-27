@@ -41,7 +41,7 @@ jobs:
           strict: true
 
       - name: Actions lint
-        uses: reviewdog/action-actionlint@b76d06f8570118465db3190c9a08f1b29d341aa1 # v1.80.3
+        uses: reviewdog/action-actionlint@48e36f54d8da326b83ab061aee2cc5e01b5ca46f # v1.80.6
         with:
           reporter: local
           filter_mode: nofilter
@@ -58,9 +58,17 @@ jobs:
             echo "shellcheck: $action"
             shellcheck --shell=bash --severity=warning "$script" || rc=1
           done < <(find .github/actions -name action.yml)
-          shellcheck --shell=bash --severity=warning .github/scripts/*.sh || rc=1
+          shellcheck --shell=bash --severity=warning .github/scripts/*.sh contracts/*.sh \
+            deploy/local/smoke-contract.sh || rc=1
           shellcheck -x --severity=warning pki/*.sh pki/lib/*.sh || rc=1
           exit "$rc"
+
+      # Idempotentie van de contract-bootstrap, offline; waarom: zie de kop van beide tests.
+      - name: Contract-matcher testen
+        run: ./contracts/contracten.test.sh
+
+      - name: Contract-bootstrap testen
+        run: ./contracts/bootstrap.test.sh
 
       # De OpenFSC-componenten moeten in lockstep draaien, maar de versie staat op meer plekken dan
       # Dependabot ziet (lijst: docs/openfsc-versiebeheer.md). Zonder deze stap wordt een halve bump

@@ -62,7 +62,8 @@ peers/**/values.yaml
 # Claude Code agent-lokale werkmap (worktrees, sessie-state) — nooit committen.
 .claude/
 
-# Contract-bootstrap state (content_hash van geaccepteerde contracten; host-lokaal, niet-geheim).
+# Vroegere state-map van de contract-bootstrap; die leest de contracten nu zelf, maar bestaande
+# checkouts kunnen de map nog hebben. Mag weg.
 contracts/.bootstrap-state/
 
 # Core dumps (bv. van een gecrasht CLI-proces in de repo-cwd) — nooit committen.

@@ -16,10 +16,9 @@ Bouwt voort op `docs/spikes/manager-443-sni/`.
 - **Docker** + `docker compose` (v2).
 - **sops + age** en toegang tot de geheime repo voor de sleutels — zie `docs/sleutelbeheer.md`
   ("Eenmalig: toegang krijgen"). cfssl alleen als je zelf certs uitgeeft (`pki/README.md`).
-- **jq** — vereist voor `smoke-groepsversie.sh` (leest `fsc_version` uit de contract-JSON), en dus
-  voor `run-smokes.sh` als geheel; die controleert het vooraf. Voor `bootstrap.sh`/`smoke-contract.sh`
-  is jq optioneel: die verifiëren ermee de provider-accept-**staat** van een contract en vallen
-  zonder jq terug op een aanwezigheidscheck (de accept is dan al bewezen door de bootstrap-PUT-2xx).
+- **jq** — vereist voor `contracts/bootstrap.sh` (leidt het bestaan van een contract af uit de
+  contract-JSON), `smoke-contract.sh` en `smoke-groepsversie.sh`, en dus voor `run-smokes.sh` als
+  geheel; die controleert het vooraf.
 
 ## Draaiboek
 
@@ -150,8 +149,9 @@ Bewijs de contract-kant (draai eerst `publish-service.sh` zodat er een dienst te
 ./deploy/local/smoke-contract.sh   # verwacht: "SMOKE-CONTRACT GROEN." + exit 0
 ```
 
-`smoke-contract.sh` draait de bootstrap en verifieert onafhankelijk vanaf de consumer-manager dat
-het contract bij beide peers geaccepteerd is. De **echte data-call** (outway → inway → upstream) +
+`smoke-contract.sh` draait de bootstrap drie keer en verifieert na elke run met een eigen GET op de
+consumer-manager dat er precies één, door beide peers geaccepteerd contract staat — steeds hetzelfde.
+De **echte data-call** (outway → inway → upstream) +
 **token-afdwinging** (`Fsc-Authorization`) + **transactie-logging** (`Fsc-Transaction-Id`) zijn #728.
 
 > **Thumbprint-mismatch** → als een latere egress (#728) `access denied` geeft, vergelijk de

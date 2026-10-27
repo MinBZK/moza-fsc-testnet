@@ -112,6 +112,10 @@ openssl x509 -in "$OUTWAY_CERT" -pubkey -noout \
 
 ### `contracts/bootstrap.sh` (nieuw)
 
+> **Achterhaald voor de idempotentie.** De state-file, de jq-loze fallback en de
+> provider-side bestaanscheck hieronder zijn vervangen: de bootstrap leidt het bestaan van een
+> contract nu af uit de contracten zelf. Zie [`contracts/bootstrap.md`](../../../contracts/bootstrap.md).
+
 Spiegelt `deploy/local/publish-service.sh` (zelfde toolbox-mTLS-, idempotentie- en
 `ERRLOG`-conventies):
 
@@ -132,7 +136,7 @@ Spiegelt `deploy/local/publish-service.sh` (zelfde toolbox-mTLS-, idempotentie- 
    wordt async/best-effort naar de consumer gepusht (bounded backoff, **geen** cron-retry). Bootstrap
    pollt daarom de **consumer**-manager tot `state=valid`; blijft het `proposed`, dan forceert het de
    **provider-side** her-distributie
-   (`POST …/distributions/{consumer}/DISTRIBUTION_ACTION_SUBMIT_ACCEPT_SIGNATURE/retry`) en pollt
+   (`PUT …/distributions/{consumer}/DISTRIBUTION_ACTION_SUBMIT_ACCEPT_SIGNATURE/retry`) en pollt
    opnieuw. Pas dán state-file schrijven. Zonder jq kan de state niet gelezen worden → forceer één
    her-distributie + WARN (installeer jq voor een harde `valid`-check).
 6. **Best-effort token** (bonus, non-fataal): `POST /token` (`scope=content_hash`); log het

@@ -164,8 +164,8 @@ je ooit terug op een tussenliggende v2.x, dan gelden ze onverkort.
 
 - **Contract-hash.** De contract-content wordt nu gecanonicaliseerd met JCS (RFC 8785) en bevat een
   `fsc_version`. Hashes van vóór v2 zijn niet converteerbaar; upstream schrijft voor bestaande
-  contracten uit de database te verwijderen vóór de upgrade. Lokaal: `docker compose … down -v` plus
-  `rm -rf contracts/.bootstrap-state`. Zie [`contracts/bootstrap.md`](../contracts/bootstrap.md).
+  contracten uit de database te verwijderen vóór de upgrade. Lokaal: `docker compose … down -v`.
+  Zie [`contracts/bootstrap.md`](../contracts/bootstrap.md).
 - **Outway-identificatie in een grant.** `outway.public_key_thumbprint` is vervangen door een union
   `outway.identification` met `type` als discriminator
   (`OUTWAY_IDENTIFICATION_TYPE_PUBLIC_KEY_THUMBPRINT` of `…_DOMAIN_NAME`). `contracts/bootstrap.sh`
@@ -212,8 +212,8 @@ SELECT count(*) FROM contracts.content;                       -- 0 = niets te do
 SELECT count(*) FROM contracts.grants_service_connection;
 ```
 
-De deploy-workflow draait met `wait-for-ready: 'false'` en meldt **groen** op een crashloopende pod,
-dus dit valt niet vanzelf op. Loopt een migratie halverwege stuk, dan blijft golang-migrate `dirty`
+De deploy-workflow wacht tot ZAD de deployment gezond meldt en faalt op een crashloopende pod. Hij
+vertelt niet waaróm; dat staat in de pod-logs (`zadctl logs <deployment> -c dirmgr`). Loopt een migratie halverwege stuk, dan blijft golang-migrate `dirty`
 achter; herstel dan naar de laatst **geslaagde** versie, niet naar de dirty-versie — anders wordt die
 migratie overgeslagen en ontbreken de kolommen permanent. `migrate force` bestaat niet in dit
 binary (alleen `up` en `status`), dus dat is handwerk in SQL. Upstream heeft geen down-migraties
