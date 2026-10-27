@@ -1,6 +1,6 @@
 # Certificaatbeheer testfederatie met SOPS + age — Implementatieplan
 
-**Status:** Concept
+**Status:** fase 1 en 2 uitgevoerd in MinBZK/moza-fsc-testnet#78; fase 3 open.
 
 **Issue:** [MinBZK/MijnOverheidZakelijk#992](https://github.com/MinBZK/MijnOverheidZakelijk/issues/992),
 raakt ook [#898](https://github.com/MinBZK/MijnOverheidZakelijk/issues/898) (rotatie van CA- en
@@ -110,13 +110,9 @@ openen. (Beslispunt, zie onder.)
 - `docs/sleutelbeheer.md`: de rij "Test-CA-sleutel, peer-cert/key" wordt de nieuwe indeling. Een nieuwe
   sectie "Certificaten vernieuwen" bevat het runbook. Het openstaande punt over #898 vervalt.
 - `pki/README.md`: de gebruik-sectie begint met `geheimen.sh ophalen`, niet met `init-ca.sh`.
-- Het runbook (criterium 4):
-  1. `geheimen.sh ophalen groep <peer>`.
-  2. `issue.sh` (alleen de group-keten: verwijder `out/<peer>/`; internal alleen bewust met `-f`).
-  3. `verify.sh`, inclusief de ankercontrole.
-  4. `zad-bundle.sh <peer>` en de bestanden plaatsen in de Operations Manager UI.
-  5. `geheimen.sh opslaan <peer>` en de nieuwe `cert.pem`'s committen, in de geheime repo en hier.
-  6. `geheimen.sh wis`.
+- Het runbook (criterium 4) staat in `docs/sleutelbeheer.md` ("Certificaten vernieuwen"). Anders dan
+  eerst gedacht komen opslaan en de PR vóór het plaatsen in ZAD, en wordt pas na de merge gepusht en
+  geplaatst: anders lopen git, de geheime repo en ZAD uit de pas.
 - Toegang geven of intrekken: age-sleutel aan `.sops.yaml` toevoegen en `sops updatekeys` over alle
   bestanden. Bij vertrek: verwijderen en `updatekeys`. Opnieuw versleutelen helpt niet tegen een kopie
   die al bestaat; wanneer het anker daarom om moet, staat bij de beslispunten.
@@ -216,8 +212,8 @@ openen. (Beslispunt, zie onder.)
 ## Verificatie
 
 - `git check-ignore` bevestigt dat elk `*key.pem`-pad uitgesloten is en elk openbaar pad niet.
-- `verify.sh` is groen na `ophalen` op een schone checkout, en rood (met een runbook-verwijzing) na een
-  lokaal `init-ca.sh -f`.
+- `verify.sh` is groen na `ophalen` op een schone checkout, en rood (met een runbook-verwijzing) als
+  lokaal materiaal niet op het anker in git aansluit; `init-ca.sh` weigert zodra dat anker er is.
 - `check-cert-verloop.test.sh` is groen. Een handmatige `workflow_dispatch` met termijn 2000 dagen maakt
   precies één issue aan, en een tweede run maakt er geen tweede bij.
 - De acceptatietest door een tweede ontwikkelaar uit fase 2.

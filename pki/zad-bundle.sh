@@ -36,8 +36,9 @@ rm -rf "${OUT}"; mkdir -p "${OUT}"
   echo "# ZAD-upload-set voor peer \`${PEER}\`"
   echo
   echo "Gegenereerd door \`pki/zad-bundle.sh\`. **Bevat privésleutels — niet committen, niet delen.**"
-  echo "Hostnames zijn nog placeholder (\`*.fsc-test.local\`). De mesh valideert op OIN; \`directory-ui\`"
-  echo "doet wél hostnaam-verificatie, dus de group-cert heeft de ZAD-hostnaam in de SAN (wildcard)."
+  echo "De SAN's komen uit \`pki/peers/${PEER}/<endpoint>/csr.json\`. De mesh valideert op OIN; gewone"
+  echo "TLS-clients (zoals \`directory-ui\`) controleren de hostnaam, dus die moet in de SAN's staan."
+  echo "Ruim deze map na het uploaden op (\`pki/geheimen.sh wis ${PEER}\`)."
   echo
   echo "**Attachments** (losse files, elk op hun pod-pad). Modus 2 (passthrough) serveert deze los —"
   echo "geen \`combined.pem\` nodig (zie \`docs/spikes/zad-attachments.md\`, vraag 5):"

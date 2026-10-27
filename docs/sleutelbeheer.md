@@ -94,25 +94,31 @@ creation_rules:
    opnieuw toevoegt.
 3. Open een PR die je publieke sleutel (de `age1…` achter `# public key:` in `keys.txt`) met je naam
    aan `pki/.sops.yaml` toevoegt: onder `keys:` en in de regel `.*`.
-4. Na de merge draait iemand met toegang `pki/geheimen.sh ontvangers` en pusht de geheime repo.
-   Voor een nieuwe root-houder draait een root-houder ook `pki/geheimen.sh ontvangers root`.
+4. Na de merge draait iemand met toegang, vanaf een bijgewerkte `main`, `pki/geheimen.sh ontvangers`
+   en pusht de geheime repo. Met een verouderde `pki/.sops.yaml` voeg je een verwijderde ontvanger
+   stil weer toe. Voor een nieuwe root-houder draait een root-houder ook
+   `pki/geheimen.sh ontvangers root`.
 5. Clone de geheime repo naast deze (`../moza-fsc-testnet-geheimen`), of zet `FSC_GEHEIMEN_DIR`.
 
 ### Certificaten vernieuwen
 
-1. Werk de geheime repo bij (`git pull` in `../moza-fsc-testnet-geheimen`) en haal op:
-   `pki/geheimen.sh ophalen groep <peer>`. Dat draait `verify.sh`.
+1. Werk deze repo (`git pull` op `main`) en de geheime repo (`git pull` in
+   `../moza-fsc-testnet-geheimen`) bij, en haal op: `pki/geheimen.sh ophalen groep <peer>`. Dat draait
+   `verify.sh`.
 2. Geef opnieuw uit. Group-keten: verwijder `pki/out/<peer>/` en draai `pki/issue.sh`. Eén
    internal-cert: verwijder `pki/internal/<peer>/<endpoint>/` en draai `pki/issue.sh`. `issue.sh -f`
-   geeft álle leafs opnieuw uit, maar vervangt nooit een gecommitte internal-root.
+   geeft álle leafs opnieuw uit en heeft daarvoor alle CA-sleutels nodig (`ophalen` zonder sets); het
+   weigert vooraf als er een ontbreekt, en vervangt nooit een gecommitte internal-root.
 3. `pki/verify.sh` moet groen zijn, inclusief de ankercontrole.
 4. `pki/geheimen.sh opslaan <peer>` en commit in de geheime repo, maar push nog niet. Open hier een
-   PR met de nieuwe `cert.pem`'s.
+   PR met de nieuwe `cert.pem`'s. `opslaan` overschrijft geen sleutel die bij een nieuwer cert hoort
+   dan het jouwe: dan heeft een collega vernieuwd en is je checkout verouderd (`-f` overschrijft toch).
 5. Na de merge, in één keer: push de geheime repo, draai `pki/zad-bundle.sh <peer>` en plaats de
    bestanden in de Operations Manager UI (zie [`spikes/zad-attachments.md`](spikes/zad-attachments.md)).
    Zo lopen git, de geheime repo en ZAD niet uit de pas: vóór de merge passen de nieuwe sleutels niet
    bij de certs op `main`.
-6. `pki/geheimen.sh wis`. Dat weigert zolang een sleutel niet in de geheime repo staat.
+6. `pki/geheimen.sh wis`. Dat weigert zolang een sleutel niet gecommit in de geheime repo staat, en
+   meldt commits die nog niet gepusht zijn.
 
 Verloopt de CRL: `pki/geheimen.sh ophalen groep`, `pki/gen-crl.sh`, en dezelfde stappen 4 tot en met 6
 voor `pki/ca/intermediate.crl`, dat bij elke peer als bijlage staat.
@@ -122,8 +128,9 @@ voor `pki/ca/intermediate.crl`, dat bij elke peer als bijlage staat.
 Een nieuwe CA sluit niet aan op wat er draait. Vervangen vraagt daarom een commit, zodat het in een PR
 zichtbaar is.
 
-- **Internal-CA van een peer:** `git rm -r pki/internal/<peer>/` en commit. `issue.sh` maakt daarna
-  een nieuwe CA met nieuwe leafs; plaats de hele internal-set van die peer opnieuw in ZAD.
+- **Internal-CA van een peer:** eerst `pki/geheimen.sh wis <peer>`, dan `git rm -r pki/internal/<peer>/`
+  en commit. Zonder `wis` blijft de oude CA-sleutel staan en weigert de ankercontrole. `issue.sh` maakt
+  daarna een nieuwe CA met nieuwe leafs; plaats de hele internal-set van die peer opnieuw in ZAD.
 - **Group-intermediate:** alleen een root-houder. Daarna gelden stap 4 tot en met 6 hierboven voor
   `pki/ca/intermediate.pem`, de CRL en alle group-certs, bij elke peer, ook die in
   `moza-poc-fbs-berichtenbox`. Dit trekt de oude intermediate niet in: zolang de CRL-controle uit
@@ -150,8 +157,9 @@ zichtbaar is.
 
 Bij een gewoon vertrek:
 
-1. Haal de sleutel uit `pki/.sops.yaml` (PR). Draai na de merge `pki/geheimen.sh ontvangers`; was het
-   een root-houder, dan draait een andere root-houder ook `ontvangers root`. Push de geheime repo.
+1. Haal de sleutel uit `pki/.sops.yaml` (PR). Draai na de merge, vanaf een bijgewerkte `main`,
+   `pki/geheimen.sh ontvangers`; was het een root-houder, dan draait een andere root-houder ook
+   `ontvangers root`. Push de geheime repo.
 2. Zorg dat de GitHub-toegang tot de geheime repo vervalt; meestal gebeurt dat met het vertrek uit de
    org.
 3. Leg in het issue van het vertrek vast dat het team het restrisico hieronder accepteert.

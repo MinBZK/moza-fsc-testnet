@@ -24,9 +24,9 @@ go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 ./pki/geheimen.sh ophalen       # 1. sleutels uit de geheime repo -> pki/ (draait verify.sh)
 ./pki/issue.sh                  # 2. ontbrekende certs uitgeven (nieuwe peer of endpoint)
 ./pki/verify.sh                 # 3. acceptatie-asserts incl. ankercontrole (exit 0 = groen)
-./pki/combine-pem.sh            # 4. (ZAD, optioneel) cert+key -> combined.pem — NIET nodig voor modus 2
-./pki/zad-bundle.sh directory   # 5. (ZAD) upload-set + manifest per peer -> pki/zad-upload/
-./pki/geheimen.sh opslaan       # 6. nieuwe sleutels versleuteld terug; commit de nieuwe certs
+./pki/geheimen.sh opslaan       # 4. nieuwe sleutels versleuteld terug; commit daar, PR met de certs hier
+./pki/combine-pem.sh            # 5. (ZAD, optioneel) cert+key -> combined.pem — NIET nodig voor modus 2
+./pki/zad-bundle.sh directory   # 6. (ZAD, na de merge) upload-set + manifest per peer -> pki/zad-upload/
 ./pki/geheimen.sh wis           # 7. lokale sleutels en afgeleide bestanden weg
 ```
 
@@ -87,14 +87,19 @@ nieuwe peer wordt automatisch aangemaakt.
 
 ## Peers & OIN's
 
-OIN = `subject.serialNumber` = Peer ID (1:1). Toegewezen (#722):
+OIN = `subject.serialNumber` = Peer ID (1:1). In gebruik, volgens de certs in git:
 
-| Peer | Endpoints | OIN | Herkomst |
-|------|-----------|-----|----------|
-| `magazijn-a` | manager, inway | `00000001003214345000` | echt — Magazijn A (moza-poc-fbs-berichtenbox) |
-| `magazijn-b` | manager, inway | `00000001823288444000` | echt — Magazijn B (moza-poc-fbs-berichtenbox) |
-| `uitvraag-org` | manager, outway | `00000000000000000020` | synthetisch — geen org-OIN in FBS |
-| `directory` | directory, manager | `00000000000000000010` | synthetisch — infra-peer |
+| Peer | OIN | Certs in |
+|------|-----|----------|
+| `directory` | `00000000000000000010` | deze repo (infra-peer) |
+| `example-consumer` | `00000000000000000020` | deze repo (lokale harness) |
+| `example-provider` | `00000000000000000030` | deze repo (lokale harness) |
+| `logius` | `00000000000000001000` | moza-poc-fbs-berichtenbox |
+| `magazijn-a` | `00000000000000100000` | moza-poc-fbs-berichtenbox |
+
+Een nieuwe peer krijgt een OIN van de beheerder. Die controleert hem tegen de certs in beide repo's
+(`openssl x509 -noout -subject -nameopt sep_multiline`): een peer die nog niet is aangemeld, staat
+niet in de directory-ui.
 
 **Synthetische conventie:** 20 cijfers (`^[0-9]{20}$`), alles-nul met laag volgnummer →
 herkenbaar niet-echt, botst niet met de `00000001…`-org-OIN's. Mag in dit gesloten testnet
