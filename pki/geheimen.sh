@@ -25,7 +25,8 @@ gebruik: pki/geheimen.sh <actie> [-f] [groep|root|<peer>…]
 
 Zonder sets: groep en alle peers; de root-sleutel alleen als je 'root' noemt (wis: alles). Bij ophalen
 alleen de peers die in de geheime repo staan: een ander team beheert zijn sleutels zelf.
--f: ophalen overschrijft een afwijkende lokale sleutel, wis verwijdert ook wat niet opgeslagen is.
+-f: ophalen overschrijft een afwijkende lokale sleutel, opslaan ook een sleutel die niet bij het cert
+in je checkout past, wis verwijdert ook wat niet opgeslagen is.
 De geheime repo: FSC_GEHEIMEN_DIR, standaard ../moza-fsc-testnet-geheimen naast deze repo.
 EOF
   exit 2
@@ -43,6 +44,16 @@ geheim_pad() {
     internal/*/ca/root-key.pem) p="${1#internal/}"; echo "${p%%/*}/internal/ca-key.pem" ;;
     internal/*/*/key.pem)       p="${1#internal/}"; e="${p#*/}"; echo "${p%%/*}/internal/${e%/key.pem}-key.pem" ;;
     *) return 1 ;;
+  esac
+}
+
+# Lokaal sleutelpad naar het cert dat erbij hoort.
+cert_bij() {
+  case "$1" in
+    ca/intermediate-key.pem)    echo "ca/intermediate.pem" ;;
+    ca/root-key.pem)            echo "ca/root.pem" ;;
+    internal/*/ca/root-key.pem) echo "${1%root-key.pem}root.pem" ;;
+    *)                          echo "${1%key.pem}cert.pem" ;;
   esac
 }
 
@@ -126,6 +137,26 @@ opgeslagen() {  # $1 = lokaal pad onder pki/
   [ -f "${s}" ] && cmp -s "${BASE_DIR}/$1" <(ontsleutel "${s}")
 }
 
+# Zoals opgeslagen, maar ook gecommit: een bestand dat alleen in de werkboom van de geheime repo staat,
+# gaat verloren bij een checkout, stash of nieuwe clone.
+gecommit_opgeslagen() {  # $1 = lokaal pad onder pki/
+  local g
+  g="$(geheim_pad "$1")"
+  opgeslagen "$1" \
+    && git -C "${GEHEIMEN_DIR}" ls-files --error-unmatch -- "${g}" >/dev/null 2>&1 \
+    && git -C "${GEHEIMEN_DIR}" diff --quiet HEAD -- "${g}" 2>/dev/null
+}
+
+# Waar als de sleutel in de geheime repo bij het cert in HEAD van deze checkout past, of als HEAD dat
+# cert niet heeft. Past hij niet, dan heeft iemand anders vernieuwd en is deze checkout verouderd.
+past_bij_head() {  # $1 = lokaal pad onder pki/, $2 = ontsleutelde sleutel
+  local c
+  c="$(cert_bij "$1")"
+  git -C "${BASE_DIR}" cat-file -e "HEAD:./${c}" 2>/dev/null || return 0
+  [ "$(git -C "${BASE_DIR}" show "HEAD:./${c}" | openssl x509 -noout -pubkey 2>/dev/null)" \
+    = "$(openssl pkey -in "$2" -pubout 2>/dev/null)" ]
+}
+
 vereis_geheimen_dir() {
   [ -d "${GEHEIMEN_DIR}" ] \
     || fout "geheime repo niet gevonden in ${GEHEIMEN_DIR}. Clone MinBZK/moza-fsc-testnet-geheimen daar, of zet FSC_GEHEIMEN_DIR."
@@ -181,7 +212,7 @@ ophalen() {
         echo "FAIL: kan ${g} niet ontsleutelen; staat jouw age-sleutel in pki/.sops.yaml?" >&2; probleem=1; continue
       fi
       if [ -e "${BASE_DIR}/${k}" ] && ! cmp -s "${BASE_DIR}/${k}" "${TMP}/${n}" && [ "${FORCE}" -eq 0 ]; then
-        echo "FAIL: pki/${k} wijkt af van de geheime repo. Eerst opslaan, of -f om te overschrijven." >&2
+        echo "FAIL: pki/${k} wijkt af van de geheime repo. Zelf net vernieuwd: eerst opslaan. Anders is je checkout verouderd: git pull in deze repo. -f overschrijft je lokale sleutel." >&2
         probleem=1; continue
       fi
       lokaal+=("${k}"); tijdelijk+=("${TMP}/${n}")
@@ -206,7 +237,8 @@ ophalen() {
 }
 
 opslaan() {
-  local s k g n=0 rc=0
+  local s k g rc=0
+  local -a nieuw=()
   vereis_geheimen_dir
   vereis_config
   bepaal_sets "$(alle_peers)"
@@ -215,23 +247,32 @@ opslaan() {
     grep -E '^FAIL' <<<"${uit}" >&2 || true
     fout "verify.sh is rood; niets opgeslagen. Een sleutel die niet bij zijn cert past, hoort niet in de geheime repo."
   fi
+  TMP="$(mktemp -d)"
   for s in "${SETS[@]}"; do
     while IFS= read -r k; do
       [ -e "${BASE_DIR}/${k}" ] || { echo "overgeslagen pki/${k} (niet lokaal)"; continue; }
       g="$(geheim_pad "${k}")"
       if [ -f "${GEHEIMEN_DIR}/${g}" ]; then
-        if ! ontsleutel "${GEHEIMEN_DIR}/${g}" >/dev/null; then
+        if ! ontsleutel "${GEHEIMEN_DIR}/${g}" > "${TMP}/bestaand"; then
           echo "FAIL: kan ${g} niet ontsleutelen om te vergelijken; niet overschreven." >&2; rc=1; continue
         fi
-        if opgeslagen "${k}"; then echo "ongewijzigd ${g}"; continue; fi
+        if cmp -s "${BASE_DIR}/${k}" "${TMP}/bestaand"; then echo "ongewijzigd ${g}"; continue; fi
+        if [ "${FORCE}" -eq 0 ] && ! past_bij_head "${k}" "${TMP}/bestaand"; then
+          echo "FAIL: ${g} in de geheime repo past niet bij pki/$(cert_bij "${k}") in je checkout: iemand anders heeft vernieuwd, of je checkout is verouderd. git pull in deze repo en ophalen; -f overschrijft toch." >&2
+          rc=1; continue
+        fi
       fi
       mkdir -p "${GEHEIMEN_DIR}/$(dirname "${g}")"
       versleutel "${BASE_DIR}/${k}" "${g}" > "${GEHEIMEN_DIR}/${g}.nieuw"
       mv "${GEHEIMEN_DIR}/${g}.nieuw" "${GEHEIMEN_DIR}/${g}"
-      echo "opgeslagen ${g}"; n=$((n + 1))
+      echo "opgeslagen ${g}"; nieuw+=("${g}")
     done < <(sleutels "${s}")
   done
-  [ "${n}" -eq 0 ] || echo "Commit en push in de geheime repo: git -C ${GEHEIMEN_DIR} add -A && git -C ${GEHEIMEN_DIR} commit"
+  # Lengte eerst: op bash 3.2 (macOS) faalt "${a[@]}" van een lege array onder set -u.
+  if [ "${#nieuw[@]}" -gt 0 ]; then
+    echo "Commit in de geheime repo; push pas na de merge van de PR met de certs:"
+    echo "  git -C ${GEHEIMEN_DIR} add ${nieuw[*]} && git -C ${GEHEIMEN_DIR} commit"
+  fi
   return "${rc}"
 }
 
@@ -242,8 +283,8 @@ wis() {
   if [ "${FORCE}" -eq 0 ]; then vereis_geheimen_dir; fi
   for s in "${SETS[@]}"; do
     while IFS= read -r k; do
-      if [ "${FORCE}" -eq 0 ] && ! opgeslagen "${k}"; then
-        echo "FAIL: pki/${k} staat niet (zo) in de geheime repo, of je kunt dat niet nakijken. Eerst opslaan, of -f." >&2
+      if [ "${FORCE}" -eq 0 ] && ! gecommit_opgeslagen "${k}"; then
+        echo "FAIL: pki/${k} staat niet (zo) gecommit in de geheime repo, of je kunt dat niet nakijken. Eerst opslaan en committen, of -f." >&2
         probleem=1
       fi
       weg+=("${BASE_DIR}/${k}")
@@ -257,6 +298,12 @@ wis() {
   [ "${#weg[@]}" -eq 0 ] || rm -rf "${weg[@]}"
   rmdir "${BASE_DIR}/zad-upload" 2>/dev/null || true
   echo "Lokale sleutels en afgeleide bestanden gewist."
+  if [ "${FORCE}" -eq 0 ]; then
+    local voor
+    voor="$(git -C "${GEHEIMEN_DIR}" rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
+    [ "${voor}" -eq 0 ] \
+      || echo "Let op: ${voor} commit(s) in de geheime repo zijn nog niet gepusht; tot dan staan de sleutels alleen hier."
+  fi
 }
 
 # Alle peers in de geheime repo, ook die van andere repo's: intrekken moet ook hun bestanden raken.
@@ -303,7 +350,10 @@ for a in "$@"; do
     *)  SETS+=("${a}") ;;
   esac
 done
-command -v sops >/dev/null || fout "sops niet gevonden; zie docs/sleutelbeheer.md."
+# wis -f ontsleutelt niets: ook wie geen sops heeft, kan na een eigen lokale CA opruimen.
+if [ "${ACTIE}" != wis ] || [ "${FORCE}" -eq 0 ]; then
+  command -v sops >/dev/null || fout "sops niet gevonden; zie docs/sleutelbeheer.md."
+fi
 
 case "${ACTIE}" in
   ophalen|opslaan|wis|ontvangers) "${ACTIE}" ;;

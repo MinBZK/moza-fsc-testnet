@@ -240,6 +240,14 @@ assert "runbook: anker blijft gelijk" ongewijzigd "$d" pki/ca/root.pem
 assert "runbook: intermediate is nieuw" test -n "$(cmp "$FIXTURE/pki/ca/intermediate.pem" "$d/pki/ca/intermediate.pem" 2>&1)"
 assert "runbook: internal-certs onaangeroerd" ongewijzigd "$d" pki/internal/directory/manager/cert.pem
 
+# -f geeft alles opnieuw uit; zonder één CA-sleutel mag het niet halverwege stoppen.
+d=$(kopie)
+rm "$d/pki/internal/example-provider/ca/root-key.pem"
+expect "issue -f weigert vooraf als een CA-sleutel ontbreekt" niet0 "$d" "ophalen example-provider" -- \
+  ./pki/issue.sh -f
+assert "issue -f geeft dan niets uit" ongewijzigd "$d" pki/out/directory/manager/cert.pem
+assert "issue -f geeft dan ook voor die peer niets uit" ongewijzigd "$d" pki/out/example-provider/manager/cert.pem
+
 # --- Sleutel hoort bij certificaat ------------------------------------------------------------
 d=$(kopie)
 cp "$d/pki/out/directory/directory/key.pem" "$d/pki/out/directory/manager/key.pem"
@@ -261,6 +269,12 @@ expect "verify: gecommitte sleutel is rood" 1 "$d" -- ./pki/verify.sh
 d=$(kopie)
 cp "$d/pki/out/directory/manager/key.pem" "$d/pki/peers/directory/manager/lek.txt"
 expect "verify: privésleutel buiten de bekende paden is rood" 1 "$d" -- ./pki/verify.sh
+
+# De allowlist laat cert.pem door; alleen de inhoud verraadt een sleutel die erachter geplakt is.
+d=$(kopie)
+cat "$d/pki/out/directory/manager/key.pem" >> "$d/pki/out/directory/manager/cert.pem"
+git -C "$d" add pki/out/directory/manager/cert.pem && git_commit "$d" "sleutel achter het cert"
+expect "verify: privésleutel achter een cert in een gecommitte cert.pem is rood" 1 "$d" -- ./pki/verify.sh
 
 # Git bewaart de index en HEAD, niet de werkboom: de controle moet lezen wat git opslaat.
 d=$(kopie)
@@ -344,6 +358,11 @@ assert "dagelijkse ontvanger kan de root-sleutel niet ontsleutelen" \
 assert "dagelijkse ontvanger kan de groepssleutel ontsleutelen" \
   ontsleutelbaar dagelijks "$d/secrets/groep/intermediate-key.pem"
 (cd "$d" && ./pki/combine-pem.sh >/dev/null && ./pki/zad-bundle.sh directory >/dev/null)
+# In het echt is de geheime repo een clone met een upstream; wis eist dat een sleutel daar gecommit is.
+git -C "$d/secrets" init -q && git -C "$d/secrets" add -A && git_commit "$d/secrets" "eerste vulling"
+git init -q --bare "$TMP_ROOT/secrets-upstream.git"
+git -C "$d/secrets" remote add origin "$TMP_ROOT/secrets-upstream.git"
+git -C "$d/secrets" push -q -u origin HEAD 2>/dev/null
 GEVULD="$d"
 
 d=$(kopie "$GEVULD")
@@ -396,8 +415,59 @@ rm -rf "$d/pki/out/directory/manager"
 (cd "$d" && ./pki/issue.sh >/dev/null 2>&1)
 expect "wis weigert een niet-opgeslagen sleutel" niet0 "$d" "out/directory/manager/key.pem" -- geheimen root wis
 assert "niet-opgeslagen sleutel blijft staan" test -e "$d/pki/out/directory/manager/key.pem"
-expect "opslaan na vernieuwen" 0 "$d" "directory/group/manager-key.pem" -- geheimen dagelijks opslaan directory
-expect "wis na opslaan" 0 "$d" -- geheimen root wis
+expect "opslaan na vernieuwen, met: push pas na de merge van de certs" 0 "$d" "push pas" -- \
+  geheimen dagelijks opslaan directory
+assert "opslaan na vernieuwen schrijft de nieuwe sleutel" \
+  test "$(sha256sum < "$GEVULD/secrets/directory/group/manager-key.pem")" != \
+       "$(sha256sum < "$d/secrets/directory/group/manager-key.pem")"
+# Een opgeslagen maar niet gecommit bestand gaat verloren bij een checkout, stash of nieuwe clone.
+expect "wis weigert een opgeslagen maar niet gecommitte sleutel" niet0 "$d" "commit" -- geheimen root wis
+assert "niet-gecommitte sleutel blijft staan" test -e "$d/pki/out/directory/manager/key.pem"
+git -C "$d/secrets" add -A && git_commit "$d/secrets" "vernieuwd"
+expect "wis na opslaan en commit, en meldt wat nog niet gepusht is" 0 "$d" "niet gepusht" -- geheimen root wis
+
+# Een collega vernieuwde directory/manager en zette de nieuwe sleutel in de geheime repo; deze
+# checkout kent dat cert nog niet. Opslaan mag die sleutel niet overschrijven met de oude.
+d=$(kopie "$GEVULD")
+openssl genrsa -out "$TMP_ROOT/collega-key.pem" 2048 2>/dev/null
+(cd "$d/secrets" && sops --config ../pki/.sops.yaml encrypt --input-type binary --output-type binary \
+  --filename-override directory/group/manager-key.pem "$TMP_ROOT/collega-key.pem" > "$TMP_ROOT/collega.enc") \
+  && mv "$TMP_ROOT/collega.enc" "$d/secrets/directory/group/manager-key.pem" \
+  && git -C "$d/secrets" add -A && git_commit "$d/secrets" "collega vernieuwde"
+collega=$(sha256sum < "$d/secrets/directory/group/manager-key.pem")
+expect "ophalen bij een verouderde checkout wijst op git pull" niet0 "$d" "git pull" -- geheimen dagelijks ophalen
+expect "opslaan overschrijft geen nieuwere sleutel van een collega" niet0 "$d" "verouderd" -- \
+  geheimen dagelijks opslaan
+assert "de sleutel van de collega staat er nog" \
+  test "$collega" = "$(sha256sum < "$d/secrets/directory/group/manager-key.pem")"
+expect "opslaan -f overschrijft toch" 0 "$d" -- geheimen dagelijks opslaan -f
+
+# Opruimen na een eigen lokale CA mag geen sops vereisen: daarvoor is niets te ontsleutelen.
+zonder_sops() {
+  local p uit="" delen
+  IFS=: read -ra delen <<<"$PATH"
+  for p in "${delen[@]}"; do [ -x "$p/sops" ] || uit="${uit:+$uit:}$p"; done
+  printf '%s' "$uit"
+}
+d=$(kopie "$GEVULD")
+if PATH="$(zonder_sops)" command -v rm >/dev/null 2>&1; then
+  expect "wis -f werkt zonder sops" 0 "$d" -- \
+    env PATH="$(zonder_sops)" FSC_GEHEIMEN_DIR="$d/secrets" ./pki/geheimen.sh wis -f
+else
+  echo "overgeslagen: wis -f zonder sops (sops staat in dezelfde map als rm)"
+fi
+
+# De stappen uit docs/sleutelbeheer.md ("Een set vervangen", internal-CA), letterlijk.
+d=$(kopie "$GEVULD")
+vervang_internal_ca() {
+  geheimen root wis directory && git rm -rq pki/internal/directory/ \
+    && git_commit . "internal-CA directory vervangen" && pki/issue.sh && pki/verify.sh
+}
+expect "runbook: internal-CA vervangen" 0 "$d" -- vervang_internal_ca
+assert "runbook: internal-CA is nieuw" \
+  test -n "$(cmp "$FIXTURE/pki/internal/directory/ca/root.pem" "$d/pki/internal/directory/ca/root.pem" 2>&1)"
+assert "runbook: group-certs onaangeroerd" ongewijzigd "$d" pki/out/directory/manager/cert.pem
+expect "runbook: nieuwe internal-sleutels opslaan" 0 "$d" -- geheimen root opslaan directory
 
 d=$(kopie "$GEVULD")
 cp "$d/pki/out/directory/directory/key.pem" "$d/pki/out/directory/manager/key.pem"
