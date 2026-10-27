@@ -100,6 +100,11 @@ jobs:
       - name: Geen verlopen certificaten
         run: ./.github/scripts/check-cert-verloop.sh 0
 
+      # Ketens, anker en vooral: geen privésleutel in git, ook niet achter een cert in een cert.pem
+      # die de allowlist doorlaat. Push-protection dekt PEM-sleutels niet.
+      - name: Openbare helft van de test-PKI controleren
+        run: ./pki/verify.sh
+
       # De pki-guards houden een zelfgemaakte CA en een niet-passende sleutel buiten de federatie;
       # de test bouwt daarvoor een echte test-PKI en versleutelt met wegwerpsleutels.
       - name: PKI-tools installeren
