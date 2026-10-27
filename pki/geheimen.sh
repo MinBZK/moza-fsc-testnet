@@ -162,6 +162,10 @@ ophalen() {
   if [ "${#SETS[@]}" -eq 0 ]; then
     SETS=(groep)
     while IFS= read -r s; do SETS+=("${s}"); done < <(comm -12 <(alle_peers) <(geheime_peers | sort))
+    # Ook een vergeten push of een verouderde geheime repo ziet er zo uit: meld het dus.
+    while IFS= read -r s; do
+      echo "overgeslagen ${s}: geen sleutels in de geheime repo (eigen sleutels van een ander team, of git pull in ${GEHEIMEN_DIR}?)"
+    done < <(comm -23 <(alle_peers) <(geheime_peers | sort))
   fi
   bepaal_sets "$(alle_peers)"
   TMP="$(mktemp -d)"

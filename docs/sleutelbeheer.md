@@ -128,7 +128,9 @@ zichtbaar is.
   `pki/ca/intermediate.pem`, de CRL en alle group-certs, bij elke peer, ook die in
   `moza-poc-fbs-berichtenbox`. Dit trekt de oude intermediate niet in: zolang de CRL-controle uit
   staat, blijft hij tot zijn einddatum naar de root ketenen. Tegen een gelekte groepssleutel helpt
-  alleen een nieuw anker.
+  alleen een nieuw anker. Peers van andere teams hebben hier geen sleutels en geen `csr.json`;
+  `issue.sh` maakt hun group-certs niet opnieuw. Die gaan opnieuw via hun CSR
+  ([`peer-aansluiten.md`](peer-aansluiten.md), stap 3c).
 
   ```bash
   pki/geheimen.sh ophalen root groep
