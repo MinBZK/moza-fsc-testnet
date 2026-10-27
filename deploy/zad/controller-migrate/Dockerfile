@@ -8,8 +8,10 @@
 # Docker op de digest en wordt de tag niet gevalideerd, dus een los ARG IMAGE_TAG zou hier
 # feitelijk niets doen. Alle OpenFSC-componenten releasen in lockstep en moeten óók in lockstep
 # draaien; de OpenFSC-tag in de TWEEDE FROM hieronder hoort dus gelijk te zijn aan die van de andere
-# wrappers, de workflow-defaults en de lokale compose. De busybox-FROM daarboven staat daar bewust
-# buiten — die donor beweegt op zijn eigen tempo (eigen Dependabot-groep).
+# wrappers, de lokale compose en de group-regel. De workflows taggen hun images met deze tag
+# (`.github/scripts/openfsc-tag.sh`), terwijl Docker op de digest bouwt: tag en digest horen dus
+# bij elkaar. De busybox-FROM daarboven staat daar bewust buiten — die donor beweegt op zijn eigen
+# tempo (eigen Dependabot-groep).
 # `.github/scripts/check-openfsc-version.sh` (lint-workflow) faalt als de OpenFSC-tags uiteenlopen;
 # een halve bump wordt niet groen. Verzetten gaat met `.github/scripts/bump-openfsc.sh <versie>`,
 # maar de digest hieronder blijft handwerk.
