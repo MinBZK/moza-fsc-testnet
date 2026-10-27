@@ -160,7 +160,7 @@ openen. (Beslispunt, zie onder.)
       berichtenbox. `.DS_Store` in `pki/out/` opruimen.
 - [x] De Claude-sandbox van de eerste vulling: het materiaal van deze repo, elke kopie van de root- en
       intermediate-sleutel (ook in de tars) en zijn age-sleutel zijn weg.
-- [ ] Ook de peer-sleutels van de berichtenbox (`logius`, `magazijn-a`, `uitvraag-org`) uit de sandbox
+- [ ] Ook de peer-sleutels van de berichtenbox (`logius`, `magazijn-a`) uit de sandbox
       halen, zodra ze in de geheime repo staan of op de laptop zijn veiliggesteld.
 
 ### Fase 3 — moza-poc-fbs-berichtenbox (PR 2, daar)
