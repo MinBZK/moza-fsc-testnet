@@ -448,4 +448,5 @@ inclusief wat te doen als een accept-handtekening onderweg strandt.
 - **Controller-authenticatie op ZAD** (OIDC) — zie stap 6.
 - **Rotatie** van CA- en peer-certificaten
   ([#898](https://github.com/MinBZK/MijnOverheidZakelijk/issues/898)).
-- **Organisaties zonder OIN** ([#860](https://github.com/MinBZK/MijnOverheidZakelijk/issues/860)).
+- **Organisaties zonder OIN.** Dit runbook gaat uit van een OIN als Peer ID; een route voor
+  organisaties zonder OIN is hier nog niet beschreven.
