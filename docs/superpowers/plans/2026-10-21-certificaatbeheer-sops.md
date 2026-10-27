@@ -152,10 +152,17 @@ openen. (Beslispunt, zie onder.)
       in git is `verify.sh` rood en valt de lokale harness om.
 - [x] `geheimen.sh opslaan groep directory example-consumer example-provider`, en `opslaan root`,
       daarna de geheime repo pushen. `example-provider-2` is niet in gebruik en vervalt.
+- [ ] De eerste root-houder haalt op de eigen laptop op, ook `ophalen root`. Pas dan is bewezen dat
+      de root-sleutel uit de geheime repo terugkomt.
+- [ ] ericwout-overheid als ontvanger en tweede root-houder in `pki/.sops.yaml`; daarna draait de eerste
+      root-houder `geheimen.sh ontvangers` en `ontvangers root` en pusht de geheime repo.
 - [ ] Een tweede ontwikkelaar haalt op een schone checkout op, draait `verify.sh` en geeft voor één
       endpoint opnieuw uit zonder de koppeling te breken. Dat is criterium 1, en de acceptatietest.
 - [ ] `root-key.pem` van de werkplekken verwijderen, ook uit de kopieën in de berichtenbox.
       `.DS_Store` in `pki/out/` opruimen.
+- [ ] De Claude-sandbox van de eerste vulling leegmaken: het ontsleutelde materiaal, de tar en zijn
+      age-sleutel. Pas als `ophalen root` op de laptop gelukt is en de ontvangers zijn bijgewerkt: tot
+      dan is de sandbox de enige plek waar het terughalen getest is.
 
 ### Fase 3 — moza-poc-fbs-berichtenbox (PR 2, daar)
 
@@ -187,16 +194,16 @@ openen. (Beslispunt, zie onder.)
 - `pki/pki.test.sh` toetst alle guards en draait in `lint.yml`, met cfssl, sops en age gepind op
   sha256.
 
-## Beslispunten (voorstel, nog vast te leggen in #992)
+## Beslispunten (besloten op 27 oktober 2026, vast te leggen in #992)
 
-| Punt | Voorstel |
+| Punt | Besluit |
 |---|---|
 | Naam geheime repo | `MinBZK/moza-fsc-testnet-geheimen`, één repo voor de hele federatie |
-| Root-sleutel | in de geheime repo onder een eigen `creation_rule`, alleen voor twee aangewezen personen |
-| Ontvangers | door het team te bepalen; één age-sleutel per persoon, geen gedeelde sleutel |
+| Root-sleutel | in de geheime repo onder een eigen `creation_rule`, alleen voor de twee root-houders: mreuvekamp en ericwout-overheid |
+| Ontvangers | mreuvekamp en ericwout-overheid; één age-sleutel per persoon, geen gedeelde sleutel en geen sleutel voor een Claude-sandbox |
 | Termijn verloopwaarschuwing | 30 dagen |
 | Issue bij verloop | in `moza-fsc-testnet` (de standaard-token kan geen issue in een andere repo maken) |
-| Bij vertrek van een ontvanger | volledig vernieuwen (intermediate, internal-CA's, alle certs) of het risico bewust accepteren |
+| Bij vertrek van een ontvanger | volledig vernieuwen: intermediate, internal-CA's en alle certs |
 
 ## Buiten scope
 

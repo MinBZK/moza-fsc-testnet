@@ -47,6 +47,8 @@ De test-PKI heeft een openbare en een geheime helft.
   | `<peer>/internal/<endpoint>-key.pem` | `pki/internal/<peer>/<endpoint>/key.pem` |
 
 Wie wat kan ontsleutelen staat in `pki/.sops.yaml`: één age-sleutel per persoon, met de naam erbij.
+Geen sleutels voor een Claude-sandbox of een andere gedeelde omgeving: toegang moet herleidbaar zijn
+tot een persoon. Een Claude-sessie werkt met de sleutel van wie hem draait, op diens eigen machine.
 De root-sleutel heeft een eigen regel met alleen de twee root-houders; voor het dagelijkse werk is hij
 niet nodig. `.sops.yaml` staat in déze repo en niet in de geheime: die valt onder het gratis
 GitHub-abonnement en heeft dus geen branch protection. Een nieuwe ontvanger loopt zo via een
