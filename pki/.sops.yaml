@@ -3,12 +3,15 @@
 # Toevoegen, intrekken en de vorm: docs/sleutelbeheer.md.
 keys:
   - &mark age169l30nmfr8z42m2sx696r24nc99wf7qq6qfnytzdnfc2r5sh4gxstgtyuk  # Mark Reuvekamp (root-houder)
+  - &ericwout age1zk2p34n4esgzkfwh5z3mu4kf05585jen923ved80s4pd46t70ynsswphd8  # Eric Wout van der Steen (root-houder)
 creation_rules:
   - path_regex: (^|/)groep/root/
     key_groups:
       - age:
           - *mark
+          - *ericwout
   - path_regex: .*
     key_groups:
       - age:
           - *mark
+          - *ericwout
