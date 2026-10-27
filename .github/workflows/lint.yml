@@ -93,26 +93,11 @@ jobs:
         run: ./.github/scripts/check-cert-verloop.sh 0
 
       # De pki-guards houden een zelfgemaakte CA en een niet-passende sleutel buiten de federatie;
-      # de test bouwt daarvoor een echte test-PKI en versleutelt met wegwerpsleutels. Dependabot ziet
-      # deze downloads niet: versie en sha256 met de hand bijwerken (cfssl en sops publiceren
-      # checksums bij de release, voor age is de hash bij het pinnen berekend).
+      # de test bouwt daarvoor een echte test-PKI en versleutelt met wegwerpsleutels.
       - name: PKI-tools installeren
         run: |
-          set -euo pipefail
-          bin="$RUNNER_TEMP/bin"
-          mkdir -p "$bin" && cd "$RUNNER_TEMP"
-          haal() { curl -fsSL --retry 3 -o "$2" "$1" && echo "$3  $2" | sha256sum -c -; }
-          haal https://github.com/cloudflare/cfssl/releases/download/v1.6.5/cfssl_1.6.5_linux_amd64 cfssl \
-            ff4d3a1387ea3e1ee74f4bb8e5ffe9cbab5bee43c710333c206d14199543ebdf
-          haal https://github.com/cloudflare/cfssl/releases/download/v1.6.5/cfssljson_1.6.5_linux_amd64 cfssljson \
-            09fbcb7a3b3d6394936ea61eabff1e8a59a8ac3b528deeb14cf66cdbbe9a534f
-          haal https://github.com/getsops/sops/releases/download/v3.13.3/sops-v3.13.3.linux.amd64 sops \
-            e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
-          haal https://github.com/FiloSottile/age/releases/download/v1.3.2/age-v1.3.2-linux-amd64.tar.gz age.tar.gz \
-            cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10
-          tar -xzf age.tar.gz age/age age/age-keygen
-          install -m 755 cfssl cfssljson sops age/age age/age-keygen "$bin/"
-          echo "$bin" >> "$GITHUB_PATH"
+          ./.github/scripts/install-pki-tools.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: PKI-guards testen
         run: ./pki/pki.test.sh
