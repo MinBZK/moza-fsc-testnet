@@ -59,7 +59,7 @@ jobs:
             shellcheck --shell=bash --severity=warning "$script" || rc=1
           done < <(find .github/actions -name action.yml)
           shellcheck --shell=bash --severity=warning .github/scripts/*.sh contracts/*.sh \
-            deploy/local/smoke-contract.sh || rc=1
+            deploy/local/smoke-contract.sh deploy/local/run-smokes.sh deploy/local/wegwerp-pki*.sh || rc=1
           shellcheck -x --severity=warning pki/*.sh pki/lib/*.sh || rc=1
           exit "$rc"
 
@@ -109,5 +109,10 @@ jobs:
 
       - name: PKI-guards testen
         run: ./pki/pki.test.sh
+
+      # Wie geen toegang heeft tot de geheime repo, draait de harness op een wegwerp-PKI. Die mag
+      # pki/ van de checkout nooit raken.
+      - name: Wegwerp-PKI van de lokale harness testen
+        run: ./deploy/local/wegwerp-pki.test.sh
 
 

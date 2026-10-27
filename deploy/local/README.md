@@ -16,17 +16,22 @@ Bouwt voort op `docs/spikes/manager-443-sni/`.
 - **Docker** + `docker compose` (v2).
 - **sops + age** en toegang tot de geheime repo voor de sleutels — zie `docs/sleutelbeheer.md`
   ("Eenmalig: toegang krijgen"). cfssl alleen als je zelf certs uitgeeft (`pki/README.md`).
+- **Geen toegang tot de geheime repo?** Draai `./deploy/local/run-smokes.sh --wegwerp-ca`. Dat bouwt
+  een eigen test-CA met certs in een tijdelijke map buiten de checkout (`wegwerp-pki.sh`) en wijst
+  `PKI_DIR` daarheen; dan heb je **cfssl** nodig in plaats van sops + age. `pki/` blijft
+  onaangeroerd.
 - **jq** — vereist voor `contracts/bootstrap.sh` (leidt het bestaan van een contract af uit de
   contract-JSON), `smoke-contract.sh` en `smoke-groepsversie.sh`, en dus voor `run-smokes.sh` als
   geheel; die controleert het vooraf.
 
 ## Draaiboek
 
-Alle commando's vanuit de **repo-root**, op branch `feature/directory-group-723`.
+Alle commando's vanuit de **repo-root**, op `main`. Zonder toegang tot de geheime repo: zie
+hierboven (`--wegwerp-ca`).
 
 ```bash
-# 1. Juiste branch (cert-set + harness zitten hier).
-git switch feature/directory-group-723
+# 1. Harness + PKI-tooling staan op main.
+git switch main
 
 # 2. Sleutels ophalen; de certs staan al in git. Privékeys komen als 0600 (owner-only) neer;
 #    de pod leest ze via stap 3. Draait verify.sh; verwacht: "== ALLE ASSERTS GROEN ==".
