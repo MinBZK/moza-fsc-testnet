@@ -24,6 +24,28 @@ FORCE=0
 # 0. Niets uitgeven onder een anker of sleutel die niet aansluit op git.
 anker_alles || { echo "issue.sh: niets uitgegeven." >&2; exit 1; }
 
+# Eerst nagaan of elke CA-sleutel die nodig is er is: niet halverwege stoppen met een half
+# vernieuwde set. Een internal-CA die niet in git staat, maakt stap 1 zo nodig zelf.
+ontbreekt="$(
+  find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; do
+    REL="$(dirname "${CSR#"${BASE_DIR}/peers/"}")"
+    PEER="${REL%%/*}"
+    if [ ! -s "${BASE_DIR}/out/${REL}/cert.pem" ] || [ "${FORCE}" -eq 1 ]; then
+      [ -s "${CA_KEY}" ] || echo "pki/ca/intermediate-key.pem ontbreekt; pki/geheimen.sh ophalen groep"
+    fi
+    if { [ ! -s "${BASE_DIR}/internal/${REL}/cert.pem" ] || [ "${FORCE}" -eq 1 ]; } \
+       && anker_in_git "internal/${PEER}/ca/root.pem" \
+       && [ ! -s "${BASE_DIR}/internal/${PEER}/ca/root-key.pem" ]; then
+      echo "pki/internal/${PEER}/ca/root-key.pem ontbreekt; pki/geheimen.sh ophalen ${PEER}"
+    fi
+  done | sort -u
+)"
+if [ -n "${ontbreekt}" ]; then
+  sed 's/^/FAIL: /' <<<"${ontbreekt}" >&2
+  echo "issue.sh: niets uitgegeven." >&2
+  exit 1
+fi
+
 # 1. Per-peer internal-CA root (self-signed). Eén per peer-map onder pki/peers/.
 for PEER_DIR in "${BASE_DIR}"/peers/*/; do
   PEER="$(basename "${PEER_DIR}")"
