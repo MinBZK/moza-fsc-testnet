@@ -100,15 +100,18 @@ ontvangers_voor() {
     | grep -o '"recipient": *"[^"]*"' | sort -u
 }
 
-# De eerste passende regel wint. Een root-regel die niet matcht, of een .*-regel erboven, zou de
-# root-sleutel stil voor elke dagelijkse ontvanger versleutelen. De ontvangers vergelijken ziet dat
-# niet zodra elke ontvanger ook root-houder is; daarom moet de eerste regel letterlijk deze vorm hebben.
+# De eerste passende regel wint. Een root-regel die niet matcht, of een regel erboven die alles matcht
+# (.* of zonder path_regex), zou de root-sleutel stil voor elke dagelijkse ontvanger versleutelen. De
+# ontvangers vergelijken ziet dat niet zodra elke ontvanger ook root-houder is. Zonder YAML-parser eisen
+# we daarom de vorm uit docs/sleutelbeheer.md: het eerste item onder creation_rules is de root-regel.
+# Elke andere schrijfwijze wordt geweigerd.
 controleer_root_regel() {
   local eerste r
-  eerste="$(grep -m1 -E '^[[:space:]]*-?[[:space:]]*path_regex:' "${SOPS_CONFIG}" \
-    | sed -E "s/^[^:]*:[[:space:]]*//; s/[[:space:]]+#.*$//; s/^['\"]//; s/['\"]$//")" || true
-  [ "${eerste}" = '(^|/)groep/root/' ] \
-    || fout "de eerste regel in pki/.sops.yaml moet 'path_regex: (^|/)groep/root/' zijn, anders krijgt de root-sleutel stil de dagelijkse ontvangers (docs/sleutelbeheer.md)."
+  eerste="$(awk '/^creation_rules:[[:space:]]*(#.*)?$/ { binnen = 1; next }
+                 binnen && !/^[[:space:]]*(#.*)?$/ { print; exit }' "${SOPS_CONFIG}")"
+  grep -qE "^[[:space:]]*-[[:space:]]+path_regex:[[:space:]]*['\"]?[(]\^[|]/[)]groep/root/['\"]?[[:space:]]*(#.*)?$" \
+      <<<"${eerste}" \
+    || fout "het eerste item onder creation_rules in pki/.sops.yaml moet '- path_regex: (^|/)groep/root/' zijn, anders krijgt de root-sleutel stil de dagelijkse ontvangers (docs/sleutelbeheer.md)."
   r="$(ontvangers_voor groep/root/root-key.pem)" || fout "kan de ontvangers uit pki/.sops.yaml niet bepalen."
   [ -n "${r}" ] || fout "de root-regel in pki/.sops.yaml heeft geen ontvangers."
 }

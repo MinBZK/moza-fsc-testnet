@@ -428,14 +428,18 @@ assert "ontvangers zonder 'root' laat de root-sleutel ongemoeid" \
 
 # sops matcht path_regex op het absolute pad: een regel met ^groep/root/ of een .*-regel bovenaan
 # zou de root-sleutel stil aan elke dagelijkse ontvanger geven.
-root_regel_fout() {  # $1 = repo, $2 = 'anker' of 'volgorde'
-  if [ "$2" = anker ]; then
-    printf 'creation_rules:\n  - path_regex: ^groep/root/\n    age: %s\n  - path_regex: .*\n    age: %s,%s\n' \
-      "$(pub root)" "$(pub dagelijks)" "$(pub root)" > "$1/pki/.sops.yaml"
-  else
-    printf 'creation_rules:\n  - path_regex: .*\n    age: %s,%s\n  - path_regex: (^|/)groep/root/\n    age: %s\n' \
-      "$(pub dagelijks)" "$(pub root)" "$(pub root)" > "$1/pki/.sops.yaml"
-  fi
+root_regel_fout() {  # $1 = repo, $2 = 'anker', 'volgorde' of 'zonder' (regel zonder path_regex)
+  case "$2" in
+    anker)
+      printf 'creation_rules:\n  - path_regex: ^groep/root/\n    age: %s\n  - path_regex: .*\n    age: %s,%s\n' \
+        "$(pub root)" "$(pub dagelijks)" "$(pub root)" > "$1/pki/.sops.yaml" ;;
+    volgorde)
+      printf 'creation_rules:\n  - path_regex: .*\n    age: %s,%s\n  - path_regex: (^|/)groep/root/\n    age: %s\n' \
+        "$(pub dagelijks)" "$(pub root)" "$(pub root)" > "$1/pki/.sops.yaml" ;;
+    zonder)
+      printf 'creation_rules:\n  - age: %s,%s\n  - path_regex: (^|/)groep/root/\n    age: %s\n' \
+        "$(pub dagelijks)" "$(pub root)" "$(pub root)" > "$1/pki/.sops.yaml" ;;
+  esac
 }
 d=$(kopie "$GEVULD")
 rm "$d/secrets/groep/root/root-key.pem"
@@ -444,6 +448,12 @@ expect "opslaan root weigert een root-regel die niet matcht" niet0 "$d" "root" -
 assert "geen root-sleutel opgeslagen met een niet-matchende regel" test ! -e "$d/secrets/groep/root/root-key.pem"
 root_regel_fout "$d" volgorde
 expect "opslaan root weigert een .*-regel vóór de root-regel" niet0 "$d" "root" -- geheimen root opslaan root
+# Een regel zonder path_regex matcht in sops elk pad.
+root_regel_fout "$d" zonder
+expect "opslaan root weigert een regel zonder path_regex vóór de root-regel" niet0 "$d" "root" -- \
+  geheimen root opslaan root
+assert "geen root-sleutel opgeslagen onder een regel zonder path_regex" \
+  test ! -e "$d/secrets/groep/root/root-key.pem"
 
 d=$(kopie "$GEVULD")
 root_regel_fout "$d" anker
