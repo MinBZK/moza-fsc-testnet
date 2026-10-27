@@ -104,10 +104,14 @@ Elke peer heeft twee ketens (achtergrond: [`pki/README.md`](../pki/README.md)):
   voor elk component: ook `controller` en `txlog`.
 
 > **Privésleutels verlaten je team niet, de CA-sleutel verlaat de beheerder niet.** Je stuurt alleen
-> CSR's; de beheerder tekent ze en zet de certs in git. Wie de intermediate-sleutel van de test-CA
-> heeft, kan certs uitgeven voor elke OIN en zich zo voordoen als elke peer in de group. Je eigen
-> sleutels kun je bewaren zoals het testnet dat doet: versleuteld met SOPS + age in een private repo
-> ([`sleutelbeheer.md`](sleutelbeheer.md)).
+> CSR's en openbare certs; de beheerder tekent en zet de openbare bestanden in git. Wie de
+> intermediate-sleutel van de test-CA heeft, kan certs uitgeven voor elke OIN en zich zo voordoen als
+> elke peer in de group.
+>
+> Bewaar je eigen sleutels versleuteld bij je eigen team, bijvoorbeeld met SOPS + age in een eigen
+> private repo met een eigen `.sops.yaml`. Gebruik daarvoor níet `pki/geheimen.sh` en zet je sleutel
+> niet in `pki/.sops.yaml`: die versleutelen voor de beheerders van het testnet en geven toegang tot
+> de CA-sleutel.
 
 ### 3a. CSR-templates (team)
 
@@ -130,8 +134,11 @@ de externe hostnaam. Voorbeeld `manager`:
 }
 ```
 
-Draai **niet** `issue.sh` of `init-ca.sh`: die tekenen met de CA-sleutel van het testnet, en die heb je
-niet.
+Deze templates blijven in je eigen checkout. Stonden ze in `main`, dan zou `issue.sh` er bij de
+beheerder zelf certs voor uitgeven.
+
+Draai **niet** `issue.sh` of `init-ca.sh`: `issue.sh` tekent met de CA-sleutel van het testnet, die je
+niet hebt, en `init-ca.sh` maakt een nieuwe CA die niet op het testnet aansluit.
 
 ### 3b. Sleutels, internal-certs en CSR's (team)
 
@@ -154,7 +161,7 @@ for e in manager controller inway txlog; do
   rm "internal/$PEER/$e/cert.csr"
 done
 
-# Group: alleen sleutel + CSR, voor de mesh-endpoints.
+# Group: alleen sleutel + CSR, voor de mesh-endpoints (afnemer: manager outway).
 for e in manager inway; do
   mkdir -p "out/$PEER/$e"
   cfssl genkey "peers/$PEER/$e/csr.json" | cfssljson -bare "out/$PEER/$e/cert"
@@ -162,16 +169,19 @@ for e in manager inway; do
 done
 ```
 
-Stuur de beheerder alleen de bestanden `out/mijnpeer/<endpoint>/cert.csr`.
+Stuur de beheerder je CSR's (`out/mijnpeer/<endpoint>/cert.csr`) en de openbare helft van je
+internal-keten: `internal/mijnpeer/ca/root.pem` en `internal/mijnpeer/<endpoint>/cert.pem`. Nooit een
+`key.pem` of `root-key.pem`.
 
 ### 3c. CSR's tekenen (beheerder)
 
-Zet de ontvangen CSR's als `<endpoint>.csr` in `pki/`. Controleer eerst wat je tekent — `cfssl sign`
-neemt OIN, organisatie en SAN's over uit de CSR:
+Zet de ontvangen CSR's als `<endpoint>.csr` in `pki/`, en de internal-bestanden op hun pad onder
+`pki/internal/mijnpeer/`. Controleer eerst wat je tekent — `cfssl sign` neemt OIN, organisatie en
+SAN's over uit de CSR:
 
 ```bash
 cd pki
-for e in manager inway; do
+for e in manager inway; do   # afnemer: manager outway
   openssl req -in "$e.csr" -noout -verify -subject    # serialNumber = afgesproken OIN? O klopt?
   openssl req -in "$e.csr" -noout -text | grep -A1 'Subject Alternative Name'
 done
@@ -183,9 +193,10 @@ Tekenen doe je met de intermediate-sleutel uit de geheime repo; haal die alleen 
 ```bash
 ./geheimen.sh ophalen groep
 PEER=mijnpeer
-for e in manager inway; do
+for e in manager inway; do   # afnemer: manager outway
   cfssl sign -config config.json -profile peer \
     -ca ca/intermediate.pem -ca-key ca/intermediate-key.pem "$e.csr" | cfssljson -bare "$e"
+  [ -s "$e.pem" ] || { echo "FOUT: $e niet getekend; $e.csr blijft staan" >&2; break; }
   mkdir -p "out/$PEER/$e"
   cat "$e.pem" ca/intermediate.pem > "out/$PEER/$e/cert.pem"   # keten: leaf + intermediate
   rm "$e.pem" "$e.csr"
@@ -194,28 +205,49 @@ done
 ./verify.sh
 ```
 
-Zet `pki/out/mijnpeer/` via een PR in git. Dan laat git zien wat er bij deze peer live staat, en
-meldt de wekelijkse verloopcontrole ook zijn certs. Niets hiervan is geheim.
+Zet `pki/out/mijnpeer/` en `pki/internal/mijnpeer/` via een PR in git. `verify.sh` eist bij elk
+group-cert een internal-cert, dus beide horen erin. Dan laat git zien wat er bij deze peer live staat,
+en meldt de wekelijkse verloopcontrole ook deze certs. Niets hiervan is geheim.
 
 ### 3d. Afronden en controleren (team)
 
-Na de merge van die PR staan je group-certs in `main`, naast de sleutels die je zelf maakte:
+Na de merge van die PR staan je certs in `main`. Je eigen kopieën van de internal-bestanden staan
+nog ongevolgd in je checkout, en daarop weigert `git pull`; haal ze eerst weg:
 
 ```bash
-git pull
 cd pki
 PEER=mijnpeer
+rm "internal/$PEER/ca/root.pem" "internal/$PEER"/*/cert.pem
+git pull
 ./fix-permissions.sh
 ./verify.sh                  # verwacht: == ALLE ASSERTS GROEN ==
 ./zad-bundle.sh "$PEER"      # upload-set + MANIFEST.md in zad-upload/mijnpeer/
 ```
 
-`verify.sh` controleert de ketens, de OIN in elk cert, de scheiding tussen group en internal, en dat
-er geen sleutels zichtbaar zijn voor git.
+`verify.sh` controleert de ketens, dat elk cert een OIN heeft, dat elke sleutel bij zijn cert past (een
+verkeerd getekende of verwisselde CSR valt zo op), de scheiding tussen group en internal, en dat er
+geen sleutels zichtbaar zijn voor git.
 
 **Vernieuwen.** De verloopcontrole meldt 30 dagen vooraf welke certs verlopen, met een issue in deze
-repo. Voor je group-certs herhaal je het group-deel van 3b, en 3c en 3d: een nieuwe sleutel en CSR,
-de beheerder tekent en commit. Je internal-CA en -certs beheer je zelf.
+repo; de beheerder seint je in. Maak de nieuwe group-sleutel náást de oude, zodat de live sleutel
+blijft tot het nieuwe cert in `main` staat:
+
+```bash
+cd pki
+PEER=mijnpeer
+for e in manager inway; do   # afnemer: manager outway
+  cfssl genkey "peers/$PEER/$e/csr.json" | cfssljson -bare "out/$PEER/$e/nieuw"
+done
+```
+
+Stuur `out/mijnpeer/<endpoint>/nieuw.csr`; de beheerder tekent volgens 3c. Na de merge: `git pull`,
+per endpoint `mv "out/$PEER/$e/nieuw-key.pem" "out/$PEER/$e/key.pem"`, dan `verify.sh`, `zad-bundle.sh`
+en de bijlagen vervangen (4d). Vernieuw je je internal-keten, stuur dan ook die openbare bestanden: ze
+staan in git.
+
+Vervangt de beheerder de intermediate van het testnet, dan gaan ook jouw group-certs opnieuw via een
+CSR. Stop je met je peer, laat de beheerder dan `pki/out/mijnpeer/` en `pki/internal/mijnpeer/`
+weghalen: een verlopen cert in git laat de controles van elke PR falen.
 
 ## 4. ZAD inrichten
 
