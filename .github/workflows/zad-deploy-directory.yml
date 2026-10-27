@@ -344,7 +344,7 @@ jobs:
     steps:
       - name: Deploy directory via zad-actions
         id: deploy
-        uses: RijksICTGilde/zad-actions/deploy@b612e5968bb88c2c9c05da30f0be2e96b98f78c6 # v4.3.2
+        uses: RijksICTGilde/zad-actions/deploy@4217ceaa5c347f3c6d16142b5ad8ab94110c4cdb # v4.4.0
         with:
           api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
@@ -428,7 +428,7 @@ jobs:
     steps:
       - name: Ruim de preview op via zad-actions
         id: cleanup
-        uses: RijksICTGilde/zad-actions/cleanup@b612e5968bb88c2c9c05da30f0be2e96b98f78c6 # v4.3.2
+        uses: RijksICTGilde/zad-actions/cleanup@4217ceaa5c347f3c6d16142b5ad8ab94110c4cdb # v4.4.0
         with:
           api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
