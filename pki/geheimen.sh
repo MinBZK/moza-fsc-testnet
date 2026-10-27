@@ -23,7 +23,8 @@ gebruik: pki/geheimen.sh <actie> [-f] [groep|root|<peer>…]
   wis         verwijder lokale sleutels en afgeleide bestanden; weigert bij een niet-opgeslagen sleutel
   ontvangers  versleutel opnieuw voor de ontvangers in pki/.sops.yaml
 
-Zonder sets: groep en alle peers; de root-sleutel alleen als je 'root' noemt (wis: alles).
+Zonder sets: groep en alle peers; de root-sleutel alleen als je 'root' noemt (wis: alles). Bij ophalen
+alleen de peers die in de geheime repo staan: een ander team beheert zijn sleutels zelf.
 -f: ophalen overschrijft een afwijkende lokale sleutel, wis verwijdert ook wat niet opgeslagen is.
 De geheime repo: FSC_GEHEIMEN_DIR, standaard ../moza-fsc-testnet-geheimen naast deze repo.
 EOF
@@ -156,6 +157,12 @@ ophalen() {
   local s k g n=0 probleem=0
   local -a lokaal=() tijdelijk=()
   vereis_geheimen_dir
+  # Zonder sets alleen de peers met sleutels in de geheime repo. Een peer van een ander team heeft
+  # zijn certs wel in git, maar beheert zijn sleutels zelf.
+  if [ "${#SETS[@]}" -eq 0 ]; then
+    SETS=(groep)
+    while IFS= read -r s; do SETS+=("${s}"); done < <(comm -12 <(alle_peers) <(geheime_peers | sort))
+  fi
   bepaal_sets "$(alle_peers)"
   TMP="$(mktemp -d)"
   # Eerst alles ontsleutelen en controleren, dan pas schrijven: geen half opgehaalde set.

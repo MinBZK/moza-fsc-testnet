@@ -481,6 +481,21 @@ assert "nieuwe ontvanger kan het bestand van die peer ontsleutelen" \
   ontsleutelbaar nieuw "$d/secrets/andere-peer/group/manager-key.pem"
 expect "ontvangers accepteert een peer die alleen in de geheime repo staat" 0 "$d" -- geheimen root ontvangers andere-peer
 
+# Een peer van een ander team: de beheerder tekent zijn CSR en commit de certs, de sleutels blijven
+# bij dat team. Ophalen zonder sets moet de rest gewoon ophalen.
+d=$(kopie "$GEVULD")
+mkdir -p "$d/pki/peers/extern"
+cp -r "$d/pki/peers/example-provider/manager" "$d/pki/peers/extern/"
+sed -i 's/"serialnumber": *"[0-9]*"/"serialnumber": "00000000000000000099"/; s/example-provider/extern/g' \
+  "$d/pki/peers/extern/manager/csr.json"
+(cd "$d" && ./pki/issue.sh >/dev/null 2>&1 && rm -f pki/out/extern/*/key.pem pki/internal/extern/*/key.pem \
+  pki/internal/extern/ca/root-key.pem && geheimen root wis -f >/dev/null)
+expect "ophalen slaat een peer zonder sleutels in de geheime repo over" 0 "$d" -- geheimen dagelijks ophalen
+assert "ophalen haalt de andere peers wel op" test -s "$d/pki/out/directory/directory/key.pem"
+expect "opslaan slaat een peer zonder lokale sleutels over" 0 "$d" -- geheimen root opslaan
+assert "geen map voor die peer in de geheime repo" test ! -e "$d/secrets/extern"
+expect "ophalen van die peer met naam faalt wel" niet0 "$d" "ontbreekt" -- geheimen dagelijks ophalen extern
+
 d=$(kopie "$GEVULD")
 expect "onbekende peer" niet0 "$d" "onbekend" -- geheimen dagelijks ophalen bestaat-niet
 expect "onbekende actie" 2 "$d" -- geheimen dagelijks verwijder
