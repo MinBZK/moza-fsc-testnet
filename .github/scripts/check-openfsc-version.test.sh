@@ -69,6 +69,7 @@ expect "eigen versie als workflow-input-default" 1 "$d"
 
 # --- 4. Hernoemde compose-variabele: alle 14 images vallen in één klap buiten beeld ------------
 d=$(fresh_copy)
+# shellcheck disable=SC2016  # `${IMAGE_TAG:-` is de letterlijke compose-tekst, geen shell-expansie.
 sed -i 's|${IMAGE_TAG:-|${OPENFSC_TAG:-|g' "$d/deploy/local/docker-compose.yaml"
 expect "hernoemde compose-variabele (patroon verlopen)" 1 "$d"
 
