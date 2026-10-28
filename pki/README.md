@@ -87,19 +87,20 @@ nieuwe peer wordt automatisch aangemaakt.
 
 ## Peers & OIN's
 
-OIN = `subject.serialNumber` = Peer ID (1:1). In gebruik, volgens de certs in git:
+OIN = `subject.serialNumber` = Peer ID (1:1). In gebruik:
 
 | Peer | OIN | Certs in |
 |------|-----|----------|
-| `directory` | `00000000000000000010` | deze repo (infra-peer) |
-| `example-consumer` | `00000000000000000020` | deze repo (lokale harness) |
-| `example-provider` | `00000000000000000030` | deze repo (lokale harness) |
-| `logius` | `00000000000000001000` | moza-poc-fbs-berichtenbox |
-| `magazijn-a` | `00000000000000100000` | moza-poc-fbs-berichtenbox |
+| `directory` | `00000000000000000010` | git, deze repo (infra-peer) |
+| `example-consumer` | `00000000000000000020` | git, deze repo (lokale harness) |
+| `example-provider` | `00000000000000000030` | git, deze repo (lokale harness) |
+| `logius` | `00000000000000001000` | moza-poc-fbs-berichtenbox, nog niet in git |
+| `magazijn-a` | `00000000000000100000` | moza-poc-fbs-berichtenbox, nog niet in git |
 
-Een nieuwe peer krijgt een OIN van de beheerder. Die controleert hem tegen de certs in beide repo's
-(`openssl x509 -noout -subject -nameopt sep_multiline`): een peer die nog niet is aangemeld, staat
-niet in de directory-ui.
+Een nieuwe peer krijgt een OIN van de beheerder. Die controleert hem tegen de certs in git
+(`openssl x509 -noout -subject -nameopt sep_multiline`) én tegen de directory-ui. Geen van beide is
+op zichzelf volledig: de directory-ui toont alleen aangemelde peers, en de certs van `logius` en
+`magazijn-a` staan nog niet in git.
 
 **Synthetische conventie:** 20 cijfers (`^[0-9]{20}$`), alles-nul met laag volgnummer →
 herkenbaar niet-echt, botst niet met de `00000001…`-org-OIN's. Mag in dit gesloten testnet
