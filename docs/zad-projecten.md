@@ -37,7 +37,7 @@ Dit spiegelt OpenFSC's eigen layout (`helm/deploy/<org>/` per organisatie +
 |-------------|-----|-------------------|----------------|
 | `fsc-directory` (group-anker) | directory + group | manager, directory(-ui), txlog-api, postgres | **moza-fsc-testnet** |
 | peer: magazijn | provider | manager, inway, txlog-api, postgres | bij de app (`moza-poc-fbs-berichtenbox`) |
-| peer: uitvraag | consumer | manager, outway, txlog-api, postgres | bij de app (`moza-poc-fbs-berichtenbox`) |
+| peer: logius | consumer | manager, outway, txlog-api, postgres | bij de app (`moza-poc-fbs-berichtenbox`) |
 | peer: profiel (later, #730) | provider | manager, inway, txlog-api, postgres | bij de app (`moza-profiel-service`) |
 
 Cross-project communicatie loopt — net als in de FBS-deploy — via de
