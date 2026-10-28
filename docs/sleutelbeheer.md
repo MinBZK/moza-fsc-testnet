@@ -16,14 +16,164 @@
 | `ZAD_API_KEY_DIRECTORY` | **Actions**-secretstore van dit repo | Expliciet **niet** in de Dependabot-secretstore: bot-PR's horen niet met deze key te kunnen deployen. Een commit die `dependabot-openfsc-bump.yml` op zo'n PR pusht, start runs met een menselijke actor, en die zien deze store wél. Daar houden de bot-auteur-checks in `zad-deploy-directory.yml` (`changes`-job, `skip-bot-prs`) de deploy tegen. |
 | `ZAD_PROJECT_ID_DIRECTORY` | Actions-variable (`vars`) | Geen geheim, wel omgevingsspecifiek. |
 | `FBS_DEPENDABOT_PR_SECRET` | **Dependabot**-secretstore van dit repo | Fine-grained PAT, alleen `Contents: write` op deze repo (en de FBS-repo, vandaar de naam). Gebruikt door `dependabot-openfsc-bump.yml` om een OpenFSC-bump af te maken. Hangt aan een persoonlijk account. |
-| Test-CA-sleutel, peer-cert/key | Buiten git, lokaal gegenereerd via `pki/` | Zie `pki/README.md`. Certs komen als ZAD-bijlage in de Operations Manager UI. |
+| Certificaten, ketens en CRL van de test-PKI | Git, onder `pki/` | Openbaar. Laat zien wat er op ZAD staat; zie [Certificaten van de test-PKI](#certificaten-van-de-test-pki). |
+| Privésleutels van de test-PKI | Private repo `MinBZK/moza-fsc-testnet-geheimen`, versleuteld met SOPS + age | Wie kan ontsleutelen: `pki/.sops.yaml`. Op ZAD als bijlage via de Operations Manager UI. |
 | Env-waarden per component | Operations Manager UI | Git documenteert ze via `peers/directory/*.env.example`, maar handhaaft ze niet. |
 
-Sleutels, certificaten en `.env`-bestanden horen niet in de repository en staan in
-[`.gitignore`](../.gitignore). Let op de grens daarvan: secret-scanning met push-protection staat aan,
+Sleutels en `.env`-bestanden horen niet in de repository en staan in [`.gitignore`](../.gitignore);
+de certificaten van de test-PKI wel. Let op de grens daarvan: secret-scanning met push-protection staat aan,
 maar dekt **provider**-patronen (GitHub-, cloudtokens). Een connection string met wachtwoord — precies
 wat `STORAGE_POSTGRES_DSN` in de env-templates voordoet — valt daarbuiten, dus `.gitignore` is voor die
 klasse de enige barrière. Non-provider-patronen aanzetten vraagt org-rechten en staat nog open.
+
+## Certificaten van de test-PKI
+
+De test-PKI heeft een openbare en een geheime helft.
+
+- **Openbaar, in git:** `pki/ca/{root,intermediate}.pem`, `pki/ca/intermediate.crl`,
+  `pki/out/<peer>/<endpoint>/cert.pem`, `pki/internal/<peer>/ca/root.pem` en
+  `pki/internal/<peer>/<endpoint>/cert.pem`. ZAD-bijlagen zijn niet terug te lezen, dus git is de plek
+  die laat zien wat er live staat. `cert-verloop.yml` meldt elke maandag met een issue wat binnen
+  30 dagen verloopt.
+- **Geheim, in [`MinBZK/moza-fsc-testnet-geheimen`](https://github.com/MinBZK/moza-fsc-testnet-geheimen):**
+  elke privésleutel als eigen bestand, versleuteld met SOPS + age.
+
+  | In de geheime repo | Lokaal |
+  |---|---|
+  | `groep/intermediate-key.pem` | `pki/ca/intermediate-key.pem` |
+  | `groep/root/root-key.pem` | `pki/ca/root-key.pem` |
+  | `<peer>/group/<endpoint>-key.pem` | `pki/out/<peer>/<endpoint>/key.pem` |
+  | `<peer>/internal/ca-key.pem` | `pki/internal/<peer>/ca/root-key.pem` |
+  | `<peer>/internal/<endpoint>-key.pem` | `pki/internal/<peer>/<endpoint>/key.pem` |
+
+Wie wat kan ontsleutelen staat in `pki/.sops.yaml`: één age-sleutel per persoon, met de naam erbij.
+Geen sleutels voor een Claude-sandbox of een andere gedeelde omgeving: toegang moet herleidbaar zijn
+tot een persoon. Een Claude-sessie werkt met de sleutel van wie hem draait, op diens eigen machine.
+De root-sleutel heeft een eigen regel met alleen de twee root-houders; voor het dagelijkse werk is hij
+niet nodig. `.sops.yaml` staat in déze repo en niet in de geheime: die valt onder het gratis
+GitHub-abonnement en heeft dus geen branch protection. Een nieuwe ontvanger loopt zo via een
+gereviewde PR. Wie de geheime repo kan wijzigen, kan ook geen sleutel ongemerkt vervangen:
+`pki/geheimen.sh ophalen` draait `verify.sh`, en die legt elke sleutel naast zijn certificaat in git.
+
+`pki/.sops.yaml` heeft deze vorm. De root-regel staat bovenaan: sops kiest de eerste regel die past, en
+legt `path_regex` op het absolute pad, dus `(^|/)groep/root/` en niet `^groep/root/`. `geheimen.sh`
+weigert de root-sleutel op te slaan of opnieuw te versleutelen als de eerste regel niet precies zo
+luidt.
+
+```yaml
+keys:
+  - &persoon1 age1…  # Voornaam Achternaam (root-houder)
+  - &persoon2 age1…  # Voornaam Achternaam (root-houder)
+  - &persoon3 age1…  # Voornaam Achternaam
+creation_rules:
+  - path_regex: (^|/)groep/root/
+    key_groups:
+      - age:
+          - *persoon1
+          - *persoon2
+  - path_regex: .*
+    key_groups:
+      - age:
+          - *persoon1
+          - *persoon2
+          - *persoon3
+```
+
+### Eenmalig: toegang krijgen
+
+1. Installeer `sops` en `age` (`brew install sops age`, of de releases op GitHub).
+2. Maak een sleutelpaar. Op Linux vindt sops `~/.config/sops/age/keys.txt` vanzelf; op macOS zoekt het
+   in `~/Library/Application Support/sops/age/`, dus zet daar `SOPS_AGE_KEY_FILE`.
+
+   ```bash
+   mkdir -p ~/.config/sops/age && age-keygen -o ~/.config/sops/age/keys.txt
+   export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt   # macOS; ook in je shell-profiel
+   ```
+
+   Bewaar een kopie van `keys.txt` in je wachtwoordkluis. Kwijt betekent geen toegang, tot iemand je
+   opnieuw toevoegt.
+3. Open een PR die je publieke sleutel (de `age1…` achter `# public key:` in `keys.txt`) met je naam
+   aan `pki/.sops.yaml` toevoegt: onder `keys:` en in de regel `.*`.
+4. Na de merge draait iemand met toegang, vanaf een bijgewerkte `main`, `pki/geheimen.sh ontvangers`
+   en pusht de geheime repo. Met een verouderde `pki/.sops.yaml` voeg je een verwijderde ontvanger
+   stil weer toe. Voor een nieuwe root-houder draait een root-houder ook
+   `pki/geheimen.sh ontvangers root`.
+5. Clone de geheime repo naast deze (`../moza-fsc-testnet-geheimen`), of zet `FSC_GEHEIMEN_DIR`.
+
+### Certificaten vernieuwen
+
+1. Werk deze repo (`git pull` op `main`) en de geheime repo (`git pull` in
+   `../moza-fsc-testnet-geheimen`) bij, en haal op: `pki/geheimen.sh ophalen groep <peer>`. Dat draait
+   `verify.sh`.
+2. Geef opnieuw uit. Group-keten: verwijder `pki/out/<peer>/` en draai `pki/issue.sh`. Eén
+   internal-cert: verwijder `pki/internal/<peer>/<endpoint>/` en draai `pki/issue.sh`. `issue.sh -f`
+   geeft álle leafs opnieuw uit en heeft daarvoor alle CA-sleutels nodig (`ophalen` zonder sets); het
+   weigert vooraf als er een ontbreekt, en vervangt nooit een gecommitte internal-root.
+3. `pki/verify.sh` moet groen zijn, inclusief de ankercontrole.
+4. `pki/geheimen.sh opslaan <peer>` en commit in de geheime repo, maar push nog niet. Open hier een
+   PR met de nieuwe `cert.pem`'s. `opslaan` overschrijft geen sleutel die bij een nieuwer cert hoort
+   dan het jouwe: dan heeft een collega vernieuwd en is je checkout verouderd (`-f` overschrijft toch).
+5. Na de merge, in één keer: push de geheime repo, draai `pki/zad-bundle.sh <peer>` en plaats de
+   bestanden in de Operations Manager UI (zie [`spikes/zad-attachments.md`](spikes/zad-attachments.md)).
+   Zo lopen git, de geheime repo en ZAD niet uit de pas: vóór de merge passen de nieuwe sleutels niet
+   bij de certs op `main`.
+6. `pki/geheimen.sh wis`. Dat weigert zolang een sleutel niet gecommit in de geheime repo staat, en
+   meldt commits die nog niet gepusht zijn.
+
+Verloopt de CRL: `pki/geheimen.sh ophalen groep`, `pki/gen-crl.sh`, en dezelfde stappen 4 tot en met 6
+voor `pki/ca/intermediate.crl`, dat bij elke peer als bijlage staat.
+
+### Een set vervangen
+
+Een nieuwe CA sluit niet aan op wat er draait. Vervangen vraagt daarom een commit, zodat het in een PR
+zichtbaar is.
+
+- **Internal-CA van een peer:** eerst `pki/geheimen.sh wis <peer>`, dan `git rm -r pki/internal/<peer>/`
+  en commit. Zonder `wis` blijft de oude CA-sleutel staan en weigert de ankercontrole. `issue.sh` maakt
+  daarna een nieuwe CA met nieuwe leafs; plaats de hele internal-set van die peer opnieuw in ZAD.
+- **Group-intermediate:** alleen een root-houder. Daarna gelden stap 4 tot en met 6 hierboven voor
+  `pki/ca/intermediate.pem`, de CRL en alle group-certs, bij elke peer, ook die in
+  `moza-poc-fbs-berichtenbox`. Dit trekt de oude intermediate niet in: zolang de CRL-controle uit
+  staat, blijft hij tot zijn einddatum naar de root ketenen. Tegen een gelekte groepssleutel helpt
+  alleen een nieuw anker. Peers van andere teams hebben hier geen sleutels en geen `csr.json`;
+  `issue.sh` maakt hun group-certs niet opnieuw. Die gaan opnieuw via hun CSR
+  ([`peer-aansluiten.md`](peer-aansluiten.md), stap 3c).
+
+  ```bash
+  pki/geheimen.sh ophalen root groep
+  cfssl genkey -initca pki/intermediate.json | cfssljson -bare pki/ca/intermediate
+  cfssl sign -config pki/config.json -ca pki/ca/root.pem -ca-key pki/ca/root-key.pem \
+    -profile intermediate pki/ca/intermediate.csr | cfssljson -bare pki/ca/intermediate
+  rm pki/ca/intermediate.csr
+  pki/gen-crl.sh
+  rm -rf pki/out/*/        # alle group-leafs; de internal-keten blijft staan
+  pki/issue.sh && pki/verify.sh
+  ```
+
+- **Root (het anker):** `init-ca.sh` weigert zolang `pki/ca/root.pem` in git staat. Een nieuw anker is
+  een nieuwe federatie: elke peer moet om, ook die in `moza-poc-fbs-berichtenbox`.
+
+### Toegang intrekken
+
+Bij een gewoon vertrek:
+
+1. Haal de sleutel uit `pki/.sops.yaml` (PR). Draai na de merge, vanaf een bijgewerkte `main`,
+   `pki/geheimen.sh ontvangers`; was het een root-houder, dan draait een andere root-houder ook
+   `ontvangers root`. Push de geheime repo.
+2. Zorg dat de GitHub-toegang tot de geheime repo vervalt; meestal gebeurt dat met het vertrek uit de
+   org.
+3. Leg in het issue van het vertrek vast dat het team het restrisico hieronder accepteert.
+
+Het restrisico: opnieuw versleutelen helpt niet tegen een kopie die al bestaat, en oude versies in de
+git-historie blijven met de oude age-sleutel leesbaar. Met de groepssleutel kan wie vertrok
+certificaten maken die naar het anker ketenen, tot de einddatum van de intermediate. Een nieuwe
+intermediate verandert daar niets aan: de oude blijft naar de root ketenen, en de CRL-controle staat
+uit. De internal-CA-sleutels zijn alleen bruikbaar van binnen het ZAD-project van een peer. Voor een
+gesloten testnet met testgegevens accepteren we dat.
+
+Vervang het anker wel (een nieuwe federatie, zie [Een set vervangen](#een-set-vervangen)) bij een
+vermoeden van misbruik, een gelekte laptop of age-sleutel, een vertrek in onmin, of zodra het testnet
+echte gegevens verwerkt.
 
 ## Rotatie `ZAD_API_KEY_DIRECTORY`
 
@@ -74,8 +224,6 @@ Verloopt of verdwijnt het token, dan gaat het niet stil mis: de push faalt, en d
   ontkoppelen, maar vraagt een org-admin.
 - Eén key doet lezen, deployen én verwijderen. Een read-only key voor de verificatiestappen zou het
   lek-oppervlak verkleinen; of ZAD scoped keys ondersteunt is nog niet uitgezocht.
-- Rotatie van het test-CA- en peer-certmateriaal is niet beschreven, en `pki/init-ca.sh` zet de CA-key
-  op een ontwikkelaarswerkplek ([#898](https://github.com/MinBZK/MijnOverheidZakelijk/issues/898)).
 - `dirui` draagt dezelfde cert/key als `dirmgr` en authenticeert dus als de directory-peer zelf
   ([#899](https://github.com/MinBZK/MijnOverheidZakelijk/issues/899)).
 - De keten onder `zad-actions` is niet volledig SHA-gepind (`setup-uv`, `zad-cli` via git-tag), en

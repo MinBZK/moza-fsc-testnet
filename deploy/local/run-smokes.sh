@@ -6,12 +6,14 @@
 #   certs (indien afwezig) -> .env -> docker compose up -d --build -> smokes op volgorde
 #
 # Bedoeld voor de docker-host waar deze repo volume-gemount is (geen push/pull nodig).
-# Vereist: docker + docker compose v2, en cfssl/cfssljson/openssl voor de cert-generatie
-# (zie pki/README.md). Draai vanuit een willekeurige map; paden worden zelf bepaald.
+# Vereist: docker + docker compose v2, en sops + age met toegang tot de geheime repo voor de
+# sleutels (zie docs/sleutelbeheer.md), of --wegwerp-ca; cfssl alleen voor nieuwe certs. Draai
+# vanuit een willekeurige map; paden worden zelf bepaald.
 #
 # Opties:
+#   --wegwerp-ca   eigen test-CA in een tijdelijke map, zonder de geheime repo (vereist cfssl); voor
+#                  wie geen toegang heeft. pki/ van de checkout blijft onaangeroerd.
 #   --no-build     compose up zónder --build (sneller als de wrapper-image al bestaat)
-#   --regen-certs  forceer cert-hergeneratie (pki/issue.sh -f) ook als ze al bestaan
 #   --keep         laat de stack draaien na afloop (default: `down -v` bij succes én falen)
 #   -h|--help      toon deze hulp
 set -euo pipefail
@@ -20,20 +22,34 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${HERE}/../.." && pwd)"
 COMPOSE=(docker compose -f "${HERE}/docker-compose.yaml")
 
-BUILD="--build"; REGEN_CERTS=0; KEEP=0
+BUILD="--build"; KEEP=0; WEGWERP=0; WEGWERP_DIR=""
 for arg in "$@"; do
   case "$arg" in
+    --wegwerp-ca)  WEGWERP=1 ;;
     --no-build)    BUILD="" ;;
-    --regen-certs) REGEN_CERTS=1 ;;
+    # De certs staan in git en draaien ook op ZAD: alles opnieuw uitgeven voor een lokale smoke
+    # zou de live set vervangen. Zie docs/sleutelbeheer.md.
+    --regen-certs) echo "--regen-certs is vervallen: certs staan in git, sleutels in de geheime repo." >&2; exit 2 ;;
     --keep)        KEEP=1 ;;
-    -h|--help)     sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help)     sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "onbekende optie: $arg (zie --help)" >&2; exit 2 ;;
   esac
 done
 
-teardown() { [ "$KEEP" -eq 1 ] && { echo ">> --keep: stack blijft draaien."; return; }
-             echo ">> opruimen (down -v --remove-orphans)..."; "${COMPOSE[@]}" down -v --remove-orphans || true; }
+teardown() {
+  if [ "$KEEP" -eq 1 ]; then
+    echo ">> --keep: stack blijft draaien."
+    if [ -n "$WEGWERP_DIR" ]; then
+      echo ">> de stack leest de wegwerp-PKI in ${WEGWERP_DIR}; ruim die na 'down' zelf op."
+    fi
+    return 0
+  fi
+  echo ">> opruimen (down -v --remove-orphans)..."; "${COMPOSE[@]}" down -v --remove-orphans || true
+  [ -z "$WEGWERP_DIR" ] || rm -rf "$WEGWERP_DIR"
+}
 fail() { echo "XX run-smokes FAALT: $1" >&2; teardown; exit 1; }
+# Ook bij Ctrl-C opruimen, zoals bij elke andere fout.
+trap 'fail "afgebroken"' INT TERM
 
 cd "$REPO_ROOT"
 
@@ -43,10 +59,22 @@ cd "$REPO_ROOT"
 #        een ontbrekend hostpakket. Faal vóór er iets gebouwd is. --------------------------------
 command -v jq >/dev/null 2>&1 || fail "jq niet gevonden — de contract-bootstrap vereist 't (zie README, Benodigdheden)."
 
-# --- 1. Certs (test-CA + per-peer). Regenereer bij --regen-certs, afwezige mappen, óf een CSR
-#        zonder cert (bv. een nieuw endpoint zoals txlog — anders skipt 'aanwezig' die stil). ------
+# --- 1. Certs en sleutels. De certs staan in git, de sleutels in de geheime repo. Een CSR zonder
+#        cert (bv. een nieuw endpoint zoals txlog) krijgt er een via issue.sh; anders skipt
+#        'aanwezig' die stil. Met --wegwerp-ca een eigen PKI buiten de checkout. --------------------
+# Alleen de peers die docker-compose.yaml mount; de groepssleutel heeft de stack niet nodig.
+STACK_PEERS=(directory example-provider example-consumer)
+need_keys() {
+  local p c
+  for p in "${STACK_PEERS[@]}"; do
+    for c in "pki/out/$p"/*/cert.pem "pki/internal/$p"/*/cert.pem; do
+      [ -e "$c" ] || continue
+      [ -s "${c%cert.pem}key.pem" ] || return 0
+    done
+  done
+  return 1
+}
 need_certs() {
-  [ "$REGEN_CERTS" -eq 1 ] && return 0
   { [ ! -d pki/out ] || [ ! -d pki/internal ]; } && return 0
   local csr rel
   while IFS= read -r csr; do
@@ -55,23 +83,46 @@ need_certs() {
   done < <(find pki/peers -name csr.json)
   return 1
 }
+echte_pki() {
+  if need_keys; then
+    echo ">> sleutels ophalen uit de geheime repo (${STACK_PEERS[*]})..."
+    ./pki/geheimen.sh ophalen "${STACK_PEERS[@]}" \
+      || fail "pki/geheimen.sh ophalen faalde (zie docs/sleutelbeheer.md). Geen toegang tot de geheime repo? Draai met --wegwerp-ca."
+  fi
+  if need_certs; then
+    echo ">> certs uitgeven voor nieuwe CSR's..."
+    ./pki/issue.sh || fail "pki/issue.sh faalde."
+    ./pki/fix-permissions.sh || fail "pki/fix-permissions.sh faalde."
+    echo ">> nieuwe certs: sla de sleutels op (pki/geheimen.sh opslaan) en commit de certs."
+    # Draaiende containers hebben de OUDE certs nog in geheugen; force-recreate zodat alles de
+    # nieuwe set herlaadt.
+    RECREATE="--force-recreate"
+  else
+    echo ">> certs aanwezig + compleet."
+  fi
+  # Altijd verifiëren — óók op het "al aanwezig"-pad: stale/onvolledige certs (bv. onderbroken run)
+  # mogen niet ongemerkt de stack in en zich later als vage mTLS-fouten voordoen.
+  ./pki/verify.sh || fail "pki/verify.sh rood (zie docs/sleutelbeheer.md)."
+}
 RECREATE=""
-if need_certs; then
-  echo ">> certs (her)genereren (test-CA + per-peer; ontbrekende/nieuwe CSR's meegenomen)..."
-  [ -f pki/ca/root.pem ] || ./pki/init-ca.sh || fail "pki/init-ca.sh faalde."
-  ./pki/issue.sh -f        || fail "pki/issue.sh faalde."
-  ./pki/gen-crl.sh         || fail "pki/gen-crl.sh faalde."
-  ./pki/fix-permissions.sh || fail "pki/fix-permissions.sh faalde."
-  # Certs (incl. de per-peer internal-CA's) zijn vernieuwd -> draaiende containers hebben nog de
-  # OUDE certs/CA in geheugen; force-recreate zodat alles de nieuwe (consistente) set herlaadt.
-  # Anders: nieuw inway-cert (nieuwe CA) vs controller die de oude CA trust -> mTLS faalt.
+if [ "$WEGWERP" -eq 1 ]; then
+  # Onder $HOME en niet in /tmp: niet elke docker-host deelt /tmp met de containers (snap-docker,
+  # Colima).
+  wegwerp_basis="${XDG_CACHE_HOME:-$HOME/.cache}/moza-fsc-testnet"
+  mkdir -p "$wegwerp_basis"
+  WEGWERP_DIR=$(mktemp -d "${wegwerp_basis}/wegwerp-pki.XXXXXX")
+  echo ">> wegwerp-PKI bouwen in ${WEGWERP_DIR}..."
+  "${HERE}/wegwerp-pki.sh" "$WEGWERP_DIR" || fail "deploy/local/wegwerp-pki.sh faalde."
+  # Gaat vóór PKI_DIR uit .env, ook voor de compose-aanroepen in de smokes.
+  export PKI_DIR="${WEGWERP_DIR}/pki"
+  # De contract-bootstrap rekent de grant-thumbprint op de host uit, standaard uit pki/ van de
+  # checkout; die moet bij het outway-cert in de stack passen.
+  export OUTWAY_CERT_HOST="${PKI_DIR}/out/example-consumer/outway/cert.pem"
+  # Containers van een eerdere run kennen een andere CA.
   RECREATE="--force-recreate"
 else
-  echo ">> certs aanwezig + compleet (gebruik --regen-certs om te herbouwen)."
+  echte_pki
 fi
-# Altijd verifiëren — óók op het "al aanwezig"-pad: stale/onvolledige certs (bv. onderbroken run)
-# mogen niet ongemerkt de stack in en zich later als vage mTLS-fouten voordoen.
-./pki/verify.sh || fail "pki/verify.sh rood — certs onvolledig (draai met --regen-certs)."
 
 # --- 2. .env: zet HOST_UID/GID = de huidige gebruiker (idempotent: bestaande regels vervangen) --
 ENV_FILE=deploy/local/.env

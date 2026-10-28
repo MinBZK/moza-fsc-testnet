@@ -15,14 +15,46 @@ CONFIG="${BASE_DIR}/config.json"
 CA_CERT="${BASE_DIR}/ca/intermediate.pem"
 CA_KEY="${BASE_DIR}/ca/intermediate-key.pem"
 INTERNAL_CA_SPEC="${BASE_DIR}/internal-ca.json"
+# shellcheck source-path=SCRIPTDIR source=lib/anker.sh
+. "${BASE_DIR}/lib/anker.sh"
 
 FORCE=0
 [ "${1:-}" = "-f" ] && FORCE=1
+
+# 0. Niets uitgeven onder een anker of sleutel die niet aansluit op git.
+anker_alles || { echo "issue.sh: niets uitgegeven." >&2; exit 1; }
+
+# Eerst nagaan of elke CA-sleutel die nodig is er is: niet halverwege stoppen met een half
+# vernieuwde set. Een internal-CA die niet in git staat, maakt stap 1 zo nodig zelf.
+ontbreekt="$(
+  find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; do
+    REL="$(dirname "${CSR#"${BASE_DIR}/peers/"}")"
+    PEER="${REL%%/*}"
+    if [ ! -s "${BASE_DIR}/out/${REL}/cert.pem" ] || [ "${FORCE}" -eq 1 ]; then
+      [ -s "${CA_KEY}" ] || echo "pki/ca/intermediate-key.pem ontbreekt; pki/geheimen.sh ophalen groep"
+    fi
+    if { [ ! -s "${BASE_DIR}/internal/${REL}/cert.pem" ] || [ "${FORCE}" -eq 1 ]; } \
+       && anker_in_git "internal/${PEER}/ca/root.pem" \
+       && [ ! -s "${BASE_DIR}/internal/${PEER}/ca/root-key.pem" ]; then
+      echo "pki/internal/${PEER}/ca/root-key.pem ontbreekt; pki/geheimen.sh ophalen ${PEER}"
+    fi
+  done | sort -u
+)"
+if [ -n "${ontbreekt}" ]; then
+  sed 's/^/FAIL: /' <<<"${ontbreekt}" >&2
+  echo "issue.sh: niets uitgegeven." >&2
+  exit 1
+fi
 
 # 1. Per-peer internal-CA root (self-signed). Eén per peer-map onder pki/peers/.
 for PEER_DIR in "${BASE_DIR}"/peers/*/; do
   PEER="$(basename "${PEER_DIR}")"
   ICA_DIR="${BASE_DIR}/internal/${PEER}/ca"
+  # Een gecommitte internal-root vertrouwen de draaiende pods: nooit vervangen, ook niet met -f.
+  if anker_in_git "internal/${PEER}/ca/root.pem"; then
+    echo "skip internal-CA ${PEER} (staat in git)"
+    continue
+  fi
   if [ -s "${ICA_DIR}/root.pem" ] && [ -s "${ICA_DIR}/root-key.pem" ] && [ "${FORCE}" -eq 0 ]; then
     echo "skip internal-CA ${PEER} (geen -f)"
     continue
@@ -44,9 +76,11 @@ find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; 
   ICA_DIR="${BASE_DIR}/internal/${PEER}/ca"
 
   # GROUP (extern, group-intermediate). Hecht intermediate aan voor de keten.
-  if [ -s "${GROUP_OUT}/cert.pem" ] && [ -s "${GROUP_OUT}/key.pem" ] && [ "${FORCE}" -eq 0 ]; then
+  # Een cert zonder sleutel is een sleutel die niet is opgehaald, geen reden om opnieuw uit te geven.
+  if [ -s "${GROUP_OUT}/cert.pem" ] && [ "${FORCE}" -eq 0 ]; then
     echo "skip group ${REL} (geen -f)"
   else
+    [ -s "${CA_KEY}" ] || { echo "FAIL: pki/ca/intermediate-key.pem ontbreekt; pki/geheimen.sh ophalen groep" >&2; exit 1; }
     mkdir -p "${GROUP_OUT}"
     echo "group-cert voor ${REL}..."
     cfssl gencert -config "${CONFIG}" -ca "${CA_CERT}" -ca-key "${CA_KEY}" \
@@ -59,9 +93,11 @@ find "${BASE_DIR}/peers" -name csr.json -print0 | while IFS= read -r -d '' CSR; 
   fi
 
   # INTERNAL (per-peer internal-CA). Bare leaf; TLS_ROOT_CERT wijst los naar de internal-root.
-  if [ -s "${INT_OUT}/cert.pem" ] && [ -s "${INT_OUT}/key.pem" ] && [ "${FORCE}" -eq 0 ]; then
+  if [ -s "${INT_OUT}/cert.pem" ] && [ "${FORCE}" -eq 0 ]; then
     echo "skip internal ${REL} (geen -f)"
   else
+    [ -s "${ICA_DIR}/root-key.pem" ] \
+      || { echo "FAIL: pki/internal/${PEER}/ca/root-key.pem ontbreekt; pki/geheimen.sh ophalen ${PEER}" >&2; exit 1; }
     mkdir -p "${INT_OUT}"
     echo "internal-cert voor ${REL}..."
     cfssl gencert -config "${CONFIG}" -ca "${ICA_DIR}/root.pem" -ca-key "${ICA_DIR}/root-key.pem" \

@@ -34,13 +34,26 @@
 *.der
 *.pk8
 secrets/
-pki/ca/
-pki/out/
-pki/internal/
+# De openbare helft van de test-PKI staat in git: git houdt bij wat er live staat, en de
+# verloopcontrole leest het. Een allowlist: alles onder ca/, out/ en internal/ is genegeerd, ook een
+# rondslingerende kopie als key.pem.old, behalve deze certificaten en de CRL. `!…/**/` laat git de
+# mappen in kijken; een bestand in een genegeerde map is niet terug te halen. Zie docs/sleutelbeheer.md.
+pki/ca/*
+!pki/ca/root.pem
+!pki/ca/intermediate.pem
+!pki/ca/intermediate.crl
+pki/out/**
+!pki/out/**/
+!pki/out/*/*/cert.pem
+pki/internal/**
+!pki/internal/**/
+!pki/internal/*/ca/root.pem
+!pki/internal/*/*/cert.pem
 pki/zad-upload/
 peers/**/values.yaml
 
-# IDE
+# IDE en OS
+.DS_Store
 .idea/
 *.iml
 .vscode/

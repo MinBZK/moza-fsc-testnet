@@ -59,7 +59,8 @@ jobs:
             shellcheck --shell=bash --severity=warning "$script" || rc=1
           done < <(find .github/actions -name action.yml)
           shellcheck --shell=bash --severity=warning .github/scripts/*.sh contracts/*.sh \
-            deploy/local/smoke-contract.sh || rc=1
+            deploy/local/smoke-contract.sh deploy/local/run-smokes.sh deploy/local/wegwerp-pki*.sh || rc=1
+          shellcheck -x --severity=warning pki/*.sh pki/lib/*.sh || rc=1
           exit "$rc"
 
       # Idempotentie van de contract-bootstrap, offline; waarom: zie de kop van beide tests.
@@ -90,5 +91,33 @@ jobs:
 
       - name: OpenFSC-versie-consistentie
         run: ./.github/scripts/check-openfsc-version.sh
+
+      # Zelfde controle als de wekelijkse cert-verloop.yml, met termijn 0: een PR mag geen al
+      # verlopen certificaat of CRL in git zetten. De regressietest eerst, om dezelfde reden als hierboven.
+      - name: Verloopcontrole testen
+        run: ./.github/scripts/check-cert-verloop.test.sh
+
+      - name: Geen verlopen certificaten
+        run: ./.github/scripts/check-cert-verloop.sh 0
+
+      # Ketens, anker en vooral: geen privésleutel in git, ook niet achter een cert in een cert.pem
+      # die de allowlist doorlaat. Push-protection dekt PEM-sleutels niet.
+      - name: Openbare helft van de test-PKI controleren
+        run: ./pki/verify.sh
+
+      # De pki-guards houden een zelfgemaakte CA en een niet-passende sleutel buiten de federatie;
+      # de test bouwt daarvoor een echte test-PKI en versleutelt met wegwerpsleutels.
+      - name: PKI-tools installeren
+        run: |
+          ./.github/scripts/install-pki-tools.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: PKI-guards testen
+        run: ./pki/pki.test.sh
+
+      # Wie geen toegang heeft tot de geheime repo, draait de harness op een wegwerp-PKI. Die mag
+      # pki/ van de checkout nooit raken.
+      - name: Wegwerp-PKI van de lokale harness testen
+        run: ./deploy/local/wegwerp-pki.test.sh
 
 
