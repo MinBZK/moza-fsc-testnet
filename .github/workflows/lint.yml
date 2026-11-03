@@ -27,7 +27,7 @@ jobs:
       # SHA-pinned marketplace-actions i.p.v. npx/pipx/curl, zodat Scorecard
       # Pinned-Dependencies groen is. Dependabot (github-actions) houdt de pins bij.
       - name: Markdown lint
-        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        uses: DavidAnson/markdownlint-cli2-action@696eb3f2509270d7b882d2aa68347bc676e7af34 # v25.0.0
         with:
           globs: |
             **/*.md
@@ -41,7 +41,7 @@ jobs:
           strict: true
 
       - name: Actions lint
-        uses: reviewdog/action-actionlint@48e36f54d8da326b83ab061aee2cc5e01b5ca46f # v1.80.6
+        uses: reviewdog/action-actionlint@619a81ec64ff8c0211cd6146eb2b21e8f1d7f440 # v1.81.1
         with:
           reporter: local
           filter_mode: nofilter
