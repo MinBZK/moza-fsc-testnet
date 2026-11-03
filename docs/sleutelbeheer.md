@@ -95,9 +95,9 @@ creation_rules:
 3. Open een PR die je publieke sleutel (de `age1…` achter `# public key:` in `keys.txt`) met je naam
    aan `pki/.sops.yaml` toevoegt: onder `keys:` en in de regel `.*`.
 4. Na de merge draait iemand met toegang, vanaf een bijgewerkte `main`, `pki/geheimen.sh ontvangers`
-   en pusht de geheime repo. Met een verouderde `pki/.sops.yaml` voeg je een verwijderde ontvanger
-   stil weer toe. Voor een nieuwe root-houder draait een root-houder ook
-   `pki/geheimen.sh ontvangers root`.
+   en pusht de geheime repo (zie [Ontvangers nakijken](#ontvangers-nakijken)). Met een verouderde
+   `pki/.sops.yaml` voeg je een verwijderde ontvanger stil weer toe. Voor een nieuwe root-houder
+   draait een root-houder ook `pki/geheimen.sh ontvangers root`.
 5. Clone de geheime repo naast deze (`../moza-fsc-testnet-geheimen`), of zet `FSC_GEHEIMEN_DIR`.
 
 ### Certificaten vernieuwen
@@ -159,7 +159,7 @@ Bij een gewoon vertrek:
 
 1. Haal de sleutel uit `pki/.sops.yaml` (PR). Draai na de merge, vanaf een bijgewerkte `main`,
    `pki/geheimen.sh ontvangers`; was het een root-houder, dan draait een andere root-houder ook
-   `ontvangers root`. Push de geheime repo.
+   `ontvangers root`. Push de geheime repo (zie [Ontvangers nakijken](#ontvangers-nakijken)).
 2. Zorg dat de GitHub-toegang tot de geheime repo vervalt; meestal gebeurt dat met het vertrek uit de
    org.
 3. Leg in het issue van het vertrek vast dat het team het restrisico hieronder accepteert.
@@ -174,6 +174,23 @@ gesloten testnet met testgegevens accepteren we dat.
 Vervang het anker wel (een nieuwe federatie, zie [Een set vervangen](#een-set-vervangen)) bij een
 vermoeden van misbruik, een gelekte laptop of age-sleutel, een vertrek in onmin, of zodra het testnet
 echte gegevens verwerkt.
+
+### Ontvangers nakijken
+
+Of `ontvangers` na een wijziging in `pki/.sops.yaml` gedraaid heeft, zie je anders niet aan de geheime
+repo. Noem daarom in de commit de `main`-commit waar `pki/.sops.yaml` vandaan kwam:
+
+```bash
+git -C ../moza-fsc-testnet-geheimen commit -am "ontvangers volgens moza-fsc-testnet@$(git rev-parse --short HEAD)"
+```
+
+De ontvangers van elk bestand staan leesbaar in de sops-metadata. Dit telt de bestanden per set
+ontvangers; elke set hoort die van een regel in `pki/.sops.yaml` te zijn:
+
+```bash
+cd ../moza-fsc-testnet-geheimen && git ls-files '*.pem' \
+  | while read -r f; do jq -r '[.sops.age[].recipient] | sort | join(" ")' "$f"; done | sort | uniq -c
+```
 
 ## Rotatie `ZAD_API_KEY_DIRECTORY`
 
