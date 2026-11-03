@@ -190,8 +190,8 @@ openen. (Beslispunt, zie onder.)
   HEAD en ongetrackte bestanden) en op naam naar sleutels.
 - `geheimen.sh` weigert de root-sleutel als de root-regel in `pki/.sops.yaml` niet matcht (sops legt
   `path_regex` op het absolute pad), en `ontvangers` werkt alle bestanden in de geheime repo bij.
-- `pki/pki.test.sh` toetst alle guards en draait in `lint.yml`, met cfssl, sops en age gepind op
-  sha256.
+- `pki/pki.test.sh` toetst alle guards en draait in `lint.yml`, met cfssl, sops en age uit broncode
+  op de versies in `.github/pki-tools/go.mod`, die Dependabot bijhoudt.
 
 ## Beslispunten (besloten op 27 oktober 2026, vast te leggen in #992)
 

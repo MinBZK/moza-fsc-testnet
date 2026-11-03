@@ -115,7 +115,8 @@ contracts/   grant → sign → accept bootstrap
   `merge_group` triggeren, anders blijft de queue erop wachten.
 - **CI:** `lint.yml` (markdownlint + yamllint + actionlint + OpenFSC-versie-consistentie),
   `codeql.yml` (Actions-analyse), `scorecard.yml` (OpenSSF). Actions SHA- of versie-gepind;
-  Dependabot houdt ze wekelijks bij, plus de base-images van de drie migrate-wrappers. Wekelijks
+  Dependabot houdt ze wekelijks bij, plus de base-images van de drie migrate-wrappers en de
+  PKI-testtools (cfssl, sops, age in `.github/pki-tools/go.mod`, gebouwd uit broncode). Wekelijks
   houdt de gegroepeerde PR reviewbaar; advisories komen los daarvan binnen via Dependabot security
   updates (staat aan op de repo).
 - **Waarschuwingen nalopen:** loop bij elke wijziging de output van `shellcheck`, `yamllint`,
