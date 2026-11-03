@@ -15,7 +15,7 @@
 # `.github/scripts/check-openfsc-version.sh` (lint-workflow) faalt als de OpenFSC-tags uiteenlopen;
 # een halve bump wordt niet groen. Verzetten gaat met `.github/scripts/bump-openfsc.sh <versie>`,
 # maar de digest hieronder blijft handwerk.
-FROM busybox:1.38.0-musl@sha256:ea2b9914a16a4ac1981994af97b318f7c7d4db76b580c56177f08bf76f4a0be8 AS busybox
+FROM busybox:1.38.0-musl@sha256:80e38f9a1b39188b8bdb28879178edb322a4402b081a9aedda1924609decd6f6 AS busybox
 
 FROM docker.io/federatedserviceconnectivity/manager:v2.8.0@sha256:5f708553f66de6f65de8b7da12729dc3e9f5430edde9031cf933333515ddd5d3
 COPY --from=busybox /bin/busybox /bin/sh
