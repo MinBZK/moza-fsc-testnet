@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Gedeelde bouwstenen voor contracts/bootstrap.sh en deploy/local/smoke-contract.sh: het
 # serviceConnection-contract van één combinatie terugvinden in de contractenlijst van een manager.
 # Waarom de contracten zelf de bron van waarheid zijn: zie contracts/bootstrap.md.

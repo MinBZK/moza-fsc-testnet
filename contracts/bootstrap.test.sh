@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Regressietest voor de beslislogica van contracts/bootstrap.sh, zonder draaiende managers: een
 # nep-`docker` vooraan op PATH speelt beide managers na op twee JSON-bestanden en logt elke call.
 # Bewijst o.a. "drie runs op een lege omgeving = één contract" en dat duplicaten, lopende,

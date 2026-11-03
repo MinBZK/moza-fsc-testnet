@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Haalt de privésleutels van de test-PKI op uit de geheime repo, of slaat ze daar versleuteld op
 # (SOPS + age, één bestand per sleutel). Wie wat kan ontsleutelen staat in pki/.sops.yaml, in déze
 # repo: daar loopt een wijziging via een gereviewde PR. Runbook: docs/sleutelbeheer.md.

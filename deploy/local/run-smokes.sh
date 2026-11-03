@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Host-runner: draait de VOLLEDIGE bewijs-keten van de lokale harness in één klap, zodat
 # je een PR host-side kunt verifiëren. Groeit per issue mee (nieuwe smokes onderaan toevoegen).
 #

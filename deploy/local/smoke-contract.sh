@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Smoke: bewijst dat het contract-bootstrap-mechanisme een geldig, wederzijds
 # ondertekend serviceConnection-contract oplevert tussen example-consumer en example-provider,
 # en dat het idempotent is zonder lokaal state-bestand.

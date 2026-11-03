@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Verzamelt de upload-klare cert-set van één peer in pki/zad-upload/<peer>/ met een MANIFEST:
 # per bestand het beoogde pod-pad (/etc/fsc/...) + de TLS_*-env-var(s). Voor het uploaden naar
 # ZAD: de losse certs als attachments. "Publicatie op het web" modus 2 (passthrough) heeft GEEN

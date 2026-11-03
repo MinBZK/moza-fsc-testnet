@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Regressietest voor wegwerp-pki.sh. De wegwerp-PKI moet de harness een complete set geven, en mag
 # pki/ van de checkout nooit raken: daar staan de certs van de live federatie. Vereist cfssl,
 # cfssljson en openssl.

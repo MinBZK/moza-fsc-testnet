@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Acceptatie-asserts test-PKI. Exit 0 = groen.
 set -uo pipefail
 

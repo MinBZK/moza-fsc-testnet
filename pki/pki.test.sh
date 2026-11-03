@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Regressietest voor de guards rond de test-PKI: de ankercontrole in verify.sh en issue.sh, de
 # guard in init-ca.sh, de .gitignore die sleutels buiten git houdt, en geheimen.sh. Elke case
 # muteert een kopie van één fixture-PKI (gebouwd met de echte scripts, in een tijdelijke git-repo)

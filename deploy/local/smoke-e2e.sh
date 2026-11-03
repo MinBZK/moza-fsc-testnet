@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Smoke: bewijst de end-to-end afname MÉT verantwoording, tussen example-consumer en
 # example-provider:
 #   (1) een echte data-call loopt  consumer-app -> outway -> inway -> stub-upstream -> terug;

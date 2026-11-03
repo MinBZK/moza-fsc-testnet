@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Bouwt per group-endpoint één PEM met cert + key voor de ZAD "Publicatie op het web"-
 # passthrough-upload (modus 2: eigen certificaat op de pod). ZAD wil daar één bestand met
 # cert + key; pki/issue.sh levert ze gescheiden. Output: pki/out/<peer>/<endpoint>/combined.pem

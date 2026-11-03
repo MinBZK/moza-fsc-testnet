@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Bouwt een wegwerp-PKI voor de lokale harness in <doelmap>: een eigen root, intermediate en certs
 # voor elke peer onder pki/peers, met de scripts uit deze checkout. Voor wie geen toegang heeft tot
 # de geheime repo; run-smokes.sh --wegwerp-ca wijst PKI_DIR naar <doelmap>/pki.

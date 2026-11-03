@@ -1,4 +1,3 @@
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # shellcheck shell=bash
 # Ankercontrole: lokaal PKI-materiaal moet aansluiten op het vertrouwensanker in git. Een
 # zelfgemaakte CA of een niet-passende sleutel breekt de federatie anders stil. Gedeeld door
