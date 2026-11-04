@@ -4,12 +4,14 @@ Gesloten testnet → **eigen test-CA**, geen PKIoverheid (zie `docs/ontwerpkeuze
 Spiegelt OpenFSC's cfssl-tooling (`open-fsc/pki/`). Ontwerp:
 `docs/superpowers/specs/2026-06-24-test-pki-design.md`.
 
-> **Niet voor productie.** Sleutels/certs horen **niet** in deze repo: `pki/ca/` en `pki/out/`
-> zijn gitignored. Alleen scripts, CA-configs en `csr.json`-templates staan in git.
+> **Niet voor productie.** Sleutels horen **niet** in deze repo; die staan versleuteld in de geheime
+> repo. De openbare helft (certificaten, ketens, CRL) staat wél in git. Zie `docs/sleutelbeheer.md`.
 
 ## Benodigdheden
 
-- `cfssl` + `cfssljson` (CloudFlare PKI-toolkit), `openssl`.
+- `sops` + `age` en toegang tot de geheime repo: zie `docs/sleutelbeheer.md` ("Eenmalig: toegang
+  krijgen").
+- `cfssl` + `cfssljson` (CloudFlare PKI-toolkit), `openssl`: alleen om certs uit te geven.
 
 ```bash
 go install github.com/cloudflare/cfssl/cmd/cfssl@latest
@@ -19,14 +21,17 @@ go install github.com/cloudflare/cfssl/cmd/cfssljson@latest
 ## Gebruik
 
 ```bash
-./pki/init-ca.sh          # 1. group root + intermediate test-CA -> pki/ca/
-./pki/issue.sh -f         # 2. per peer: group- + internal-certs (zie onder)
-./pki/gen-crl.sh          # 3. lege CRL                          -> pki/ca/intermediate.crl
-./pki/fix-permissions.sh  # 4. world-rw van keys halen
-./pki/verify.sh           # 5. acceptatie-asserts (exit 0 = groen)
-./pki/combine-pem.sh      # 6. (ZAD, optioneel) cert+key -> combined.pem — NIET nodig voor modus 2
-./pki/zad-bundle.sh directory   # 7. (ZAD) upload-set + manifest per peer -> pki/zad-upload/
+./pki/geheimen.sh ophalen       # 1. sleutels uit de geheime repo -> pki/ (draait verify.sh)
+./pki/issue.sh                  # 2. ontbrekende certs uitgeven (nieuwe peer of endpoint)
+./pki/verify.sh                 # 3. acceptatie-asserts incl. ankercontrole (exit 0 = groen)
+./pki/geheimen.sh opslaan       # 4. nieuwe sleutels versleuteld terug; commit daar, PR met de certs hier
+./pki/combine-pem.sh            # 5. (ZAD, optioneel) cert+key -> combined.pem — NIET nodig voor modus 2
+./pki/zad-bundle.sh directory   # 6. (ZAD, na de merge) upload-set + manifest per peer -> pki/zad-upload/
+./pki/geheimen.sh wis           # 7. lokale sleutels en afgeleide bestanden weg
 ```
+
+Vernieuwen en vervangen: `docs/sleutelbeheer.md`. `init-ca.sh` maakt een nieuwe federatie en weigert
+zodra het anker in git staat; `gen-crl.sh` vernieuwt de CRL.
 
 `pki/ca/root.pem` = trust-anchor voor de group rules (`group/group-config.yaml`).
 
@@ -38,8 +43,8 @@ Voor ZAD (zie `docs/spikes/zad-attachments.md`):
   upload toch één bestand vraagt; standaard niet nodig.
 - `zad-bundle.sh <peer>` verzamelt de hele upload-set (group-root + group-CRL, per-endpoint
   cert/key, internal-CA + internal cert/key) in `pki/zad-upload/<peer>/` met een `MANIFEST.md`
-  dat per bestand het beoogde pod-pad (attachment) + de `TLS_*`-env-var noemt. Draai eerst
-  `gen-crl.sh` zodat de CRL mee gaat (nodig om `DISABLE_CRL_CHECKS` te kunnen weghalen).
+  dat per bestand het beoogde pod-pad (attachment) + de `TLS_*`-env-var noemt. De CRL staat in git
+  en gaat vanzelf mee (nodig om `DISABLE_CRL_CHECKS` te kunnen weghalen).
 
 Beide outputs zijn gitignored (bevatten privésleutels).
 
@@ -63,7 +68,8 @@ los van de group-trust-anchor en wordt door `issue.sh` automatisch aangemaakt.
 ## Een peer toevoegen
 
 Maak `pki/peers/<peer>/<endpoint>/csr.json` met `serialnumber` = de OIN (wordt Peer ID),
-`names[].O` = peer-naam, `CN`/`hosts` = de endpoint-hostname. Draai `./pki/issue.sh -f`.
+`names[].O` = peer-naam, `CN`/`hosts` = de endpoint-hostname. Draai `./pki/issue.sh`, daarna
+`./pki/geheimen.sh opslaan <peer>`, en commit de nieuwe certs.
 Dezelfde `csr.json` voedt beide ketens (group + internal); de internal-CA voor een
 nieuwe peer wordt automatisch aangemaakt.
 
@@ -81,14 +87,20 @@ nieuwe peer wordt automatisch aangemaakt.
 
 ## Peers & OIN's
 
-OIN = `subject.serialNumber` = Peer ID (1:1). Toegewezen (#722):
+OIN = `subject.serialNumber` = Peer ID (1:1). In gebruik:
 
-| Peer | Endpoints | OIN | Herkomst |
-|------|-----------|-----|----------|
-| `magazijn-a` | manager, inway | `00000001003214345000` | echt — Magazijn A (moza-poc-fbs-berichtenbox) |
-| `magazijn-b` | manager, inway | `00000001823288444000` | echt — Magazijn B (moza-poc-fbs-berichtenbox) |
-| `uitvraag-org` | manager, outway | `00000000000000000020` | synthetisch — geen org-OIN in FBS |
-| `directory` | directory, manager | `00000000000000000010` | synthetisch — infra-peer |
+| Peer | OIN | Certs in |
+|------|-----|----------|
+| `directory` | `00000000000000000010` | git, deze repo (infra-peer) |
+| `example-consumer` | `00000000000000000020` | git, deze repo (lokale harness) |
+| `example-provider` | `00000000000000000030` | git, deze repo (lokale harness) |
+| `logius` | `00000000000000001000` | moza-poc-fbs-berichtenbox, nog niet in git |
+| `magazijn-a` | `00000000000000100000` | moza-poc-fbs-berichtenbox, nog niet in git |
+
+Een nieuwe peer krijgt een OIN van de beheerder. Die controleert hem tegen de certs in git
+(`openssl x509 -noout -subject -nameopt sep_multiline`) én tegen de directory-ui. Geen van beide is
+op zichzelf volledig: de directory-ui toont alleen aangemelde peers, en de certs van `logius` en
+`magazijn-a` staan nog niet in git.
 
 **Synthetische conventie:** 20 cijfers (`^[0-9]{20}$`), alles-nul met laag volgnummer →
 herkenbaar niet-echt, botst niet met de `00000001…`-org-OIN's. Mag in dit gesloten testnet

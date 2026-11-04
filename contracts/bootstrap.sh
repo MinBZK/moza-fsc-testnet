@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Contract-bootstrap: zet idempotent een geldig, wederzijds ondertekend
 # ServiceConnectionGrant-contract op tussen een consumer en een provider. Werking, en waarom het
 # bestaan uit de contracten zelf volgt i.p.v. uit een state-bestand: zie contracts/bootstrap.md.

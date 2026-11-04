@@ -2,8 +2,9 @@
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 #
 # Deze repo bevat geen applicatie-dependencies (config-only), maar wel gepinde artefacten:
-# GitHub Actions én de base-images van de drie migrate-wrappers. Beide staan hieronder. Helm-charts
-# worden hier niet gepind (ZAD deployt images, geen charts), dus daar is geen ecosystem voor.
+# GitHub Actions, de base-images van de drie migrate-wrappers en de tools voor de PKI-test. Alle drie
+# staan hieronder. Helm-charts worden hier niet gepind (ZAD deployt images, geen charts), dus daar is
+# geen ecosystem voor.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
@@ -62,3 +63,20 @@ updates:
       busybox:
         patterns:
           - "busybox"
+
+  # cfssl, sops en age voor pki/pki.test.sh; .github/scripts/install-pki-tools.sh bouwt ze uit broncode
+  # op deze versies. Gegroepeerd, zodat de drie tools samen één PR per week opleveren. Ook de
+  # security-updates: sops trekt de SDK's van AWS, GCP en Azure mee, en een advisory daarin hoort niet
+  # per module een eigen PR te geven.
+  - package-ecosystem: "gomod"
+    directory: "/.github/pki-tools"
+    schedule:
+      interval: "weekly"
+    groups:
+      pki-tools:
+        patterns:
+          - "*"
+      pki-tools-security:
+        applies-to: security-updates
+        patterns:
+          - "*"

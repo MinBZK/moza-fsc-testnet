@@ -1,0 +1,77 @@
+# Wekelijkse verloopcontrole van de gecommitte certificaten en CRL. Verloopt er iets binnen de
+# termijn, dan komt er één open issue, dat volgende runs bijwerken met een comment. Ziet nooit
+# een sleutel: alleen de openbare helft staat in git. Runbook: docs/sleutelbeheer.md.
+name: cert-verloop
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      dagen:
+        description: "termijn in dagen"
+        required: true
+        default: "30"
+
+permissions: {}
+
+# Twee runs tegelijk zouden allebei geen open issue vinden en er elk een aanmaken.
+concurrency:
+  group: cert-verloop
+  cancel-in-progress: false
+
+jobs:
+  verloop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verloop controleren
+        id: check
+        env:
+          DAGEN: ${{ inputs.dagen || '30' }}
+        run: |
+          set +e
+          ./.github/scripts/check-cert-verloop.sh "$DAGEN" > "$RUNNER_TEMP/verloop.txt" 2>&1
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/verloop.txt"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          # 1 = verloop gevonden en gaat naar het issue; 2 = het script zelf faalt.
+          [ "$rc" -le 1 ]
+
+      - name: Issue aanmaken of bijwerken
+        if: steps.check.outputs.rc == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DAGEN: ${{ inputs.dagen || '30' }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          titel="Certificaten van de testfederatie verlopen binnenkort"
+          {
+            echo "De verloopcontrole vond certificaten of een CRL die binnen ${DAGEN} dagen verlopen."
+            echo
+            echo '```text'
+            cat "$RUNNER_TEMP/verloop.txt"
+            echo '```'
+            echo
+            echo "Vernieuwen: ${REPO_URL}/blob/main/docs/sleutelbeheer.md#certificaten-vernieuwen"
+            echo "Run: ${REPO_URL}/actions/runs/${RUN_ID}"
+          } > "$RUNNER_TEMP/body.md"
+          nr=$(gh issue list --state open --limit 200 --json number,title \
+            | jq -r --arg t "$titel" 'map(select(.title == $t)) | .[0].number // empty')
+          if [ -n "$nr" ]; then
+            gh issue comment "$nr" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --title "$titel" --body-file "$RUNNER_TEMP/body.md"
+          fi

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Regressietest voor contracts/contracten.sh, zonder draaiende managers. Telt de matcher een vreemd
 # contract mee, dan is de bootstrap false green; mist hij het eigen contract, dan dient elke run
 # een nieuw in.

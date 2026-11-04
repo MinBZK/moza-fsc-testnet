@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright © MOZa FSC Testnet — Licensed under the EUPL
 # Genereert een lege CRL getekend door de intermediate (issuer van peer-certs).
 #
 # cfssl 1.6.x gencrl-variant: output is base64-gecodeerde DER (geen JSON, geen rauwe bytes).
@@ -11,9 +10,9 @@ CA_DIR="${BASE_DIR}/ca"
 EMPTY="$(mktemp)"
 trap 'rm -f "${EMPTY}"' EXIT
 
-# cfssl gencrl <serials-file> <ca-cert> <ca-key> <expiry-uren> → base64(DER)
-# Expiry 43800 uur = 5 jaar (ruim genoeg voor testnet-gebruik).
-cfssl gencrl "${EMPTY}" "${CA_DIR}/intermediate.pem" "${CA_DIR}/intermediate-key.pem" 43800 \
+# cfssl gencrl <serials-file> <ca-cert> <ca-key> <geldigheid-in-seconden> → base64(DER)
+# 5 jaar. Let op de eenheid: seconden, geen uren. De verloopcontrole meldt een naderende nextUpdate.
+cfssl gencrl "${EMPTY}" "${CA_DIR}/intermediate.pem" "${CA_DIR}/intermediate-key.pem" $((5 * 365 * 24 * 3600)) \
   | base64 -d \
   | openssl crl -inform DER -out "${CA_DIR}/intermediate.crl"
 
