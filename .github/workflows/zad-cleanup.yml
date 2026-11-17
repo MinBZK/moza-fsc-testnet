@@ -152,7 +152,7 @@ jobs:
 
       - name: Cleanup via zad-actions
         id: cleanup
-        uses: RijksICTGilde/zad-actions/cleanup@4217ceaa5c347f3c6d16142b5ad8ab94110c4cdb # v4.4.0
+        uses: RijksICTGilde/zad-actions/cleanup@0b604742a137d43f6fe8fceb06bdffeb0a1665db # v4.4.1
         with:
           api-key: ${{ secrets.ZAD_API_KEY_DIRECTORY }}
           project-id: ${{ vars.ZAD_PROJECT_ID_DIRECTORY }}
