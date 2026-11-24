@@ -4,6 +4,7 @@
 keys:
   - &mark age169l30nmfr8z42m2sx696r24nc99wf7qq6qfnytzdnfc2r5sh4gxstgtyuk  # Mark Reuvekamp (root-houder)
   - &ericwout age1zk2p34n4esgzkfwh5z3mu4kf05585jen923ved80s4pd46t70ynsswphd8  # Eric Wout van der Steen (root-houder)
+  - &joeri age1csdtlzkpmw5ukckezuavlm6cx88x3ng3we4mcqzwsx0j3e2fva9qcanqdr # Joeri Taelman (beheerder)
 creation_rules:
   - path_regex: (^|/)groep/root/
     key_groups:
@@ -15,3 +16,4 @@ creation_rules:
       - age:
           - *mark
           - *ericwout
+          - *joeri
