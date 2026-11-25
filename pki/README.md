@@ -96,6 +96,7 @@ OIN = `subject.serialNumber` = Peer ID (1:1). In gebruik:
 | `example-provider` | `00000000000000000030` | git, deze repo (lokale harness) |
 | `logius` | `00000000000000001000` | moza-poc-fbs-berichtenbox, nog niet in git |
 | `magazijn-a` | `00000000000000100000` | moza-poc-fbs-berichtenbox, nog niet in git |
+| `dienstverlener` | `00000000000000900000` | git, deze repo (afnemer voor fundament-dienstverlener, ZAD `funda-xeq`) |
 
 Een nieuwe peer krijgt een OIN van de beheerder. Die controleert hem tegen de certs in git
 (`openssl x509 -noout -subject -nameopt sep_multiline`) én tegen de directory-ui. Geen van beide is
