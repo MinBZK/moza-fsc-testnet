@@ -257,7 +257,8 @@ staan in git.
 
 Vervangt de beheerder de intermediate van het testnet, dan gaan ook jouw group-certs opnieuw via een
 CSR. Stop je met je peer, laat de beheerder dan `pki/out/mijnpeer/` en `pki/internal/mijnpeer/`
-weghalen: een verlopen cert in git laat de controles van elke PR falen.
+weghalen: een verlopen cert in git laat de controles van elke PR falen. Je OIN blijft wel
+gereserveerd tot je certs verlopen (zie [`pki/README.md`](../pki/README.md)).
 
 ## 4. ZAD inrichten
 

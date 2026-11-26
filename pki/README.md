@@ -94,6 +94,8 @@ OIN = `subject.serialNumber` = Peer ID (1:1). In gebruik:
 | `directory` | `00000000000000000010` | git, deze repo (infra-peer) |
 | `example-consumer` | `00000000000000000020` | git, deze repo (lokale harness) |
 | `example-provider` | `00000000000000000030` | git, deze repo (lokale harness) |
+| `nmc` | `00000000000000000050` | niet meer in git: gestopt na het fieldlab (Fundament, november 2026). Certs geldig tot 23-11-2029, OIN niet opnieuw uitgeven |
+| `profielservice-mock` | `00000000000000000060` | niet meer in git: gestopt na het fieldlab (Fundament, november 2026). Certs geldig tot 23-11-2029, OIN niet opnieuw uitgeven |
 | `logius` | `00000000000000001000` | moza-poc-fbs-berichtenbox, nog niet in git |
 | `magazijn-a` | `00000000000000100000` | moza-poc-fbs-berichtenbox, nog niet in git |
 | `dienstverlener` | `00000000000000900000` | git, deze repo (afnemer voor fundament-dienstverlener, ZAD `funda-xeq`) |
@@ -103,6 +105,10 @@ Een nieuwe peer krijgt een OIN van de beheerder. Die controleert hem tegen de ce
 (`openssl x509 -noout -subject -nameopt sep_multiline`) én tegen de directory-ui. Geen van beide is
 op zichzelf volledig: de directory-ui toont alleen aangemelde peers, en de certs van `logius` en
 `magazijn-a` staan nog niet in git.
+
+Een gestopte peer verdwijnt uit git, maar blijft in de tabel tot zijn certs verlopen. Tot die datum
+kan wie zijn sleutels heeft zich nog met die OIN aanmelden, want de CRL-controle staat uit. Geef zo'n
+OIN dus niet opnieuw uit.
 
 **Synthetische conventie:** 20 cijfers (`^[0-9]{20}$`), alles-nul met laag volgnummer →
 herkenbaar niet-echt, botst niet met de `00000001…`-org-OIN's. Mag in dit gesloten testnet
