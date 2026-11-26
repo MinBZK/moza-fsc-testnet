@@ -94,6 +94,8 @@ OIN = `subject.serialNumber` = Peer ID (1:1). In gebruik:
 | `directory` | `00000000000000000010` | git, deze repo (infra-peer) |
 | `example-consumer` | `00000000000000000020` | git, deze repo (lokale harness) |
 | `example-provider` | `00000000000000000030` | git, deze repo (lokale harness) |
+| `nmc` | `00000000000000000050` | git, deze repo (aanbieder en afnemer van team Turing, fieldlab cluster C; sleutels bij het team) |
+| `profielservice-mock` | `00000000000000000060` | git, deze repo (aanbieder van team Turing, fieldlab cluster C; sleutels bij het team) |
 | `logius` | `00000000000000001000` | moza-poc-fbs-berichtenbox, nog niet in git |
 | `magazijn-a` | `00000000000000100000` | moza-poc-fbs-berichtenbox, nog niet in git |
 | `dienstverlener` | `00000000000000900000` | git, deze repo (afnemer voor fundament-dienstverlener, ZAD `funda-xeq`) |
